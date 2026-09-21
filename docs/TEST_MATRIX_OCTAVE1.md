@@ -20,3 +20,5 @@
 `C:\Python314\python.exe tools\check-octave-phase1.py --serial emulator-5560`
 
 报告、逐帧原件和回退快照保留在 reports，阶段归档位于 outputs/checkpoints，不冒充稳定 releases。远程私有仓库已配置，但远程CI尚未配置且服务端分支保护受套餐限制未启用；本地冻结门禁不等同服务端发布保护。
+
+最终干净SHA在构建前必须直接导出Git archive，对所有非Markdown文件比较磁盘/归档SHA并检查路径集合，不能仅信任git status为clean。换行归一化不豁免生产源码字节不符；39项门禁自测包含9项ZIP路径与字节保护，另20指标+12原声学评估器自测，总71项单列，不混入275产品用例。

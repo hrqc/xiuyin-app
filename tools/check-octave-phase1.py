@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+import io
 import json
 import math
 from pathlib import Path
@@ -12,6 +13,7 @@ import subprocess
 import sys
 import time
 import uuid
+import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +49,22 @@ def source_snapshot():
     raw=subprocess.check_output(['git','-c','safe.directory='+str(ROOT),'ls-files','--cached','--others','--exclude-standard','-z'],cwd=ROOT)
     names=sorted(set(x.decode('utf8') for x in raw.split(b'\0') if x))
     return {name:sha(ROOT/name) for name in names if (ROOT/name).is_file()}
+
+def verify_git_archive(source_hashes, archive_bytes):
+    """A clean working tree is insufficient: attributes may hide old normalized blobs."""
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        entries=[info.filename for info in archive.infolist() if not info.is_dir()]
+        require(len(entries)==len(set(entries)), 'Duplicate source path in Git archive')
+        require(set(entries)==set(source_hashes), 'Git archive source paths differ from working snapshot')
+        count=0
+        for name, expected in source_hashes.items():
+            # Markdown is documentation, outside the source-only byte-preservation rules.
+            if name.endswith('.md'):
+                continue
+            actual=hashlib.sha256(archive.read(name)).hexdigest()
+            require(actual==expected, 'Committed source bytes differ from frozen working file: '+name)
+            count+=1
+        return count
 
 def check_product_report(report, original, gate_dir):
     require(report['status'] == 'failed' and report['total'] == 275 and report['passed'] == 274 and report['failed'] == 1 and report['skipped'] == 0, 'Product result differs from frozen failure plus one passing trace test')
@@ -150,6 +168,11 @@ def main():
         result['productionFilesUnchanged']=len(original['productionFiles'])
         result['sha']=subprocess.check_output(['git','-c','safe.directory='+str(ROOT),'rev-parse','HEAD'],cwd=ROOT,text=True).strip()
         result['dirty']=bool(subprocess.check_output(['git','-c','safe.directory='+str(ROOT),'status','--porcelain'],cwd=ROOT))
+        if not result['dirty']:
+            committed_archive=subprocess.check_output(['git','-c','safe.directory='+str(ROOT),'archive','--format=zip','HEAD'],cwd=ROOT)
+            result['gitSourceBlobFilesVerified']=verify_git_archive(initial_sources,committed_archive)
+        else:
+            result['gitSourceBlobFilesVerified']=None
         result['version']=re.search(r'versionName = "([^\"]+)"',(ROOT/'app/build.gradle.kts').read_text(encoding='utf8')).group(1)
         require(result['version']=='0.3.0-octave.1','This fixed phase gate is not a generic release gate')
         sdk_line=next(x.split('=',1)[1] for x in (ROOT/'local.properties').read_text().splitlines() if x.startswith('sdk.dir='))

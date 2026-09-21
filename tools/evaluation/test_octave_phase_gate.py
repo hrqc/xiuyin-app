@@ -7,13 +7,16 @@ Run: python -B -m unittest discover -s tools/evaluation -p test_octave_phase_gat
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import struct
 import sys
 import tempfile
 import unittest
+import warnings
 import xml.etree.ElementTree as ET
+import zipfile
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check-octave-phase1.py"
@@ -360,6 +363,88 @@ class TraceFileProtectionTest(unittest.TestCase):
                 self.save_trace()
                 with self.assertRaisesRegex(ValueError, "Invalid timing"):
                     self.verify()
+
+
+
+class GitArchiveByteProtectionTest(unittest.TestCase):
+    """TEST DATA: in-memory ZIPs; no Git index, checkout or user files touched."""
+
+    def setUp(self):
+        self.files = {
+            "app/src/main/TEST_DATA.kt": b"// TEST DATA\r\nval testData = 1\r\n",
+            "tools/TEST_DATA.bin": b"TEST DATA\x00\xff\r\n\n",
+            "README.md": b"# TEST DATA\r\nSynthetic archive only.\r\n",
+        }
+        self.hashes = {name: hashlib.sha256(data).hexdigest()
+                       for name, data in self.files.items()}
+
+    @staticmethod
+    def archive(files, directories=()):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in directories:
+                archive.writestr(name, b"")
+            for name, data in files.items():
+                archive.writestr(name, data)
+        return stream.getvalue()
+
+    def test_exact_test_data_archive_is_accepted(self):
+        result = GATE.verify_git_archive(self.hashes, self.archive(self.files))
+        self.assertEqual(result, 2)
+
+    def test_markdown_line_endings_do_not_block_source_byte_verification(self):
+        files = dict(self.files)
+        files["README.md"] = files["README.md"].replace(b"\r\n", b"\n")
+        self.assertEqual(GATE.verify_git_archive(self.hashes, self.archive(files)), 2)
+
+    def test_single_source_lf_crlf_difference_is_rejected(self):
+        files = dict(self.files)
+        files["app/src/main/TEST_DATA.kt"] = files["app/src/main/TEST_DATA.kt"].replace(b"\r\n", b"\n")
+        with self.assertRaises(ValueError):
+            GATE.verify_git_archive(self.hashes, self.archive(files))
+
+    def test_same_size_binary_content_corruption_is_rejected(self):
+        files = dict(self.files)
+        files["tools/TEST_DATA.bin"] = files["tools/TEST_DATA.bin"].replace(b"\xff", b"\xfe")
+        with self.assertRaises(ValueError):
+            GATE.verify_git_archive(self.hashes, self.archive(files))
+
+    def test_missing_source_or_markdown_path_is_rejected(self):
+        for name in ("app/src/main/TEST_DATA.kt", "README.md"):
+            with self.subTest(missing=name):
+                files = dict(self.files)
+                del files[name]
+                with self.assertRaises(ValueError):
+                    GATE.verify_git_archive(self.hashes, self.archive(files))
+
+    def test_extra_source_or_markdown_path_is_rejected(self):
+        for name in ("tools/EXTRA_TEST_DATA.py", "EXTRA_TEST_DATA.md"):
+            with self.subTest(extra=name):
+                files = dict(self.files)
+                files[name] = b"TEST DATA"
+                with self.assertRaises(ValueError):
+                    GATE.verify_git_archive(self.hashes, self.archive(files))
+
+    def test_zip_directory_entries_are_not_source_files(self):
+        result = GATE.verify_git_archive(self.hashes, self.archive(
+            self.files, directories=("app/", "app/src/", "tools/")))
+        self.assertEqual(result, 2)
+
+    def test_duplicate_zip_file_name_is_rejected_even_when_bytes_match(self):
+        stream = io.BytesIO(self.archive(self.files))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Duplicate name:", category=UserWarning)
+            with zipfile.ZipFile(stream, "a") as archive:
+                archive.writestr("tools/TEST_DATA.bin", self.files["tools/TEST_DATA.bin"])
+        with self.assertRaises(ValueError):
+            GATE.verify_git_archive(self.hashes, stream.getvalue())
+
+    def test_invalid_or_truncated_zip_is_rejected(self):
+        complete = self.archive(self.files)
+        for data in (b"TEST DATA: not a ZIP archive", complete[:len(complete) // 2]):
+            with self.subTest(length=len(data)):
+                with self.assertRaises((ValueError, zipfile.BadZipFile)):
+                    GATE.verify_git_archive(self.hashes, data)
 
 
 if __name__ == "__main__":
