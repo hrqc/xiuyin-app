@@ -78,3 +78,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\device-test.ps1
 开发分支 dev，测试通过后才允许进入 main 并打稳定标签。具体当前状态见 PROJECT_STATUS.md。未配置远程仓库，本地提交不等于远程备份。
 
 上一稳定版本v0.1.1以及v0.1.0的源码、APK与校验值继续保留。原xiuyin.db的schema仍为1，独立score_metadata.db亦为schema1；旧版不会使用或清理新增命名库；本地模拟器回退与恢复是check.cmd必需门禁，真实结果保存在reports/<run_id>/rollback/。代码回退使用新提交git revert；APK必须保持签名和数据兼容，不能卸载来冒充无损回退。物理手机、正式签名发布包的降级限制尚未验证。用户明确本轮暂不设置远程仓库，不执行Push。
+
+## 用户琴房实录测试
+
+本次两张谱图和视频已真实测试，**完整陪练验收未通过**；现有基础版缺少图片OMR、音高/多音及跟谱纠错。具体结果、证据与本地复现命令见 [琴房实录验收](docs/ROOM_RECORDING_RESULTS.md)，固定验收条件见 [测试矩阵](docs/TEST_MATRIX_ROOM_RECORDING1.md)。新增回放入口仅在测试APK中，主App没有“视频识别已可用”的功能。原稳定标签和产物继续保留。

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- AGP injects defaultConfig runner attributes into the first instrumentation element. -->
+    <instrumentation
+        android:name="androidx.test.runner.AndroidJUnitRunner"
+        android:targetPackage="com.xiuyin.app"
+        android:functionalTest="false"
+        android:handleProfiling="false" />
+    <!-- Keep the explicit local evaluation runner second so the default injection cannot rename it. -->
+    <instrumentation
+        android:name="com.xiuyin.app.evaluation.RoomRecordingRunner"
+        android:targetPackage="com.xiuyin.app"
+        android:functionalTest="true"
+        android:handleProfiling="false" />
+</manifest>
