@@ -1,4 +1,4 @@
-﻿param()
+﻿param([string]$PythonExecutable = 'C:\Python314\python.exe')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -146,6 +146,7 @@ function Read-CurrentTestResults($Group, [datetime]$TaskStart) {
 
 try {
     $properties = Get-Content -LiteralPath (Join-Path $projectRoot 'local.properties')
+    if (-not (Test-Path -LiteralPath $PythonExecutable -PathType Leaf)) { throw "回退执行器所需 Python 不存在：$PythonExecutable" }
     $sdkLine = $properties | Where-Object { $_ -match '^sdk.dir=' } | Select-Object -First 1
     if (!$sdkLine) { throw 'local.properties 缺少 sdk.dir，请按 README 配置本机 SDK。' }
     $sdk = ($sdkLine -replace '^sdk.dir=', '').Replace('\:', ':').Replace('\\', '\')
@@ -164,7 +165,7 @@ try {
         android = (& $adb -s $devices[0] shell getprop ro.build.version.release | Out-String).Trim()
         api = (& $adb -s $devices[0] shell getprop ro.build.version.sdk | Out-String).Trim()
     }
-    foreach ($task in @(':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', ':app:assembleRelease', 'adb:instrumentation')) {
+    foreach ($task in @(':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', ':app:assembleRelease', 'adb:instrumentation', 'rollback:emulator')) {
         $group = $null
         foreach ($candidate in $groups.Values) { if ($candidate.task -eq $task) { $group = $candidate; break } }
         if ($null -ne $group) { Prepare-TestResultDirectory $group }
@@ -177,6 +178,7 @@ try {
             $group.startedAt = $taskStart.ToUniversalTime().ToString('o')
             if ($group.name -eq 'unit') { $taskArguments += '--rerun-tasks' }
         }
+        $global:LASTEXITCODE = -999
         $ErrorActionPreference = 'Continue'
         if ($task -eq 'adb:instrumentation') {
             # Compile the unchanged Android test set, then run the native runner.
@@ -186,12 +188,29 @@ try {
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'device-test.ps1') 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log -Append
                 $code = $LASTEXITCODE
             }
+        } elseif ($task -eq 'rollback:emulator') {
+            & $PythonExecutable (Join-Path $PSScriptRoot 'rollback-rehearsal.py') --serial $env:ANDROID_SERIAL --report-dir (Join-Path $reportDir 'rollback') 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
+            $code = $LASTEXITCODE
         } else {
             & (Join-Path $projectRoot 'build.cmd') @taskArguments 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
             $code = $LASTEXITCODE
         }
         $ErrorActionPreference = 'Stop'
         $taskFailure = $null
+        if ($task -eq 'rollback:emulator' -and $code -eq 0) {
+            try {
+                $rollbackReportPath = Join-Path $reportDir 'rollback/rollback-report.json'
+                if (-not (Test-Path -LiteralPath $rollbackReportPath -PathType Leaf)) { throw '本次回退报告缺失' }
+                if ((Get-Item -LiteralPath $rollbackReportPath).LastWriteTimeUtc -lt $taskStart.ToUniversalTime()) { throw '回退报告不是本次执行生成' }
+                $rollback = Get-Content -LiteralPath $rollbackReportPath -Raw -Encoding utf8 | ConvertFrom-Json
+                $hashStream = [IO.File]::OpenRead((Join-Path $projectRoot 'app/build/outputs/apk/debug/app-debug.apk'))
+                $hasher = [Security.Cryptography.SHA256]::Create()
+                try { $candidateHash = [BitConverter]::ToString($hasher.ComputeHash($hashStream)).Replace('-', '') }
+                finally { $hasher.Dispose(); $hashStream.Dispose() }
+                if ($rollback.status -ne 'passed' -or -not $rollback.baselineDataPreserved -or -not $rollback.restoredDataPreserved -or $rollback.candidateSha256 -ne $candidateHash) { throw '回退结果或候选产物哈希不符合门禁' }
+                if (@($rollback.actions | Where-Object { $_.version -eq '0.1.0' -and $_.launch -eq 'passed' }).Count -lt 1 -or @($rollback.actions | Where-Object { $_.version -eq '0.1.1' -and $_.launch -eq 'passed' }).Count -lt 2) { throw '缺少真实旧版/候选启动证据' }
+            } catch { $taskFailure = "回退证据验证失败：$($_.Exception.Message)" }
+        }
         if ($null -ne $group) {
             try { Read-CurrentTestResults $group $taskStart } catch {
                 $group.status = 'failed'
@@ -204,7 +223,7 @@ try {
             if ($null -ne $group) { $group.status = 'failed'; $group.failure = $taskFailure }
         }
         $steps += [pscustomobject][ordered]@{
-            task = $task; executor = $(if ($task -eq 'adb:instrumentation') { 'adb-am-instrument' } else { 'gradle' }); exitCode = $code; status = $(if ($taskFailure) {'failed'} else {'passed'})
+            task = $task; executor = $(if ($task -eq 'adb:instrumentation') { 'adb-am-instrument' } elseif ($task -eq 'rollback:emulator') {'local-adb-artifact-rollback'} else { 'gradle' }); exitCode = $code; status = $(if ($taskFailure) {'failed'} else {'passed'})
             durationSeconds = [math]::Round(((Get-Date)-$taskStart).TotalSeconds,2)
             log = $log; failure = $taskFailure
         }
@@ -226,23 +245,23 @@ try {
     $skipped = $counts.skipped
     $invalidGroups = @($groups.Values | Where-Object { $_.status -ne 'passed' -or $_.tests -lt 1 -or $_.failed -gt 0 -or $_.skipped -gt 0 })
     $invalidSteps = @($steps | Where-Object { $_.status -ne 'passed' })
-    if ($steps.Count -ne 5 -or $invalidSteps.Count -gt 0 -or $invalidGroups.Count -gt 0) {
+    if ($steps.Count -ne 6 -or $invalidSteps.Count -gt 0 -or $invalidGroups.Count -gt 0) {
         if (!$failure) { $failure = '必需检查未全部成功；单元测试和设备测试必须分别存在本轮结果，且零失败、零跳过。' }
     }
     $report = [ordered]@{
-        run_id = $runId; version = '0.1.0'; sha = $sourceSha; dirty = $dirty; testSet = 'foundation-1'
+        run_id = $runId; version = '0.1.1'; sha = $sourceSha; dirty = $dirty; testSet = 'audio-foundation-1'
         startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
         status = $(if ($failure) {'failed'} else {'passed'}); failure = $failure; device = $device
         total = $total; passed = $counts.passed; failed = $failed; skipped = $skipped
         steps = @($steps); groups = @($groups.Values); suites = @($testRecords)
         priorResultsPolicy = 'prior-results 只保留上轮结果，不参与本轮计数；current-results 保存本轮新结果。'
-        notApplicable = @('V0.1 无后端/API','麦克风、音高识别、实时跟谱、OMR 属于后续版本')
-        unverified = @('物理 Android 手机','Android 8-14 与 16 的设备兼容性')
-        remoteSync = '未配置远程仓库'
+        notApplicable = @('本版无后端/API','音高多音识别、正式跟谱/锁定、校准、OMR 未实现')
+        unverified = @('物理 Android 手机与真实钢琴琴房','准确率/误停率/端到端音频延迟','Android 8-14 与 16 的设备兼容性')
+        remoteSync = '用户明确本轮不设置远程仓库，不执行 Push'
     }
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $reportDir 'report.json') -Encoding utf8
     @(
-        "# 修音 V0.1.0 检测结果"
+        "# 修音 V0.1.1 检测结果"
         ""
         "Run: $runId"
         "SHA: $sourceSha"
@@ -256,7 +275,7 @@ try {
         "设备: $($device | ConvertTo-Json -Compress)"
         "完整明细与每步日志见同目录 report.json；current-results 仅包含本轮结果。"
         "prior-results 仅存档上轮输出，未计入本轮结果。失败时保留已有源码与用户数据。"
-        "真机与后续算法未验证。远程 Git 同步未配置。"
+        "真机/真实琴房与后续识别算法未验证。用户本轮不设置远程，不执行 Push。"
     ) | Set-Content -LiteralPath (Join-Path $reportDir 'SUMMARY.md') -Encoding utf8
     Write-Host "报告目录：$reportDir"
 }

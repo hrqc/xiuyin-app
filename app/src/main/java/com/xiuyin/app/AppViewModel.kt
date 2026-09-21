@@ -3,6 +3,7 @@ package com.xiuyin.app
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.xiuyin.app.audio.MicrophoneEngine
 import com.xiuyin.app.data.AppDatabase
 import com.xiuyin.app.data.LogEntry
 import com.xiuyin.app.data.PracticePreparation
@@ -31,6 +32,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val mutex = Mutex()
     private val mutableState = MutableStateFlow(AppState())
     val state = mutableState.asStateFlow()
+    private val audioEngine = MicrophoneEngine(application) { level, message, detail ->
+        operation("保存音频诊断") {
+            val mode = mutableState.value.preparation?.mode?.name ?: "未设置"
+            database.appendLog(level, "Audio", message,
+                "$detail\nSaved Practice Mode: $mode\nCurrent Measure/Beat/Expected Notes: 未定位\nRaw Detected Notes: []\nRaw Confidence: 未实现\nFiltered Notes: []\nFinal Decision: UNCERTAIN\nDecision Confidence: 未实现\nLOCKED: 不适用")
+            refresh()
+        }
+    }
+    val audio = audioEngine.state
+
+    fun startAudio() = audioEngine.start()
+    fun stopAudio(reason: String = "用户已停止监听") = audioEngine.stop(reason)
+    fun audioPermissionDenied() = audioEngine.permissionDenied()
 
     init { initialize() }
 
@@ -51,7 +65,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(saving = true) }
         operation("保存练习设置") {
             database.savePreparation(value)
-            database.appendLog("INFO", "Practice", "练习设置已保存：${value.mode.label} / ${value.repeatTarget} 次；音频未启动")
+            database.appendLog("INFO", "Practice", "练习设置已保存：${value.mode.label} / ${value.repeatTarget} 次；保存操作不启动音频")
             refresh()
             mutableState.update { it.copy(saving = false) }
         }
@@ -100,5 +114,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    override fun onCleared() { database.close() }
+    override fun onCleared() {
+        audioEngine.close()
+        database.close()
+        super.onCleared()
+    }
 }

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.view.KeyEvent
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasScrollToIndexAction
@@ -94,17 +95,18 @@ class FoundationUiTest {
 
     @Test
     @Suppress("DEPRECATION") // GET_PERMISSIONS keeps this test compatible with minSdk 26.
-    fun foundationDoesNotRequestNetworkCameraOrMicrophonePermissions() {
+    fun foundationOnlyDeclaresMicrophoneAndNeverRequestsNetworkOrCameraPermissions() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val packageInfo = context.packageManager.getPackageInfo(
             context.packageName,
             PackageManager.GET_PERMISSIONS,
         )
         val requested = packageInfo.requestedPermissions?.toSet().orEmpty()
-        listOf(Manifest.permission.INTERNET, Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+        listOf(Manifest.permission.INTERNET, Manifest.permission.CAMERA)
             .forEach { permission ->
-                assertFalse("V0.1 must not request $permission", permission in requested)
+                assertFalse("Local audio version must not request $permission", permission in requested)
             }
+        assertTrue("Explicit microphone checks require RECORD_AUDIO in the manifest", Manifest.permission.RECORD_AUDIO in requested)
         assertEquals("com.xiuyin.app", context.packageName)
     }
 
@@ -125,8 +127,8 @@ class FoundationUiTest {
 
         compose.onNodeWithTag("nav_monitor").performClick()
         waitForText("开发者监控")
-        scrollMonitorTo("⚪ 未运行 · 未申请权限")
-        compose.onNodeWithText("⚪ 未运行 · 未申请权限")
+        scrollMonitorTo("⚪ 未运行 · 尚未开始采集")
+        compose.onNodeWithText("⚪ 未运行 · 尚未开始采集")
             .performScrollTo().assertIsDisplayed()
         scrollMonitorTo("Live Logs")
         compose.onNodeWithText("搜索日志").performTextInput(marker)
@@ -176,6 +178,19 @@ class FoundationUiTest {
         }
     }
 
+    @Test
+    fun openingPracticeDoesNotStartOrAutomaticallyRequestMicrophone() {
+        waitForText("浏览本地曲库")
+        compose.onNodeWithTag("nav_practice").performClick()
+        waitForText("麦克风检查")
+        compose.onNodeWithTag("audio_status").performScrollTo()
+            .assertTextEquals("⚪ 未运行 · 尚未开始采集")
+        compose.onNodeWithTag("audio_start").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("audio_stop").assertDoesNotExist()
+        compose.onNodeWithTag("audio_final_decision").performScrollTo()
+            .assertTextEquals("暂无法判断（UNCERTAIN）")
+    }
+
     private fun scrollMonitorTo(text: String) {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(text))
     }
@@ -220,7 +235,7 @@ class FoundationUiTest {
                 val writeCompleted = AppDatabase(context).use { database ->
                     database.loadPreparation() == expected && database.logs().any { entry ->
                         entry.id > priorLogId && entry.module == "Practice" &&
-                            entry.message == "练习设置已保存：强化训练 / $count 次；音频未启动"
+                            entry.message == "练习设置已保存：强化训练 / $count 次；保存操作不启动音频"
                     }
                 }
                 writeCompleted && saveButtonIsReady() &&

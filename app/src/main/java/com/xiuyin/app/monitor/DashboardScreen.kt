@@ -40,6 +40,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.xiuyin.app.AppState
 import com.xiuyin.app.BuildConfig
 import com.xiuyin.app.data.LogEntry
+import com.xiuyin.app.audio.AudioSnapshot
+import com.xiuyin.app.audio.AudioStatus
+import com.xiuyin.app.audio.OnsetState
+import com.xiuyin.app.ui.audioMetricNumber
+import com.xiuyin.app.ui.audioStatusLabel
+import com.xiuyin.app.ui.detectedNotesLabel
+import com.xiuyin.app.ui.finalDecisionLabel
+import com.xiuyin.app.ui.onsetStateLabel
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,7 +58,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 @Composable
-fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit) {
+fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit, audio: AudioSnapshot) {
     var query by remember { mutableStateOf("") }
     var selectedLevel by remember { mutableStateOf<String?>(null) }
     var frozenLogs by remember { mutableStateOf<List<LogEntry>?>(null) }
@@ -110,7 +118,7 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                 Text("开发者监控", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "本机状态 · 页面可见时每 5 秒刷新",
+                    "本机状态每 5 秒刷新 · 音频指标随输入更新",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -142,12 +150,12 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                         else -> "⚪ 未运行 · 尚无检查结果"
                     },
                 )
-                MetricRow("Audio Engine", "⚪ 未运行 · V0.3")
-                MetricRow("Pitch Engine", "⚪ 未运行 · V0.3")
+                MetricRow("Audio Engine", audioStatusLabel(audio))
+                MetricRow("Pitch Engine", "⚪ 未运行 · 音高与多音模型尚未接入")
                 MetricRow("OMR Engine", "⚪ 未运行 · V0.7")
                 MetricRow("Score Engine", "⚪ 未运行 · V0.2 数字乐谱")
                 MetricRow("Tracking Engine", "⚪ 未运行 · V0.4")
-                MetricRow("Microphone", "⚪ 未运行 · 未申请权限")
+                MetricRow("Microphone", audio.deviceName ?: if (audio.status == AudioStatus.IDLE) "未监听 · 尚未选择输入设备" else audio.statusMessage)
                 MetricRow("Backend / API", "不适用 · 本版无后端服务")
             }
         }
@@ -155,15 +163,42 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
             MonitorCard("练习与实时链路") {
                 MetricRow("当前练习模式", state.preparation?.mode?.label ?: "尚未设置")
                 MetricRow("目标连续正确次数", state.preparation?.repeatTarget?.toString() ?: "尚未设置")
-                MetricRow("当前练习状态", "未开始 · 仅保存练习准备")
-                MetricRow("LOCKED / 连续正确次数", "尚未采集")
+                MetricRow("当前练习状态", "未开始演奏判定 · 仅保存练习设置")
+                MetricRow("LOCKED / 连续正确次数", "未锁定 · 不确定结果不增减正确次数")
                 MetricRow("当前小节 / 拍 / 音符", "尚未采集")
-                MetricRow("目标音符 / 识别音符", "尚未采集")
+                MetricRow("目标音符 / 识别音符", "乐谱候选未接入 / 音高模型未接入")
                 MetricRow("频率 / 音高偏差", "尚未采集")
                 MetricRow("Score Following", "未运行")
-                MetricRow("Audio / Pitch Latency", "尚未采集")
+                MetricRow("Audio Latency", audioMetricNumber(audio.audioLatencyMs, "ms"))
+                MetricRow("Pitch / Recognition Latency", "尚未测量 · 没有识别模型")
                 MetricRow("Following / UI Cursor Latency", "尚未采集")
                 MetricRow("FPS / OMR Processing Time", "尚未采集")
+            }
+        }
+        item {
+            MonitorCard("音频输入与判断证据") {
+                MetricRow("采集状态", audio.statusMessage)
+                MetricRow("输入电平", audioMetricNumber(audio.inputLevelDbfs, "dBFS"))
+                MetricRow("估计底噪", audioMetricNumber(audio.noiseFloorDbfs, "dBFS"))
+                MetricRow("采样配置", "${audio.sampleRate} Hz · ${audio.frameSamples} 采样/帧")
+                MetricRow("本次有效帧数", audio.totalFrames.toString())
+                MetricRow("最近输入时间", audio.capturedAtNanos?.let { "${it / 1_000_000} ms · 单调时钟" } ?: "尚无有效帧")
+                MetricRow("削波", if (audio.totalFrames == 0L) "尚未采集" else if (audio.clipped) "警告 · 输入过强" else "当前帧未见削波")
+                MetricRow("起音状态", onsetStateLabel(audio.onsetState))
+                MetricRow("持续音状态", if (audio.onsetState == OnsetState.SUSTAIN) "持续输入 · 不重复累计起音" else "未确认持续输入")
+                MetricRow("候选起音次数", if (audio.totalFrames > 0) audio.onsetCount.toString() else "尚未采集")
+                MetricRow("起音证据分（0–1）", audioMetricNumber(audio.onsetConfidence, "", 2))
+                MetricRow("检测音符（DetectedNotes）", detectedNotesLabel(audio))
+                MetricRow("音符置信度", if (audio.notes.isEmpty()) "暂无 · 音高模型未接入" else audio.notes.joinToString("、") { audioMetricNumber(it.confidence, "", 2) })
+                MetricRow("当前乐谱候选", "尚未接入乐谱约束")
+                MetricRow("最终判断", finalDecisionLabel(audio.decision))
+                MetricRow("判断置信度", audioMetricNumber(audio.decisionConfidence, "", 2))
+                MetricRow("输入帧分析耗时", audioMetricNumber(audio.processingMs, "ms", 2))
+                Text(
+                    "起音证据分不是音符准确率。输入帧分析耗时是本地计算用时，不代表音频端到端延迟或识别延迟。钢琴校准与真实琴房效果尚未实测。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         item {

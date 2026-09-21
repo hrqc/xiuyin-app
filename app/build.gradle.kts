@@ -19,8 +19,8 @@ android {
         applicationId = "com.xiuyin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_COMMIT", "\"${gitValue("rev-parse", "HEAD")}\"")
         buildConfigField("String", "GIT_TAG", "\"${gitValue("describe", "--tags", "--exact-match", "HEAD")}\"")

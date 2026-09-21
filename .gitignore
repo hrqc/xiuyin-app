@@ -11,3 +11,5 @@ reports/
 tools/local/
 .env
 *.hprof
+__pycache__/
+*.py[cod]

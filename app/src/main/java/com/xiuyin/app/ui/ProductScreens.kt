@@ -44,6 +44,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.xiuyin.app.BuildConfig
+import com.xiuyin.app.audio.AudioSnapshot
 import com.xiuyin.app.data.PracticeMode
 import com.xiuyin.app.data.PracticePreparation
 import com.xiuyin.app.data.StudyPiece
@@ -59,7 +61,7 @@ fun HomeScreen(
         Surface(color = Color(0xFFEEE0CC), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(24.dp)) {
-                    Text("修音 / 基础版 V0.1", color = XiuyinNavy, style = MaterialTheme.typography.labelLarge)
+                    Text("修音 / V${BuildConfig.VERSION_NAME}", color = XiuyinNavy, style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.height(18.dp))
                     Text("从一张谱开始。", color = XiuyinInk, style = MaterialTheme.typography.displaySmall)
                     Spacer(Modifier.height(10.dp))
@@ -94,7 +96,7 @@ fun HomeScreen(
         }
         NoticeCard(
             "当前可以做什么",
-            "浏览示例谱、查看乐谱详情、保存练习设置。麦克风监听、实时跟谱和拍照识谱仍在后续版本计划中。",
+            "浏览示例谱、保存练习设置，并在练习页检查本机麦克风输入。音高识别、真实跟谱和拍照识谱尚未接入。",
         )
     }
 }
@@ -159,6 +161,10 @@ fun PracticeScreen(
     onChoosePiece: () -> Unit,
     onSavePreparation: (PracticePreparation) -> Unit,
     saving: Boolean,
+    audioSnapshot: AudioSnapshot,
+    onStartAudio: () -> Unit,
+    onStopAudio: () -> Unit,
+    onOpenPermissionSettings: () -> Unit,
 ) {
     if (piece == null) {
         ScreenColumn {
@@ -166,7 +172,7 @@ fun PracticeScreen(
             Text("先挑一首小练习。", style = MaterialTheme.typography.headlineMedium)
             Text("选好曲目，再保存适合自己的练习模式。", color = XiuyinMuted, style = MaterialTheme.typography.bodyLarge)
             Button(onClick = onChoosePiece, modifier = Modifier.fillMaxWidth()) { Text("选择练习曲目") }
-            NoticeCard("实时陪练尚未接入", "麦克风与单音识别计划在 V0.3 接入；真实跟谱与错音判断计划在 V0.4 接入。")
+            AudioInputCard(audioSnapshot, onStartAudio, onStopAudio, onOpenPermissionSettings)
         }
         return
     }
@@ -186,6 +192,7 @@ fun PracticeScreen(
         Text(piece.title, style = MaterialTheme.typography.headlineMedium)
         Text("${piece.keySignature} · ${piece.bars} 小节 · 建议 ${piece.bpm} BPM", style = MaterialTheme.typography.bodyMedium, color = XiuyinMuted)
         OutlinedButton(onClick = onChoosePiece) { Text("更换练习曲目") }
+        AudioInputCard(audioSnapshot, onStartAudio, onStopAudio, onOpenPermissionSettings)
         SectionHeading("选择练习方式", "本版保存选项，尚不执行演奏判断")
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PracticeMode.entries.forEach { mode ->
@@ -231,7 +238,7 @@ fun PracticeScreen(
         )
         NoticeCard(
             "实时陪练尚未接入",
-            "麦克风 · V0.3\n真实跟谱与错音判断 · V0.4\n连续正确 N 次强化判断 · V0.5",
+            "当前可检查收音与候选起音。音高、多音识别、乐谱约束、跟谱和强化判定将按后续小版本逐项验证。",
         )
     }
 }
