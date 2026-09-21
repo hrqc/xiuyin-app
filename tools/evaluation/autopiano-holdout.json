@@ -1,0 +1,148 @@
+{
+  "testKind": "independent_holdout_after_code_and_threshold_freeze",
+  "keys": {
+    "C2": "1",
+    "G2": "5",
+    "C3": "8",
+    "F3": "q",
+    "A3": "e",
+    "D4": "y",
+    "F4": "i",
+    "A4": "p",
+    "D5": "d",
+    "E5": "f",
+    "C4": "t"
+  },
+  "midi": {
+    "C2": 48,
+    "G2": 55,
+    "C3": 60,
+    "F3": 65,
+    "A3": 69,
+    "D4": 74,
+    "F4": 77,
+    "A4": 81,
+    "D5": 86,
+    "E5": 88,
+    "C4": 72
+  },
+  "groups": [
+    {
+      "label": "holdout-single-C2",
+      "notes": [
+        "C2"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-G2",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-C3",
+      "notes": [
+        "C3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-F3",
+      "notes": [
+        "F3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-A3",
+      "notes": [
+        "A3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-D5",
+      "notes": [
+        "D5"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-single-E5",
+      "notes": [
+        "E5"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "holdout-D-minor-triad",
+      "notes": [
+        "D4",
+        "F4",
+        "A4"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "holdout-F-major-triad",
+      "notes": [
+        "F3",
+        "A3",
+        "C4"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "repeat-G2-1",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-G2-2",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-G2-3",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-G2-4",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-G2-5",
+      "notes": [
+        "G2"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    }
+  ],
+  "truthBasis": "Independent actual AudioBuffer FFT: source-audit/spectral.json. Lowest harmonic lattice establishes C2=131.1Hz/MIDI48 and G2=195.6Hz/MIDI55 even though second harmonic is stronger. All playbackRate1/detune0. No recognizer output used."
+}

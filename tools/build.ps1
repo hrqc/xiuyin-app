@@ -1,4 +1,4 @@
-[CmdletBinding(PositionalBinding = $false)]
+﻿[CmdletBinding(PositionalBinding = $false)]
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$GradleArguments
@@ -28,6 +28,33 @@ try {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Required project file is missing: $path. No dependency will be downloaded automatically."
         }
+    }
+    # Offline fail-closed model guard: a successful APK build must contain the verified real engines.
+    $pianoInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'app/src/main/assets/piano/model-manifest.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    $omrInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'app/src/main/assets/omr/models.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    $modelFiles = @([pscustomobject]@{ path = 'tools/local/piano-model/bundle-assets/piano/onsets_frames_wavinput_no_offset_uni.tflite'; bytes = $pianoInfo.bytes; sha256 = $pianoInfo.sha256 })
+    foreach ($entry in $omrInfo.models) {
+        if ($entry.name -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Invalid OMR asset name in manifest' }
+        $modelFiles += [pscustomobject]@{ path = ('tools/local/omr-probe/bundle-assets/omr/models/' + $entry.name); bytes = $entry.bytes; sha256 = $entry.sha256 }
+    }
+    $runtimeInfo = Get-Content -LiteralPath (Join-Path $projectRoot 'app/libs/runtime-manifest.json') -Raw -Encoding utf8 | ConvertFrom-Json
+    foreach ($entry in $runtimeInfo) {
+        if (-not $entry.packaged) { continue }
+        $runtimeName = ([Uri]$entry.url).Segments[-1]
+        if ($runtimeName -notmatch '^[A-Za-z0-9_.-]+\.(aar|jar)$') { throw 'Invalid runtime artifact name' }
+        $modelFiles += [pscustomobject]@{ path = ('app/libs/' + $runtimeName); bytes = $entry.bytes; sha256 = $entry.sha256 }
+    }
+    function Read-Sha256([string]$Path) {
+        $stream = [IO.File]::OpenRead($Path)
+        $hasher = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '') }
+        finally { $hasher.Dispose(); $stream.Dispose() }
+    }
+    foreach ($entry in $modelFiles) {
+        $modelPath = Join-Path $projectRoot $entry.path
+        if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf)) { throw "Required local model missing: $modelPath. No download was attempted." }
+        $info = Get-Item -LiteralPath $modelPath
+        if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $info.Length -ne $entry.bytes -or (Read-Sha256 $modelPath) -ne $entry.sha256) { throw "Model integrity mismatch: $modelPath" }
     }
     $wrapperText = Get-Content -LiteralPath $wrapperProperties -Raw
     $urlMatch = [regex]::Match($wrapperText, '(?m)^distributionUrl=(.+)$')

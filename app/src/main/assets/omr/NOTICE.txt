@@ -1,0 +1,8 @@
+OMR code/model protocol adapted from Andromr and homr.
+Andromr: https://github.com/aicelen/Andromr
+Pinned commit: d8005852211026c5a67f6fededb6d4cede6680d5
+License: GNU Affero General Public License version 3. See AGPL-3.0.txt.
+Models: official Andromr v1.0 release, segnet 308 and transformer 414 INT8. Model ZIPs contain no separate license exception; do not relabel weights as MIT.
+Decoder derivative only exposes existing logits; original weights and argmax outputs are unchanged.
+ONNX Runtime MIT and LiteRT Apache-2.0 licenses concern those runtimes, not the OMR model/code.
+This local research build is not a public release.

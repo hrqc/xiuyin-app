@@ -1,0 +1,3115 @@
+{
+  "kind": "immutable original failing baseline; not stable release",
+  "frozenAt": "2026-09-21T13:24:20.279530+00:00",
+  "sourceHead": "be82469ed72241c607b8b5a6c05194b5f88f1a64",
+  "dirty": true,
+  "sourceFilesVerified": 171,
+  "artifacts": [
+    {
+      "file": "baseline-app.apk",
+      "sha256": "06dc9d8b10e18790d614844dc194494b5f535e9410e6d36348f7478873c7270a",
+      "bytes": 308267565
+    },
+    {
+      "file": "baseline-test.apk",
+      "sha256": "fe4b22fab78ccb5abe0629f558f7ac60a4984082bacc2c953a425319cb359502",
+      "bytes": 1360021
+    },
+    {
+      "file": "baseline-code.zip",
+      "sha256": "29486513871f9d2db41b2279128c596c2d6a4d5f46bb5688c831d59e4689da3d",
+      "bytes": 1470693
+    },
+    {
+      "file": "baseline-documents.zip",
+      "sha256": "c4bd57f2a63cf7e4811257ea038b3777b992d3886327ec012b8156b0b39f153e",
+      "bytes": 98309
+    }
+  ],
+  "originalRun": "20260921T122742473Z",
+  "originalProductAcceptance": "FAILED",
+  "stableFallback": "v0.2.0",
+  "nextPhaseVersion": "0.3.0-octave.1",
+  "audioAlgorithmChanged": false,
+  "productionFiles": [
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "f372c0ee579109ef8c8b72f445eb0e5ae6da1f0cc2892604d6d7cb011e417426",
+      "bytes": 1715
+    },
+    {
+      "path": "app/src/main/assets/licenses/Andromr-AGPL-3.0.txt",
+      "sha256": "a6de0dc64ada3b5141517c0167b109dfc2adb3d1d8b27ff1745f337331b2a5f4",
+      "bytes": 34309
+    },
+    {
+      "path": "app/src/main/assets/licenses/Andromr-upstream-oss-notices.txt",
+      "sha256": "c741d7a8a54a5299b1255ee39e91bbb51189ee3e5447c86f3bf2eb3c7df4071a",
+      "bytes": 377
+    },
+    {
+      "path": "app/src/main/assets/licenses/Apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "path": "app/src/main/assets/licenses/Bravura-OFL.txt",
+      "sha256": "bdca252186865f3b2c0e76da4a4e335c14ba1d37f80194fca254ddfa88e84fbf",
+      "bytes": 4420
+    },
+    {
+      "path": "app/src/main/assets/licenses/LiteRT-2.1.6-LICENSE.txt",
+      "sha256": "71c6915d04265772a0339bed47276942c678b45cc01534210ebe6984fd1aec65",
+      "bytes": 13575
+    },
+    {
+      "path": "app/src/main/assets/licenses/LiteRT-2.1.6-THIRD_PARTY_NOTICE.txt",
+      "sha256": "3d0d4d9717bc89bc18449c02c08ab314226e3203b77d3db384f4887d51dc25b3",
+      "bytes": 9026393
+    },
+    {
+      "path": "app/src/main/assets/licenses/ONNXRuntime-MIT.txt",
+      "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+      "bytes": 1094
+    },
+    {
+      "path": "app/src/main/assets/licenses/XIUYIN-THIRD-PARTY-NOTICE.txt",
+      "sha256": "5466c750eed965703a16e03012146d1c32c5ca5a90b1c18ead262de436ce6971",
+      "bytes": 2805
+    },
+    {
+      "path": "app/src/main/assets/licenses/license-provenance.json",
+      "sha256": "cdf07ddffb8ef9637c8d92f8bfc29c7dd19582fae848bf03ab1262ec9072e4f6",
+      "bytes": 2264
+    },
+    {
+      "path": "app/src/main/assets/omr/AGPL-3.0.txt",
+      "sha256": "a6de0dc64ada3b5141517c0167b109dfc2adb3d1d8b27ff1745f337331b2a5f4",
+      "bytes": 34309
+    },
+    {
+      "path": "app/src/main/assets/omr/NOTICE.txt",
+      "sha256": "52289779ad9c6e2abbda0261fc59d7931716ddc29a0606092627d759fe76b5bc",
+      "bytes": 639
+    },
+    {
+      "path": "app/src/main/assets/omr/models.json",
+      "sha256": "d7ce0ff0187d755ed08ad8d4ccc727e42647c107c3f8af6ea80ccf4db85098aa",
+      "bytes": 659
+    },
+    {
+      "path": "app/src/main/assets/omr/vocabulary.json",
+      "sha256": "61314f690a9251c76c01db4a939e69ad282fdb1b1451b436fd2f6d3336673787",
+      "bytes": 6987
+    },
+    {
+      "path": "app/src/main/assets/piano/model-manifest.json",
+      "sha256": "7c8c56c502f871e196b8ea0d509b0cde86e73a53b643c6af6bff9d221788e491",
+      "bytes": 1140
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/AppViewModel.kt",
+      "sha256": "ed3653069d4b0aed11f951a1cb71444e50418ea50d83c5cad7de5a4eda112bb7",
+      "bytes": 7435
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/MainActivity.kt",
+      "sha256": "1ddb97c7db761f8dd1e2f99f21ee131c7138788f78f338f1817ab8066e8bd56e",
+      "bytes": 25869
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/AudioModels.kt",
+      "sha256": "401cf20433c4cc6ce59509286df25396cc106328d088a4dcc4607171297175db",
+      "bytes": 1656
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/MicrophoneEngine.kt",
+      "sha256": "640535063dda8dd65018c7d55469a001ef855f23cefc9d75736da5972f131189",
+      "bytes": 21136
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/OnsetAnalyzer.kt",
+      "sha256": "4263de89df7180a061b917876fca2e149e9acaf7521ef97d81788e49d5ea23dc",
+      "bytes": 7195
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationModels.kt",
+      "sha256": "0db5d4f0bd050c43786e1a44ecfb2eac1d4fe2703752055606d9cc199b8b2044",
+      "bytes": 2288
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationScreen.kt",
+      "sha256": "2f1965782c063548bee7c55d9be7cc367db922187d82f2c0d800b3ee4508fec9",
+      "bytes": 6948
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationStores.kt",
+      "sha256": "4b04a00dbd08b94216cfd78cc5ea0d36188002c08be3ea07a84706b6ccc5bcbd",
+      "bytes": 11356
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationViewModel.kt",
+      "sha256": "730927df8254682153cd06b307dc1f5b8fab7e71dfc95b3124ddadd214ef960e",
+      "bytes": 10669
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/PcmRingBuffer.kt",
+      "sha256": "368ccd4cffe0ebea6e61feeabc3639aadfc42a9ee71785833b11decb683f867b",
+      "bytes": 2204
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/AppDatabase.kt",
+      "sha256": "74a1590c38994f12ef8310d8b72066e7995ec764d8795465c6d371db64c8111a",
+      "bytes": 6755
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/Models.kt",
+      "sha256": "29d8afda388428a6d5f7c615df73d6624ce07ff0a8d38544e818d5561dad0640",
+      "bytes": 703
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/SampleLibrary.kt",
+      "sha256": "5214add092464d699be499d263e3ddcd58444f84876dc9c138b2c9e87d2945bc",
+      "bytes": 1696
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiCodec.kt",
+      "sha256": "2955c0d6a4c80128137e8b53f6b8457406635556dde28841749a53ebb99c2343",
+      "bytes": 13712
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiExporter.kt",
+      "sha256": "df9c283a8a927b723157639cfb492ab336e712a6ad0faddaf4db9e6a0dbda2dc",
+      "bytes": 7658
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiImportService.kt",
+      "sha256": "0c312cdadd7f0bd5e8debea060907cd83702c44398c3a11361a134cac1c4d419",
+      "bytes": 9425
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiScoreConverter.kt",
+      "sha256": "57db7a4458c43a5cc1f453ccf6bc860e47d04dba221dfd556ea198cd2d6c20d8",
+      "bytes": 8270
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/monitor/DashboardScreen.kt",
+      "sha256": "ed1e67801a14edff6fdbd2ac3f6261028eade586d21c514212a8f17068225511",
+      "bytes": 22333
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/monitor/LogFilter.kt",
+      "sha256": "a1c736a02c12053771de7b93e22fb814946bb12f93e32c511c6a712226196d6c",
+      "bytes": 671
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/NativeOmrModels.java",
+      "sha256": "fee7830f50ccd80a2de88d720a59eae97a0dc1100e87229996c18b9a61028a55",
+      "bytes": 10384
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrImportService.kt",
+      "sha256": "a31c8f9a6c3e5fdc95629598264a0752834fd6fd6196d52222fda0b4e4239dae",
+      "bytes": 22831
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrPageRecognizer.kt",
+      "sha256": "8c1a209dc5b95f85151aa54f10c0420a555c2f6350df44fcfa23492fe9fe04a3",
+      "bytes": 12696
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrScoreAssembler.kt",
+      "sha256": "78d77fceb6c40122b573d96d4db6345cc0740dba14e6e221f6fa583ca690d7ef",
+      "bytes": 14213
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/AudioRecognitionEngine.kt",
+      "sha256": "47bd8b047885d1d676dbac655f76f0ba4ffa6ccb3e6a70229fd883b851b9972c",
+      "bytes": 791
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoAcousticEvidence.kt",
+      "sha256": "b00a8413ae21cc6126b294a17f504c9f562672cbd8c2fd27e925bc6ffec4443c",
+      "bytes": 3110
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoEvidenceTracker.kt",
+      "sha256": "8d7f0c868b27722de641af83e192786673e306e334fb41b33fc0cc69db03d919",
+      "bytes": 4975
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoModel.kt",
+      "sha256": "e31347dfaaec86e8d89ef0891806b60884c85e9bfb8c45e7fc16ba305ad8bebf",
+      "bytes": 6435
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionEngine.kt",
+      "sha256": "a75d576a4c5e3badfd84979f6e0516bcaef92cc482476731c2dff644a32edf77",
+      "bytes": 5433
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionModels.kt",
+      "sha256": "c05782cd6604389285b949ae816f331edda891314f3737b662b2bda8ae8ec55a",
+      "bytes": 1393
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionProcessor.kt",
+      "sha256": "7b6470685442b1241e0700069d3ecec2e6779c5f2ecd207967ec8daf9bb22b75",
+      "bytes": 3717
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/ResidualHarmonicEvidence.kt",
+      "sha256": "9f8f1a6164ae241cafaa3150da2bd764b66ff27ead16258ed3c77e4b71ac1463",
+      "bytes": 6481
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/Streaming48kTo16k.kt",
+      "sha256": "3f4b4338cd913c9b99cfc76398f3dd95d97bf35782a446e855c57e20ebcf3154",
+      "bytes": 2221
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/playback/ScorePlaybackEngine.kt",
+      "sha256": "c8692c9ef27bdcc4137187382161939d0f0bd3a76d9cca1d5ce7f71142f9f216",
+      "bytes": 10866
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/playback/ScorePlaybackPlan.kt",
+      "sha256": "ccf6fb858414d4d59bb5d0ac58523576a32ee80ec5bed4644def2ff351141b4f",
+      "bytes": 1261
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeCompanionScreen.kt",
+      "sha256": "dbf95480d89c16556ea3be925f62af6e3936a3bbf81c7be38bc8ce0e599256b5",
+      "bytes": 11175
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeReportStore.kt",
+      "sha256": "e09c1acb6ad6f97da23bb94abae8a2ebf9ba97cf8bd335fa941cf1e4ba3ef123",
+      "bytes": 9553
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeSession.kt",
+      "sha256": "9ac7ee5e0bc43ad429cccb1666a4f54525e629f70ad14997ef534c777c17cd6d",
+      "bytes": 4275
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeViewModel.kt",
+      "sha256": "60c6a8c5794da349bb4ecb2d985bc616e7b0e3113ab0ccf0ecadcfe6b0a7f2b7",
+      "bytes": 11280
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/ScoreFollower.kt",
+      "sha256": "41034d6a66e898d8b5710bb1046fe67a40544404abe91da01f6bdd1b23735b6f",
+      "bytes": 12987
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/BoundedScoreReader.kt",
+      "sha256": "a9f32bafa650c25275e618c543598e7ac376fadae10745c87ae67dcdba14a9bf",
+      "bytes": 10990
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/BuiltinScoreDocument.kt",
+      "sha256": "f98253e888242aca5e8988533907463e7ed8b7bb199567017c4f0245e369127b",
+      "bytes": 1582
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/DigitalScore.kt",
+      "sha256": "4d74c2597ba6df6d6f0f6c431436fbdfbc55a9102adee0d5855f016247453484",
+      "bytes": 4566
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/MusicXmlParser.kt",
+      "sha256": "7cdd446ef13e1352cda761047ab3bcc826f19205b79ed6ee702c6e27b01d2f03",
+      "bytes": 24083
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreEditing.kt",
+      "sha256": "99b8745472dc38bdbb164dae188a7b559b242d33373091a0f1150278b65c04bb",
+      "bytes": 16002
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreImportViewModel.kt",
+      "sha256": "d9f4c7e663728f538af2bb23eb1e3b6356764270740b6f1c5b5b24ffff605204",
+      "bytes": 20984
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreJsonCodec.kt",
+      "sha256": "db97b79e6220c1cd4e09dad350bb54c82c76d2f961a30dadbea6000f9498e921",
+      "bytes": 15953
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreMetadata.kt",
+      "sha256": "fdecba67f2db326fe59fda46c66781f6a024e9fbb2ade13af5877b5e37548461",
+      "bytes": 7295
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreMetadataDatabase.kt",
+      "sha256": "a3ecdae15e247e63d1c27b857465878b4a83c0772fedca8cb103e3683bf48def",
+      "bytes": 14422
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreRevisionStore.kt",
+      "sha256": "4066eb666db7ccac235a7772113d081fea7386eb71647ab8159071aaceaeaace",
+      "bytes": 17243
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreSourceStore.kt",
+      "sha256": "9aa79d2192f0cc2d4c70556a57ddaeaed937954b59cda5e8ec0febcc98aa5379",
+      "bytes": 10177
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreTimeline.kt",
+      "sha256": "5db28c51b3150df15f60a5bd7282dc949162b23147b7d59d6be6fdffdc11e0fe",
+      "bytes": 7459
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreWorkbenchViewModel.kt",
+      "sha256": "76ccc3e8cf1fc54528a81363345d9038433acf494fc08e2ecede5173edbb1c22",
+      "bytes": 10477
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/AudioInputCard.kt",
+      "sha256": "0c73c289c6edf5c47c9267d8d65af55e97bf646a52323c2cac33665277a838f0",
+      "bytes": 9347
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/DigitalScoreScreen.kt",
+      "sha256": "3b3c1f252b3110be1a475728a351f1472976eaf1cb1ab34263ecce315ccf414c",
+      "bytes": 25390
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/MetadataEditor.kt",
+      "sha256": "32e787f4a5b55c7379443f07c8d13b89e9d2e2a057e40935b127eea68564c15e",
+      "bytes": 10944
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/NotationMeasure.kt",
+      "sha256": "2f8596050c20152a757d2e4258536e5f34a36e9c53f30df4dbf60b9fd3c158f9",
+      "bytes": 15923
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ProductScreens.kt",
+      "sha256": "387bd87b7e56013400a9ccb10ebddd8d60bdd76c8c11d797e042ab068efa13fb",
+      "bytes": 18163
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ScorePreview.kt",
+      "sha256": "374743eb7a363661db92e832c4c34d49cc2fc713f4c6d331e227ee4836948746",
+      "bytes": 7601
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ScoreWorkbenchScreen.kt",
+      "sha256": "96eb8f5c2966aa659616627d6bee2148048470e22f0db2a42ba9b956f9e8376f",
+      "bytes": 27470
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/SourceReference.kt",
+      "sha256": "23e641882021b2fa07f3ab28fd2512a8b0a183254f15770f073b8a93ecff975b",
+      "bytes": 6269
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/Theme.kt",
+      "sha256": "b0e2fcdf3bc3fb490005ac6b4bc660038c6aa46883430b97bd584ad4c80ebfea",
+      "bytes": 3180
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher.xml",
+      "sha256": "85b09143f35965ec9793b62f59cfae58a8d5cc2f465c24141c695de4c82c221f",
+      "bytes": 551
+    },
+    {
+      "path": "app/src/main/res/font/bravura.otf",
+      "sha256": "cdf0f893ee1fdb64b7f6713d71ee0dcfc349c0ac01429a8e451b01a9e79f5f3b",
+      "bytes": 889228
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "be06b25f14961997f7426b1fc612c749f235e66a59b6b94067601100d650fb91",
+      "bytes": 69
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "sha256": "8836b6f76cfc36fe34310acaf79df8f90c528f12d1f67a2f8700cbd06824f54f",
+      "bytes": 362
+    },
+    {
+      "path": "app/src/main/res/xml/backup_rules.xml",
+      "sha256": "16b285a3b7c822a6378dc7372622307db1545935d8cdc4072e68d396f1e9de5b",
+      "bytes": 255
+    },
+    {
+      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "8229fb932c72312facb76c9d20270f2dea3d251e1210ec710812608487508246",
+      "bytes": 592
+    },
+    {
+      "path": "app/src/main/res/xml/score_file_paths.xml",
+      "sha256": "9fc55372a0dc4b3e91b87007760dc382e2ca90e30d7a6156ccbbdf6ebadef553",
+      "bytes": 171
+    },
+    {
+      "path": "tools/evaluation/evaluate-practice-audio.py",
+      "sha256": "7edecddcdb02cd0a4d40d759672c6f13740d3c35fe8732ccc098922371b13a8b",
+      "bytes": 19866
+    }
+  ],
+  "originalSourceFiles": [
+    {
+      "path": ".gitignore",
+      "sha256": "89b79089f8d4bc362091b66a842524b6d26fbf2e0196e22b2da3fe8cddc0f9d3",
+      "bytes": 360
+    },
+    {
+      "path": "app/build.gradle.kts",
+      "sha256": "322cba55627d7335a409387120129126891303f9dd4c5994252d5a6b07c4a6ac",
+      "bytes": 4483
+    },
+    {
+      "path": "app/libs/ai-delivery-0.1.1-alpha01.pom",
+      "sha256": "832db08f45e677a8c862653d906cd9cf717d42ffacd7679c6e76ca406c237347",
+      "bytes": 1562
+    },
+    {
+      "path": "app/libs/asset-delivery-2.3.0.pom",
+      "sha256": "c3a9b259264c569111ff91e4d6209541c2ba948c78dbce21a2e352ded429a408",
+      "bytes": 1548
+    },
+    {
+      "path": "app/libs/core-common-2.0.4.pom",
+      "sha256": "8dde961cb7e10ca5fa0e55261e7babc1e340bf5972ba3538c7cf4e34d338efbe",
+      "bytes": 657
+    },
+    {
+      "path": "app/libs/failureaccess-1.0.3.pom",
+      "sha256": "c54beff37f6d42d43e14722d54a522c9ad51ef97fc5b79277e62a3ebf882f3bb",
+      "bytes": 5560
+    },
+    {
+      "path": "app/libs/guava-33.5.0-android.pom",
+      "sha256": "7d3d644b38bac031c615c3e8ba7e00dc2135bbadc11ea59a48dbcedc422a62a0",
+      "bytes": 9865
+    },
+    {
+      "path": "app/libs/kotlinx-coroutines-guava-1.11.0.pom",
+      "sha256": "8c87fe6cc8b3278f2162ee0451dbda9835bedd7cfb8dae555dfe92f77debbeef",
+      "bytes": 2369
+    },
+    {
+      "path": "app/libs/litert-2.1.6.pom",
+      "sha256": "fd28f0f4c91e9ac308baa94375e323567fd3265346851129c1a19279fac860b1",
+      "bytes": 1167
+    },
+    {
+      "path": "app/libs/litert-api-2.1.6.pom",
+      "sha256": "6201c11d2a5b13dc99da67ddeb8322a2a11246a55b729a4804f771b441d2ea5a",
+      "bytes": 1660
+    },
+    {
+      "path": "app/libs/onnxruntime-android-1.27.0.pom",
+      "sha256": "037447051e6f599843f880ea8041b34de95110446bcc98309484977649615728",
+      "bytes": 1520
+    },
+    {
+      "path": "app/libs/play-services-basement-18.4.0.pom",
+      "sha256": "05ca7c0ace0d6260931f97ed32c60ce598071ff560d3fa44f49e6f0695d2b687",
+      "bytes": 1336
+    },
+    {
+      "path": "app/libs/play-services-tasks-18.2.0.pom",
+      "sha256": "6b99c48a895d155e58abcee66cc22146db83abd5d84caf6c8f7a2aea9b1bcd21",
+      "bytes": 952
+    },
+    {
+      "path": "app/libs/runtime-manifest.json",
+      "sha256": "5cb498a577ed6023da341bbcba967bc0f498bd9fa114d46786691eab7165d3b3",
+      "bytes": 3352
+    },
+    {
+      "path": "app/src/androidTest/AndroidManifest.xml",
+      "sha256": "ac2c903f2e83e7830db051595a366140c28f3b6d48e42e6b474d458894eb82b0",
+      "bytes": 753
+    },
+    {
+      "path": "app/src/androidTest/assets/scores/import-reference.musicxml",
+      "sha256": "0f59960876112d9dbec2a5803bb5b1928267095876304f4070e7d2a0156e1b40",
+      "bytes": 1568
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/AudioLifecycleUiTest.kt",
+      "sha256": "b376980f266140295f2d15ca6dfd17c676240bbce6ce3707cbc4ab2f05caa76f",
+      "bytes": 6567
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/FoundationUiTest.kt",
+      "sha256": "1a845555ba814afc7c3d095c603abc2fbacd9569e77cb7afb6ffa5087a646007",
+      "bytes": 14312
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/audio/MicrophoneEngineTest.kt",
+      "sha256": "d87041d790abd76467ecbb78548bd7d6488a2ee6d94368daf1bf4a26808de25d",
+      "bytes": 7818
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/calibration/CalibrationUiTest.kt",
+      "sha256": "8c0575b69c7130586238e84440a6f820ee995d1df0639b9d6a255e26f8537ca7",
+      "bytes": 4283
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/data/AppDatabaseTest.kt",
+      "sha256": "e87f73180bf182fe765a3d2942fe12608cc31fe36b0e54ca4d13d95cfc865680",
+      "bytes": 5537
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/evaluation/RoomRecordingRunner.kt",
+      "sha256": "504e17bd56bbc54db794454ea4102f9c42be08087a6f575d0219af8becd432c3",
+      "bytes": 27145
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/midi/MidiImportInstrumentedTest.kt",
+      "sha256": "fd62e1680f6f424590dc4385a2ef18a28060b548a124d33b937fc1941643004b",
+      "bytes": 4566
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/midi/MidiMetadataViewModelTest.kt",
+      "sha256": "5c0962dfbda60501eed702f0b17d171ebba152c89345a2470e3dcdc187c1c272",
+      "bytes": 6215
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/omr/OmrEngineInstrumentedTest.kt",
+      "sha256": "00d63f5d2a45c4959741fd910e151d2958049412d2ca48b81e4e657b4d07ae06",
+      "bytes": 8091
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/omr/OmrImportBudgetInstrumentedTest.kt",
+      "sha256": "93ac888c4b0bf50dd9b3f75c7c4fa9109071d2baac8900eab4b31f2b4430de7d",
+      "bytes": 2024
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/omr/OmrSemanticBoundaryTest.kt",
+      "sha256": "213eb32046784dbed5c10fe02f0470434fa053ea5a724a7457de78a4b7299b59",
+      "bytes": 3149
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/pitch/PianoModelInstrumentedTest.kt",
+      "sha256": "1cba5f01154bcdd91d052a4071a468420cfb1be34100c57433815f5d485ffb2b",
+      "bytes": 1733
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/pitch/RoomPianoReplayTest.kt",
+      "sha256": "64922cb47754ee8e08f257de5de611f93d32fe9878e510ba7adf3a87b546ac45",
+      "bytes": 11998
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/practice/PracticeFrameLifecycleTest.kt",
+      "sha256": "0e5e990d07ed8de1180a726575bdb147379544696c08ef3074b769786e8d5fa3",
+      "bytes": 10686
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/practice/PracticePcmIntegrationTest.kt",
+      "sha256": "6765a162a0b185d5594834caae77d1a813d9510421af2ebdaf7eff28e08c3288",
+      "bytes": 15034
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/BoundedScoreReaderTest.kt",
+      "sha256": "f21cd855e266fe17dbaa25d09e13ae6809058fee5192e655d7c10994f3cce7ef",
+      "bytes": 10323
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/MusicXmlAndroidParserTest.kt",
+      "sha256": "061eaefb1aa24cc31e97d64eb15dad18276806228c7a9c1acd811907a66c16aa",
+      "bytes": 1423
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreImportUiTest.kt",
+      "sha256": "b10b4c2b7731fc578e495b12574441b96879c46151bad613a5853d97c7bed1ca",
+      "bytes": 8926
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreMetadataDatabaseTest.kt",
+      "sha256": "a2bd2db269211de2e7481672ce8728415c96b21a4f7ca9379ded70f94bc524f9",
+      "bytes": 8694
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreMetadataUiTest.kt",
+      "sha256": "fc2c56a535c6390ae9eb7358c9c080445466206c85a0825779669b7115ce1dd9",
+      "bytes": 22740
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreRevisionStoreTest.kt",
+      "sha256": "37d78366694480ce127daab846e667be790a02e0ab36bc5d375377b90fe0d3b3",
+      "bytes": 13177
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreSourceStoreTest.kt",
+      "sha256": "2a6478a108ab8f37000ec4892d350551b06eeba60784f328a6ce6632cf199512",
+      "bytes": 11927
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/score/ScoreWorkbenchUiTest.kt",
+      "sha256": "84ac63705deb542ac78d305577542c563cb52dc345ef5b05baebead815514551",
+      "bytes": 8595
+    },
+    {
+      "path": "app/src/androidTest/java/com/xiuyin/app/ui/AudioInputCardTest.kt",
+      "sha256": "f58b1f8ed1838984b876eeffb808fba0d47a574f00b7bd4f36056c7bb5a8c250",
+      "bytes": 8657
+    },
+    {
+      "path": "app/src/main/AndroidManifest.xml",
+      "sha256": "f372c0ee579109ef8c8b72f445eb0e5ae6da1f0cc2892604d6d7cb011e417426",
+      "bytes": 1715
+    },
+    {
+      "path": "app/src/main/assets/licenses/Andromr-AGPL-3.0.txt",
+      "sha256": "a6de0dc64ada3b5141517c0167b109dfc2adb3d1d8b27ff1745f337331b2a5f4",
+      "bytes": 34309
+    },
+    {
+      "path": "app/src/main/assets/licenses/Andromr-upstream-oss-notices.txt",
+      "sha256": "c741d7a8a54a5299b1255ee39e91bbb51189ee3e5447c86f3bf2eb3c7df4071a",
+      "bytes": 377
+    },
+    {
+      "path": "app/src/main/assets/licenses/Apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "bytes": 11358
+    },
+    {
+      "path": "app/src/main/assets/licenses/Bravura-OFL.txt",
+      "sha256": "bdca252186865f3b2c0e76da4a4e335c14ba1d37f80194fca254ddfa88e84fbf",
+      "bytes": 4420
+    },
+    {
+      "path": "app/src/main/assets/licenses/LiteRT-2.1.6-LICENSE.txt",
+      "sha256": "71c6915d04265772a0339bed47276942c678b45cc01534210ebe6984fd1aec65",
+      "bytes": 13575
+    },
+    {
+      "path": "app/src/main/assets/licenses/LiteRT-2.1.6-THIRD_PARTY_NOTICE.txt",
+      "sha256": "3d0d4d9717bc89bc18449c02c08ab314226e3203b77d3db384f4887d51dc25b3",
+      "bytes": 9026393
+    },
+    {
+      "path": "app/src/main/assets/licenses/ONNXRuntime-MIT.txt",
+      "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+      "bytes": 1094
+    },
+    {
+      "path": "app/src/main/assets/licenses/XIUYIN-THIRD-PARTY-NOTICE.txt",
+      "sha256": "5466c750eed965703a16e03012146d1c32c5ca5a90b1c18ead262de436ce6971",
+      "bytes": 2805
+    },
+    {
+      "path": "app/src/main/assets/licenses/license-provenance.json",
+      "sha256": "cdf07ddffb8ef9637c8d92f8bfc29c7dd19582fae848bf03ab1262ec9072e4f6",
+      "bytes": 2264
+    },
+    {
+      "path": "app/src/main/assets/omr/AGPL-3.0.txt",
+      "sha256": "a6de0dc64ada3b5141517c0167b109dfc2adb3d1d8b27ff1745f337331b2a5f4",
+      "bytes": 34309
+    },
+    {
+      "path": "app/src/main/assets/omr/NOTICE.txt",
+      "sha256": "52289779ad9c6e2abbda0261fc59d7931716ddc29a0606092627d759fe76b5bc",
+      "bytes": 639
+    },
+    {
+      "path": "app/src/main/assets/omr/models.json",
+      "sha256": "d7ce0ff0187d755ed08ad8d4ccc727e42647c107c3f8af6ea80ccf4db85098aa",
+      "bytes": 659
+    },
+    {
+      "path": "app/src/main/assets/omr/vocabulary.json",
+      "sha256": "61314f690a9251c76c01db4a939e69ad282fdb1b1451b436fd2f6d3336673787",
+      "bytes": 6987
+    },
+    {
+      "path": "app/src/main/assets/piano/model-manifest.json",
+      "sha256": "7c8c56c502f871e196b8ea0d509b0cde86e73a53b643c6af6bff9d221788e491",
+      "bytes": 1140
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/AppViewModel.kt",
+      "sha256": "ed3653069d4b0aed11f951a1cb71444e50418ea50d83c5cad7de5a4eda112bb7",
+      "bytes": 7435
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/MainActivity.kt",
+      "sha256": "1ddb97c7db761f8dd1e2f99f21ee131c7138788f78f338f1817ab8066e8bd56e",
+      "bytes": 25869
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/AudioModels.kt",
+      "sha256": "401cf20433c4cc6ce59509286df25396cc106328d088a4dcc4607171297175db",
+      "bytes": 1656
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/MicrophoneEngine.kt",
+      "sha256": "640535063dda8dd65018c7d55469a001ef855f23cefc9d75736da5972f131189",
+      "bytes": 21136
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/audio/OnsetAnalyzer.kt",
+      "sha256": "4263de89df7180a061b917876fca2e149e9acaf7521ef97d81788e49d5ea23dc",
+      "bytes": 7195
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationModels.kt",
+      "sha256": "0db5d4f0bd050c43786e1a44ecfb2eac1d4fe2703752055606d9cc199b8b2044",
+      "bytes": 2288
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationScreen.kt",
+      "sha256": "2f1965782c063548bee7c55d9be7cc367db922187d82f2c0d800b3ee4508fec9",
+      "bytes": 6948
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationStores.kt",
+      "sha256": "4b04a00dbd08b94216cfd78cc5ea0d36188002c08be3ea07a84706b6ccc5bcbd",
+      "bytes": 11356
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/CalibrationViewModel.kt",
+      "sha256": "730927df8254682153cd06b307dc1f5b8fab7e71dfc95b3124ddadd214ef960e",
+      "bytes": 10669
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/calibration/PcmRingBuffer.kt",
+      "sha256": "368ccd4cffe0ebea6e61feeabc3639aadfc42a9ee71785833b11decb683f867b",
+      "bytes": 2204
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/AppDatabase.kt",
+      "sha256": "74a1590c38994f12ef8310d8b72066e7995ec764d8795465c6d371db64c8111a",
+      "bytes": 6755
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/Models.kt",
+      "sha256": "29d8afda388428a6d5f7c615df73d6624ce07ff0a8d38544e818d5561dad0640",
+      "bytes": 703
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/data/SampleLibrary.kt",
+      "sha256": "5214add092464d699be499d263e3ddcd58444f84876dc9c138b2c9e87d2945bc",
+      "bytes": 1696
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiCodec.kt",
+      "sha256": "2955c0d6a4c80128137e8b53f6b8457406635556dde28841749a53ebb99c2343",
+      "bytes": 13712
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiExporter.kt",
+      "sha256": "df9c283a8a927b723157639cfb492ab336e712a6ad0faddaf4db9e6a0dbda2dc",
+      "bytes": 7658
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiImportService.kt",
+      "sha256": "0c312cdadd7f0bd5e8debea060907cd83702c44398c3a11361a134cac1c4d419",
+      "bytes": 9425
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/midi/MidiScoreConverter.kt",
+      "sha256": "57db7a4458c43a5cc1f453ccf6bc860e47d04dba221dfd556ea198cd2d6c20d8",
+      "bytes": 8270
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/monitor/DashboardScreen.kt",
+      "sha256": "ed1e67801a14edff6fdbd2ac3f6261028eade586d21c514212a8f17068225511",
+      "bytes": 22333
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/monitor/LogFilter.kt",
+      "sha256": "a1c736a02c12053771de7b93e22fb814946bb12f93e32c511c6a712226196d6c",
+      "bytes": 671
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/NativeOmrModels.java",
+      "sha256": "fee7830f50ccd80a2de88d720a59eae97a0dc1100e87229996c18b9a61028a55",
+      "bytes": 10384
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrImportService.kt",
+      "sha256": "a31c8f9a6c3e5fdc95629598264a0752834fd6fd6196d52222fda0b4e4239dae",
+      "bytes": 22831
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrPageRecognizer.kt",
+      "sha256": "8c1a209dc5b95f85151aa54f10c0420a555c2f6350df44fcfa23492fe9fe04a3",
+      "bytes": 12696
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/omr/OmrScoreAssembler.kt",
+      "sha256": "78d77fceb6c40122b573d96d4db6345cc0740dba14e6e221f6fa583ca690d7ef",
+      "bytes": 14213
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/AudioRecognitionEngine.kt",
+      "sha256": "47bd8b047885d1d676dbac655f76f0ba4ffa6ccb3e6a70229fd883b851b9972c",
+      "bytes": 791
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoAcousticEvidence.kt",
+      "sha256": "b00a8413ae21cc6126b294a17f504c9f562672cbd8c2fd27e925bc6ffec4443c",
+      "bytes": 3110
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoEvidenceTracker.kt",
+      "sha256": "8d7f0c868b27722de641af83e192786673e306e334fb41b33fc0cc69db03d919",
+      "bytes": 4975
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoModel.kt",
+      "sha256": "e31347dfaaec86e8d89ef0891806b60884c85e9bfb8c45e7fc16ba305ad8bebf",
+      "bytes": 6435
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionEngine.kt",
+      "sha256": "a75d576a4c5e3badfd84979f6e0516bcaef92cc482476731c2dff644a32edf77",
+      "bytes": 5433
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionModels.kt",
+      "sha256": "c05782cd6604389285b949ae816f331edda891314f3737b662b2bda8ae8ec55a",
+      "bytes": 1393
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/PianoRecognitionProcessor.kt",
+      "sha256": "7b6470685442b1241e0700069d3ecec2e6779c5f2ecd207967ec8daf9bb22b75",
+      "bytes": 3717
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/ResidualHarmonicEvidence.kt",
+      "sha256": "9f8f1a6164ae241cafaa3150da2bd764b66ff27ead16258ed3c77e4b71ac1463",
+      "bytes": 6481
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/pitch/Streaming48kTo16k.kt",
+      "sha256": "3f4b4338cd913c9b99cfc76398f3dd95d97bf35782a446e855c57e20ebcf3154",
+      "bytes": 2221
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/playback/ScorePlaybackEngine.kt",
+      "sha256": "c8692c9ef27bdcc4137187382161939d0f0bd3a76d9cca1d5ce7f71142f9f216",
+      "bytes": 10866
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/playback/ScorePlaybackPlan.kt",
+      "sha256": "ccf6fb858414d4d59bb5d0ac58523576a32ee80ec5bed4644def2ff351141b4f",
+      "bytes": 1261
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeCompanionScreen.kt",
+      "sha256": "dbf95480d89c16556ea3be925f62af6e3936a3bbf81c7be38bc8ce0e599256b5",
+      "bytes": 11175
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeReportStore.kt",
+      "sha256": "e09c1acb6ad6f97da23bb94abae8a2ebf9ba97cf8bd335fa941cf1e4ba3ef123",
+      "bytes": 9553
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeSession.kt",
+      "sha256": "9ac7ee5e0bc43ad429cccb1666a4f54525e629f70ad14997ef534c777c17cd6d",
+      "bytes": 4275
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/PracticeViewModel.kt",
+      "sha256": "60c6a8c5794da349bb4ecb2d985bc616e7b0e3113ab0ccf0ecadcfe6b0a7f2b7",
+      "bytes": 11280
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/practice/ScoreFollower.kt",
+      "sha256": "41034d6a66e898d8b5710bb1046fe67a40544404abe91da01f6bdd1b23735b6f",
+      "bytes": 12987
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/BoundedScoreReader.kt",
+      "sha256": "a9f32bafa650c25275e618c543598e7ac376fadae10745c87ae67dcdba14a9bf",
+      "bytes": 10990
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/BuiltinScoreDocument.kt",
+      "sha256": "f98253e888242aca5e8988533907463e7ed8b7bb199567017c4f0245e369127b",
+      "bytes": 1582
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/DigitalScore.kt",
+      "sha256": "4d74c2597ba6df6d6f0f6c431436fbdfbc55a9102adee0d5855f016247453484",
+      "bytes": 4566
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/MusicXmlParser.kt",
+      "sha256": "7cdd446ef13e1352cda761047ab3bcc826f19205b79ed6ee702c6e27b01d2f03",
+      "bytes": 24083
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreEditing.kt",
+      "sha256": "99b8745472dc38bdbb164dae188a7b559b242d33373091a0f1150278b65c04bb",
+      "bytes": 16002
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreImportViewModel.kt",
+      "sha256": "d9f4c7e663728f538af2bb23eb1e3b6356764270740b6f1c5b5b24ffff605204",
+      "bytes": 20984
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreJsonCodec.kt",
+      "sha256": "db97b79e6220c1cd4e09dad350bb54c82c76d2f961a30dadbea6000f9498e921",
+      "bytes": 15953
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreMetadata.kt",
+      "sha256": "fdecba67f2db326fe59fda46c66781f6a024e9fbb2ade13af5877b5e37548461",
+      "bytes": 7295
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreMetadataDatabase.kt",
+      "sha256": "a3ecdae15e247e63d1c27b857465878b4a83c0772fedca8cb103e3683bf48def",
+      "bytes": 14422
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreRevisionStore.kt",
+      "sha256": "4066eb666db7ccac235a7772113d081fea7386eb71647ab8159071aaceaeaace",
+      "bytes": 17243
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreSourceStore.kt",
+      "sha256": "9aa79d2192f0cc2d4c70556a57ddaeaed937954b59cda5e8ec0febcc98aa5379",
+      "bytes": 10177
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreTimeline.kt",
+      "sha256": "5db28c51b3150df15f60a5bd7282dc949162b23147b7d59d6be6fdffdc11e0fe",
+      "bytes": 7459
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/score/ScoreWorkbenchViewModel.kt",
+      "sha256": "76ccc3e8cf1fc54528a81363345d9038433acf494fc08e2ecede5173edbb1c22",
+      "bytes": 10477
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/AudioInputCard.kt",
+      "sha256": "0c73c289c6edf5c47c9267d8d65af55e97bf646a52323c2cac33665277a838f0",
+      "bytes": 9347
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/DigitalScoreScreen.kt",
+      "sha256": "3b3c1f252b3110be1a475728a351f1472976eaf1cb1ab34263ecce315ccf414c",
+      "bytes": 25390
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/MetadataEditor.kt",
+      "sha256": "32e787f4a5b55c7379443f07c8d13b89e9d2e2a057e40935b127eea68564c15e",
+      "bytes": 10944
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/NotationMeasure.kt",
+      "sha256": "2f8596050c20152a757d2e4258536e5f34a36e9c53f30df4dbf60b9fd3c158f9",
+      "bytes": 15923
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ProductScreens.kt",
+      "sha256": "387bd87b7e56013400a9ccb10ebddd8d60bdd76c8c11d797e042ab068efa13fb",
+      "bytes": 18163
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ScorePreview.kt",
+      "sha256": "374743eb7a363661db92e832c4c34d49cc2fc713f4c6d331e227ee4836948746",
+      "bytes": 7601
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/ScoreWorkbenchScreen.kt",
+      "sha256": "96eb8f5c2966aa659616627d6bee2148048470e22f0db2a42ba9b956f9e8376f",
+      "bytes": 27470
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/SourceReference.kt",
+      "sha256": "23e641882021b2fa07f3ab28fd2512a8b0a183254f15770f073b8a93ecff975b",
+      "bytes": 6269
+    },
+    {
+      "path": "app/src/main/java/com/xiuyin/app/ui/Theme.kt",
+      "sha256": "b0e2fcdf3bc3fb490005ac6b4bc660038c6aa46883430b97bd584ad4c80ebfea",
+      "bytes": 3180
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher.xml",
+      "sha256": "85b09143f35965ec9793b62f59cfae58a8d5cc2f465c24141c695de4c82c221f",
+      "bytes": 551
+    },
+    {
+      "path": "app/src/main/res/font/bravura.otf",
+      "sha256": "cdf0f893ee1fdb64b7f6713d71ee0dcfc349c0ac01429a8e451b01a9e79f5f3b",
+      "bytes": 889228
+    },
+    {
+      "path": "app/src/main/res/values/strings.xml",
+      "sha256": "be06b25f14961997f7426b1fc612c749f235e66a59b6b94067601100d650fb91",
+      "bytes": 69
+    },
+    {
+      "path": "app/src/main/res/values/styles.xml",
+      "sha256": "8836b6f76cfc36fe34310acaf79df8f90c528f12d1f67a2f8700cbd06824f54f",
+      "bytes": 362
+    },
+    {
+      "path": "app/src/main/res/xml/backup_rules.xml",
+      "sha256": "16b285a3b7c822a6378dc7372622307db1545935d8cdc4072e68d396f1e9de5b",
+      "bytes": 255
+    },
+    {
+      "path": "app/src/main/res/xml/data_extraction_rules.xml",
+      "sha256": "8229fb932c72312facb76c9d20270f2dea3d251e1210ec710812608487508246",
+      "bytes": 592
+    },
+    {
+      "path": "app/src/main/res/xml/score_file_paths.xml",
+      "sha256": "9fc55372a0dc4b3e91b87007760dc382e2ca90e30d7a6156ccbbdf6ebadef553",
+      "bytes": 171
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/audio/OnsetAnalyzerTest.kt",
+      "sha256": "9e19dbb84e4ddf7ed7b14b94f2246ee4d9edce689070af1772bccfbd7901a69c",
+      "bytes": 10387
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/calibration/CalibrationStoreTest.kt",
+      "sha256": "43a66a0b0318cf30d74593e5ed7369692a0bbc52b7b2794584121ec8099e893b",
+      "bytes": 5281
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/calibration/PcmRingBufferTest.kt",
+      "sha256": "d9a5d0afc00196ad65f1440bbe21cb98b2618e8a05d112376cd32ea44f20710e",
+      "bytes": 3663
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/data/SampleLibraryTest.kt",
+      "sha256": "82b5c3c582744a79bd5208833814330e108e37c2403d46fcd64744855b103da9",
+      "bytes": 1389
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/midi/MidiCodecTest.kt",
+      "sha256": "b52257ca986bd175d49b9ee093761aab292cd8f9bf3a31945cb23fd60da4cbc7",
+      "bytes": 8200
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/monitor/LogFilterTest.kt",
+      "sha256": "e08b0d925a9084cc45ab659c00ffb735c80e05265b47194a278de6801106327a",
+      "bytes": 1510
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/pitch/PianoAcousticEvidenceTest.kt",
+      "sha256": "2e472ec9af0d5e519f709ee6f672072e6ec2c51e8959d2c5b2a98c4fbe0d13e9",
+      "bytes": 2225
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/pitch/PianoEvidenceTrackerTest.kt",
+      "sha256": "f2b179e8b868078eddf0df23426170494307627882bfc2e8f92065be5812cc20",
+      "bytes": 4264
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/pitch/ResidualHarmonicEvidenceTest.kt",
+      "sha256": "1aa2b92bd6034b53e0f5c81771a5dc2110f436d04f1e98a2d30ba4e79cd9387d",
+      "bytes": 4205
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/playback/ScorePlaybackPlanTest.kt",
+      "sha256": "0c039a185dea09b614933f4dbfc2070b2b90f39d59c272f3699783875ef42e80",
+      "bytes": 1103
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/practice/PracticeReportStoreTest.kt",
+      "sha256": "68476f534f5c5e06620b7c54ebf2c4c319f7553bd6b0dfd8612b62fd4f6f24a1",
+      "bytes": 4058
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/practice/PracticeSessionTest.kt",
+      "sha256": "690f20a69708194029b04dc1cc99f04edb15afe04011c0b30974b3014ca7e4d0",
+      "bytes": 3307
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/practice/ScoreFollowerTest.kt",
+      "sha256": "0fbcc5933c254a2521fb55f1b7bbc6e7931108b1f5ddd30859bd73b756dd5b6c",
+      "bytes": 14588
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/score/GraceTupletTest.kt",
+      "sha256": "b2be7f6f7b11ecb9406608d8c334e462de534c6a8e10d77f05dea6280b164bb4",
+      "bytes": 2072
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/score/MusicXmlParserTest.kt",
+      "sha256": "a288c171311a05875d3aa67ea57913cd21b33f849fe7efb660f76d9bbd6d9533",
+      "bytes": 13615
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/score/ScoreEditingTest.kt",
+      "sha256": "1e5e05f263f94cd6416619f5ba0f03df659d44378309753aae1c7376644a6251",
+      "bytes": 9922
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/score/ScoreMetadataTest.kt",
+      "sha256": "bfe64a960d3acedf764fc7c24e4f6dd4b9db422340ae29a6799b15d24ca065a5",
+      "bytes": 5818
+    },
+    {
+      "path": "app/src/test/java/com/xiuyin/app/score/ScoreTimelineTest.kt",
+      "sha256": "1945d4c3f72d5d2583e1a93455d11cbdf957615cdaa5e43ca9f94b87e1282fd2",
+      "bytes": 6674
+    },
+    {
+      "path": "build.cmd",
+      "sha256": "627de144f186f79b5dc57171c8db14e24a2fa53c69841e01b0f1ff26d0edf2de",
+      "bytes": 166
+    },
+    {
+      "path": "build.gradle.kts",
+      "sha256": "feea8355480c252065b93d390e4339cbfa8c46a56cf3b91d8cc4241937d4add8",
+      "bytes": 218
+    },
+    {
+      "path": "check.cmd",
+      "sha256": "c8f43183fe8e990cdf0425cff21e797494f1f206bc13090376b8c9025a7f39f6",
+      "bytes": 134
+    },
+    {
+      "path": "gradle.properties",
+      "sha256": "18685438042504d2e6f7830e202c772dd20066830387caa76f538cf654af28c5",
+      "bytes": 169
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.jar",
+      "sha256": "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172",
+      "bytes": 43764
+    },
+    {
+      "path": "gradle/wrapper/gradle-wrapper.properties",
+      "sha256": "6fb6c27aed6ea050cd8a7f11cc84f0414a878f412ba70056f9f33c4a629122c2",
+      "bytes": 252
+    },
+    {
+      "path": "gradlew",
+      "sha256": "fb49f8cb2e5b1d83fba3dcc2c0dd0934c5655cbaf8bd1510ada7cc02692095ca",
+      "bytes": 8755
+    },
+    {
+      "path": "gradlew.bat",
+      "sha256": "49792578a7942e08b708df3d3902ddbfc49d2203775c0161ef0c24b23fe4aeae",
+      "bytes": 2865
+    },
+    {
+      "path": "settings.gradle.kts",
+      "sha256": "b3c76fe3ec8ecc0bb8b8dc75225490da211ad90299079f75a86c8c33e5a51ccd",
+      "bytes": 279
+    },
+    {
+      "path": "tools/build.ps1",
+      "sha256": "3ad49513c0e011e34bc6655d53c50ade12e95bbfcaf0b0075ed83d33bcd9c301",
+      "bytes": 7971
+    },
+    {
+      "path": "tools/check.ps1",
+      "sha256": "4d4c215d1b13a479ac0ae51cc6e939f797a0f2e79047ae58d65c60b37d5fccf8",
+      "bytes": 17850
+    },
+    {
+      "path": "tools/device-test.ps1",
+      "sha256": "1352bf2deeea1f95ec0a031659ee9abc5e23e017594b4680746faf487f0d3c50",
+      "bytes": 15327
+    },
+    {
+      "path": "tools/evaluate-room-recording.py",
+      "sha256": "8da8393244cff01bde74228c034b9e7e8a4b12e89ed1a08bb552a840fbcc1c41",
+      "bytes": 11402
+    },
+    {
+      "path": "tools/evaluation/autopiano-capture.cjs",
+      "sha256": "1fa6b61df18538fbd9491479f16ced6d7721217f906aa552ef46dc00530d866d",
+      "bytes": 11559
+    },
+    {
+      "path": "tools/evaluation/autopiano-holdout.json",
+      "sha256": "9e92fe4c17f9a201b139451f0c83dadcef664205b986b863ec6d0514e209b543",
+      "bytes": 2673
+    },
+    {
+      "path": "tools/evaluation/autopiano-source-audit.cjs",
+      "sha256": "9c2768a96a966783a4f6fce0cf3a5c57ce29feb4b2e771dda72535aa1aa5ac56",
+      "bytes": 2304
+    },
+    {
+      "path": "tools/evaluation/autopiano-source-spectrum.cjs",
+      "sha256": "b9dd5e95bd9bfad361347d7ae87768e5e48bca7494242b9d33f672b2e4aa4e85",
+      "bytes": 1320
+    },
+    {
+      "path": "tools/evaluation/autopiano-timeline.cjs",
+      "sha256": "a4ef93943285139a46614acc032ca40190f4b694943df30cd93556b85a9fdd8e",
+      "bytes": 2932
+    },
+    {
+      "path": "tools/evaluation/dotiam-capture.cjs",
+      "sha256": "1ee596e508e22e25c734a51016caa10e00262c0ef1b0191e678c58a34178627c",
+      "bytes": 12657
+    },
+    {
+      "path": "tools/evaluation/dotiam-holdout.json",
+      "sha256": "92481d6a5547bcbc4727108c415bf62342a63d72988590daaec76e5145229526",
+      "bytes": 2567
+    },
+    {
+      "path": "tools/evaluation/dotiam-holdout2.json",
+      "sha256": "253531b79c7563943a71853ebcc0b7aace926d6fe1cef828229daea96cd571b9",
+      "bytes": 3457
+    },
+    {
+      "path": "tools/evaluation/dotiam-source-spectrum.py",
+      "sha256": "065a9af445e08794a684067e1b1d8eecbe14601895ac83ea679ec04baf36a6ae",
+      "bytes": 3065
+    },
+    {
+      "path": "tools/evaluation/dotiam-timeline.cjs",
+      "sha256": "c68d79100e5336695d06373115c1f5ce99a7675cf475720a54593428ca742a38",
+      "bytes": 2984
+    },
+    {
+      "path": "tools/evaluation/evaluate-practice-audio.py",
+      "sha256": "7edecddcdb02cd0a4d40d759672c6f13740d3c35fe8732ccc098922371b13a8b",
+      "bytes": 19866
+    },
+    {
+      "path": "tools/evaluation/website-corpus.json",
+      "sha256": "568a9239e944fb87ca927cf3b8a0ef28abb76891859aa6cd113e5552a08295e3",
+      "bytes": 1270
+    },
+    {
+      "path": "tools/prepare_device_fixtures.py",
+      "sha256": "f5b64d634f53f00e5acaaa8eff55cc499764fcc59d170cfd0036bb1a8e12a74c",
+      "bytes": 3657
+    },
+    {
+      "path": "tools/prepare_inference_assets.py",
+      "sha256": "2db3fbfac1bd8fbfa39a6ba66223159d7f1abb5d945b40369b4660846882b50b",
+      "bytes": 4771
+    },
+    {
+      "path": "tools/prepare_omr_decoder.py",
+      "sha256": "1c5d4c7869247af2cbf6cb04a596ba87df34ffe53785cab0025fc2008e877723",
+      "bytes": 2806
+    },
+    {
+      "path": "tools/replay-practice.py",
+      "sha256": "71fb32f0eeda8d7e4a83f677246030dd7a180b5e8786b0c810c18b40761f5fbd",
+      "bytes": 4739
+    },
+    {
+      "path": "tools/rollback-rehearsal.py",
+      "sha256": "62029b6a23d9d7fba1a7a108ad8d06e796af4e53545dd40e8076a0291a7d35d1",
+      "bytes": 13100
+    }
+  ],
+  "rawFrames": {
+    "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/frames.jsonl",
+    "sha256": "0fa0a07d1eab4785d4893001e257983615b5cb804badaf5c3e19df244393c550",
+    "frames": 816,
+    "scoreTolerance": 1e-06,
+    "provenance": {
+      "role": "isolated diagnostic runner with frozen production recognition classes; not main App acceptance",
+      "sourceSha256": "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20",
+      "runnerApkSha256": "b08704ff9ee6b8422c623849874498fc3b858a225bf6501897f94e911cd48570",
+      "productionPitchJarSha256": "4dcfce8ac9ea44203c8fa46444611fb603164f25122f292df56b0f96330a94b5",
+      "inputCleanup": "isolated test package cache/input.wav removed; main App untouched"
+    }
+  },
+  "phase": "Phase 1 — Baseline Freeze (§29 final sequence)",
+  "expectedOriginalGate": {
+    "status": "failed",
+    "unitTests": 165,
+    "mainDeviceTests": 107,
+    "websiteTests": 2,
+    "failures": 1,
+    "skipped": 0,
+    "failureSuite": "TEST-dotiam-independent2.xml",
+    "failureClass": "com.xiuyin.app.practice.PracticePcmIntegrationTest",
+    "failureMethod": "productionPcmToFollowerAndDurableReport",
+    "message": "真实击键未完整跟随"
+  },
+  "originalEvidence": [
+    {
+      "path": "outputs/baselines/octave-v030-20260921/baseline-manifest.json",
+      "sha256": "6041ed9affb3e3435578c9e40aba8e9a7e01ceda127641f581e6a2457b8842c0"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-acceptance-summary.json",
+      "sha256": "8832d94f2cde3f67c4e885378d85ace363a6ee5dbc38b71ee162b8602edee2f5"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/app-debug-androidTest-install.log",
+      "sha256": "4a9ea056d0397b4f4809749fe0bf49f002a3c22b0c5ad49e6cba4905d06e6584"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/app-debug-install.log",
+      "sha256": "4a9ea056d0397b4f4809749fe0bf49f002a3c22b0c5ad49e6cba4905d06e6584"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/autopiano-acoustic-evaluation.json",
+      "sha256": "f50bcb096c8897d08b7af536c376b3c1a9b8423aa0f2b07abe1aee0431edcfcb"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/autopiano-practice-replay-result.json",
+      "sha256": "eae48f45381238ed31d27a575eb526197b7a1310885c3e90b8ec2e07f4fa47fe"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/devices.log",
+      "sha256": "7f97c8f637a12c316aae1cebeef80584b932d78df07e1fd2c1d2b07919e39711"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/dotiam-independent2-acoustic-evaluation.json",
+      "sha256": "4e942502c68a4ca15f374e3bcb94639b14dcd4e55c2450416087760ee9ecf9c7"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/dotiam-independent2-replay.json",
+      "sha256": "b1e1b0a5ea8b44580acdd2aca1b61c11db42d282db30e0cf49c274529f30ac8f"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/dotiam-regression-acoustic-evaluation.json",
+      "sha256": "e90f9b5a58b6a2d92d4866a0e9f3d535a74816dd1af3dc8f5f49131813d49bfe"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/dotiam-regression-replay.json",
+      "sha256": "3169b1bd25738e33913d8941a72f5dba28512acb7f0dc897b9f736739f891895"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/executor.json",
+      "sha256": "59be7b21e864862be4925ba22ca5c004dd53ee52a05a857e72f65a0684d325b0"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/input-manifest.json",
+      "sha256": "7f436e5c232655a122068b94e3061b009f80b4160ca4d0967748cf23a25e1ec4"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/instrumentation.log",
+      "sha256": "f41202dfe41033477ad4a65ef1fbfe29cee76cf503cfa7aa739f530b949f5d7e"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/TEST-dotiam-independent2.xml",
+      "sha256": "ccd2d8b52f1eb4421773a55cf06a21c03bc9709c59d6a7dcf0d0fc5fca4e71bd"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/TEST-dotiam-regression.xml",
+      "sha256": "1dd7f64dea1157e01b620246a5f8879b4e196ff5a2942c94b9783ebda0384989"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/device/TEST-instrumentation.xml",
+      "sha256": "797ca7576173c4adacab0b25c6d9777a843fba4aad5cf8a4cb4d7cf563a1bad7"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/final-ui/dashboard.png",
+      "sha256": "b7c0d6da15a12954d420c1a8d89ef2670a705737a3fd6c8ff84b62f5fa9aaa94"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/final-ui/dashboard.xml",
+      "sha256": "5cb80f0cf54a9a19fc9c1b80e208c2d929a3aa57ae34166441aca6a00443303c"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/final-ui/home.png",
+      "sha256": "21e7ff507627746d461191ec9db460288cd18ae9c2942ff0bab48047e9b98da5"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/final-ui/home.xml",
+      "sha256": "73481c2fd059f5c5751f4b8be42afd87e86a4fa1be00a97c257aaadf45e2806d"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/final-ui/identity.json",
+      "sha256": "e5f7bc17f15406feae009bd97351b87fba304749cc04a5767fd4785597dd47a6"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/manifest.json",
+      "sha256": "20fd6d3014f8e7676e32900db028104e1f8cd08f61e46d4b960889a75aa31b70"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/omr-evaluation-cdba18e4-692d-462e-84ad-4ee5387fb1a1.json",
+      "sha256": "24fd8cf19228b9ee8a85bdfac170b642a97b14442ce60453dbb43e070016ca2f"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-evidence/room-piano-replay-result.json",
+      "sha256": "dddc129a63be5173d23998cc90be864b91a1f42bd8c4d45fcdf2de05c87eaaf3"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-quality-gate.json",
+      "sha256": "e6f8f577b23a96660cd5f2d0534a1eec0191a50b0eb9cec9630feffdc9341cb4"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/frames.jsonl",
+      "sha256": "0fa0a07d1eab4785d4893001e257983615b5cb804badaf5c3e19df244393c550"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/identity.json",
+      "sha256": "5be167155587b5b1f9dc36aae2b39378b62a6508ef642de316bfcd4017cf21f4"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/instrumentation.txt",
+      "sha256": "fc2a15b1cab1d2b5769cfa281ed681c4d13a8fe746771bb695c51fc73051766a"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/octave-diagnostic.json",
+      "sha256": "ffff192dc608259187b9e6449d4bbd83d2fedfe67af929b3f3df00d1970fd76f"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/original-raw-frames/report.json",
+      "sha256": "755e748fbbd29fdcbbfa926af954a0b643b45dbbeb1ba211890ce27e0a3570ba"
+    },
+    {
+      "path": "outputs/baselines/octave-v030-20260921/source-inputs.json",
+      "sha256": "95d232dd5887c5b42b88ca63151a5488233bd8713202df0832f026ce76360957"
+    }
+  ],
+  "originalTestCases": [
+    {
+      "suiteFile": "TEST-dotiam-independent2.xml",
+      "class": "com.xiuyin.app.practice.PracticePcmIntegrationTest",
+      "method": "productionPcmToFollowerAndDurableReport",
+      "status": "failed"
+    },
+    {
+      "suiteFile": "TEST-dotiam-regression.xml",
+      "class": "com.xiuyin.app.practice.PracticePcmIntegrationTest",
+      "method": "productionPcmToFollowerAndDurableReport",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.AudioLifecycleUiTest",
+      "method": "backgroundAndLeavingAudioPagesReleaseCaptureAndResumeDoesNotRestart",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.FoundationUiTest",
+      "method": "foundationOnlyDeclaresMicrophoneAndNeverRequestsNetworkOrCameraPermissions",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.FoundationUiTest",
+      "method": "browseScoreSavePreparationAndRestoreAfterActivityRecreation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.FoundationUiTest",
+      "method": "monitorShowsInactiveEnginesAndControlsRealStoredLogs",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.FoundationUiTest",
+      "method": "systemBackReturnsFromScoreToLibraryAndThenHome",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.FoundationUiTest",
+      "method": "openingPracticeDoesNotStartOrAutomaticallyRequestMicrophone",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.audio.MicrophoneEngineTest",
+      "method": "repeatedStartAndRapidRestartRemainUsable",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.audio.MicrophoneEngineTest",
+      "method": "deniedPermissionPathNeverStartsCapture",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.audio.MicrophoneEngineTest",
+      "method": "realVirtualMicrophoneFramesHaveMetricsAndStopFreezesCapture",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.audio.MicrophoneEngineTest",
+      "method": "closeDuringStartupIsIdempotentAndPreventsFutureCapture",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationUiTest",
+      "method": "realInputProfilePersistsAndLeavingDoesNotKeepRecording",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "logsPersistWithDetailsNewestFirstAndRemainBounded",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "invalidLogIsRejectedAndClearingLogsPreservesUserPreparation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "invalidPreparationCannotOverwriteExistingData",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "emptyDatabaseIsHealthyWithoutInventedHistory",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "preparationAndRecentPieceSurviveClosingAndReopening",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.data.AppDatabaseTest",
+      "method": "unsupportedDowngradeFailsWithoutDeletingUserData",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.midi.MidiImportInstrumentedTest",
+      "method": "unsafeDeleteAndPendingArchivesDoNotEscapeOrMasqueradeAsSuccess",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.midi.MidiImportInstrumentedTest",
+      "method": "immutableOriginalSurvivesFreshServiceAndExportsCurrentScore",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.midi.MidiImportInstrumentedTest",
+      "method": "corruptedArchiveIsVisibleAndNotSilentlyReplaced",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.midi.MidiMetadataViewModelTest",
+      "method": "absentMidiTitleKeepsTemporaryNamingOnBothPaths",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.midi.MidiMetadataViewModelTest",
+      "method": "declaredMidiTitleSurvivesExplicitImportAndArchiveDiscovery",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrEngineInstrumentedTest",
+      "method": "suppliedRealPagesProducePersistentReviewableDigitalScore",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrEngineInstrumentedTest",
+      "method": "blankImageRunsRealModelAndFailsWithoutInventingNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrImportBudgetInstrumentedTest",
+      "method": "multiplePdfDocumentsShareOnePageBudgetAndKeepOriginals",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrSemanticBoundaryTest",
+      "method": "changingMeterIsBlockingUntilUserSetsTheActualMeasures",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrSemanticBoundaryTest",
+      "method": "aChordFollowingGraceUsesTheGraceOffsetNotAnOlderOrdinaryNote",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.omr.OmrSemanticBoundaryTest",
+      "method": "slurIsVisibleButNeverInventsATie",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.pitch.PianoModelInstrumentedTest",
+      "method": "bundledModelHasRealFiniteInputDependentOutputsAndNoOffsetCapability",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.pitch.RoomPianoReplayTest",
+      "method": "fullRoomRecordingTraversesProductionAsyncEngine",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticeFrameLifecycleTest",
+      "method": "pausingAndResumingKeepsTheLockButDropsAudioFromTheOldStream",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticeFrameLifecycleTest",
+      "method": "framesAlreadyQueuedByWorkerCannotRecreateAnOldStreamErrorAfterInvalidation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticeFrameLifecycleTest",
+      "method": "runningAndPausedSessionsRejectReplacementUntilExplicitlyFinished",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticeFrameLifecycleTest",
+      "method": "failedActualReportWriteKeepsSessionUntilMetadataRestorationAndSuccessfulRetry",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticePcmIntegrationTest",
+      "method": "silenceNeverBecomesPracticeAndEngineStops",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.practice.PracticePcmIntegrationTest",
+      "method": "productionPcmToFollowerAndDurableReport",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "twoBlockedOpensDoNotCreateUnboundedAdditionalWorkers",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "unknownLengthCannotBypassTheSizeLimit",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "oversizedAndEmptyRealFilesFailWithoutLeakingDescriptors",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "descriptorReturnedAfterTimeoutIsClosedAndCannotBecomeLateSuccess",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "nonContentUrisAreRejectedBeforeProviderAccess",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "coroutineCancellationClosesActualPipeWithoutWaitingForEof",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "actualLocalContentResolverReturnsTheOriginalBytes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "exactlyTwoMiBIsAcceptedWithUnknownLength",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "sourceAssetOffsetAndLengthAreRespectedAndDescriptorCloses",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.BoundedScoreReaderTest",
+      "method": "pipeThatStopsWritingTimesOutAndClosesItsReadHandle",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.MusicXmlAndroidParserTest",
+      "method": "androidSaxParsesAndRejectsExternalDtdWithoutNetwork",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreImportUiTest",
+      "method": "freshViewModelLoadsOriginalAndUnderfilledMeasureRemainsNeedsReview",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreImportUiTest",
+      "method": "contentResolverImportDisplaysReferenceEventsAndReopensAfterRecreation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreImportUiTest",
+      "method": "invalidDocumentFailsWithoutReplacingSourceAndValidRetryRecovers",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreImportUiTest",
+      "method": "pickerResultIsQueuedWhileFreshViewModelIsReloading",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "idempotentReimportPreservesAllUserMetadataAndOriginalTimestamp",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "editWritesAreAtomicAndDoNotLoseFavoriteOrPracticeSummary",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "namedImportAndRenamingNeverReplaceOriginalOrConsumeUnnamedNumber",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "deletionWithPracticeOptionClearsOnlyAssociatedSummary",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "sameDisplayNameUsesDistinctUuidAndSearchesAfterReopen",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "unnamedImportUsesDurableCounterAndPersistsAfterReopen",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "invalidInputDoesNotCreateRowsOrTouchOriginalDatabase",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "deletionTombstoneBlocksScanResurrectionAndRetriesUntilFileConfirmation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataDatabaseTest",
+      "method": "concurrentImportsPreserveUniqueIdentifiersAndSequence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "renamePreservesOriginalTitleDigitalEventsAndSourceBytes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "namingAliasesTagsSearchSortAndDetailsStayInSync",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "duplicateNamesFavoriteAndDeletionUseOnlyTheSelectedUuid",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "unreadableSourcesCanBeRenamedAndDeletedWithoutAffectingHealthyScore",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "untitledDocumentCanSkipNamingAndReopenWithoutInventingPractice",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "unrelatedArchiveWarningDoesNotKeepSuccessfulDialogsOpen",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataUiTest",
+      "method": "activityRecreationRetainsUnsavedEditorFieldsAndDeleteConfirmation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "pathsSymlinksAndNonRegularFilesAreNeverFollowedOrReplaced",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "identicalSaveDoesNotChangeGenerationOrDestroyRedo",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "saveAndColdReopenPersistNotesVerificationAndFingering",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "corruptionUnknownSchemaAndChangedOriginalAreRejectedWithoutRebuild",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "historyHasTwentyStepCapAndReportsTruncation",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "jsonRejectsUnknownFieldsBadTypesAndOversizedOrDeepInput",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "sourceChangesDuplicateIdsAndNonFiniteBoxesCannotOverwriteGoodRevision",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "jsonRoundTripPreservesAllCoreFieldsAndExactFractions",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "staleGenerationCannotOverwriteAnotherInstanceAndSaveNeedsBinding",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "competingStoresPermitExactlyOneCompareAndSwap",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "totalBudgetRefusesSaveAndLeavesExistingBytes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "explicitDeleteRemovesOnlyChosenRevisionIncludingCorruptFile",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "undoRedoRestoreWholeStateAndIncrementGeneration",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreRevisionStoreTest",
+      "method": "firstLoadDoesNotCreateRevisionOrMutateOriginal",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "maximumIndividualSizeIsAcceptedExactly",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "nonemptyLockFileIsVisibleAndNeverTruncated",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "nonDirectoryRootCannotBeReplacedWithArchive",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "pathTraversalAndMalformedIdsCannotReadOutsideArchive",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "corruptedSourceCanBeExplicitlyDeletedWithoutAffectingOtherFiles",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "directoryAtLockPathBlocksMutationsWithoutHidingHealthySources",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "interruptedImportAndUnexpectedPathsRemainVisibleWithoutDeletingThem",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "duplicateImportIsIdempotentAndDifferentBytesStaySeparate",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "totalSpaceLimitIncludesRetainedTemporaryFiles",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "emptyArchiveHasNoInventedSources",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "savedOriginalBytesSurviveNewStoreInstance",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "confirmedDeletionTargetsOnlyTheNamedSource",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "symlinkSourceIsNotReadOrReplaced",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "reimportDoesNotOverwriteExistingCorruptSourceWithSameId",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "concurrentInstancesPublishOneCompleteSource",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "corruptSourceIsVisibleAndDoesNotHideHealthySource",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "emptyOrOversizedInputIsRejectedWithoutCreatingHalfFile",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreSourceStoreTest",
+      "method": "sourceCountLimitPreservesExistingFilesAndAllowsDuplicate",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreWorkbenchUiTest",
+      "method": "transposeChangesSoundingPitchesAndBothScoreDisplays",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreWorkbenchUiTest",
+      "method": "editingUpdatesNotationPersistsAndUndoRedoSurviveReopen",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreWorkbenchUiTest",
+      "method": "pausedPracticeRequiresExplicitFinishBeforeOpeningDifferentScore",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.score.ScoreWorkbenchUiTest",
+      "method": "realPlaybackAdvancesAudioHeadAndLeavingStopsIt",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.ui.AudioInputCardTest",
+      "method": "deniedPermissionExplainsRecoveryAndDoesNotOpenSettingsAutomatically",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.ui.AudioInputCardTest",
+      "method": "aListeningFlagWithoutInputFramesDoesNotShowHealthyCapture",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.ui.AudioInputCardTest",
+      "method": "recordingControlsOnlyInvokeCallbacksAfterAnExplicitTap",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-instrumentation.xml",
+      "class": "com.xiuyin.app.ui.AudioInputCardTest",
+      "method": "inputEvidenceIsDisplayedWithoutInventingNotesOrCorrectDecisions",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "invalidInputAndReversedTimeAreRejectedBeforeChangingState",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "singleFrameTransientCannotBecomeAConfirmedOnset",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "weakSignalAndInsufficientNoiseContrastStayUncertainWithoutCounts",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "continuousToneConfirmsOnSecondFrameAndCountsOnlyOnce",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "warmupNeedsThreeHundredMillisecondsOfSamplesNotWallClockAlone",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "silenceRearmsAndRapidEventsRespectEightyMillisecondRefractoryPeriod",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "restrikeAfterDecayCanCreateAnotherOnsetWithoutRequiringSilence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "sixtySecondSustainDoesNotAccumulateSpuriousEvents",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "candidateWithinRefractoryWindowCannotConfirmEarly",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "noisyRoomAndSlowNoiseIncreaseDoNotCountAsRepeatedKeystrokes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "captureGapDoesNotJoinTwoUnrelatedFramesIntoOneOnset",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "dcOffsetIsNotTreatedAsSoundAndPartialFramesIgnoreUnusedBufferTail",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "clippingDoesNotCreateAnAttackOrContaminateWarmup",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "clippingRecoveryNeedsNewEvidenceButARealRestrikeCanBeCounted",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.audio.OnsetAnalyzerTest.xml",
+      "class": "com.xiuyin.app.audio.OnsetAnalyzerTest",
+      "method": "freshSessionHasNoPreviousCountsOrFinalDecision",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "oldestCasesAreRemovedToEnforceBothCountAndByteLimits",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "corruptCaseAndProfileAreVisibleAndNotSilentlyRepaired",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "clipsLongerThanFiveSecondsAndPathTraversalAreRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "absentConsentNeverWritesAudioAndFeedbackIsNeverGroundTruth",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "parameterLimitsAndDefaultRecoveryAreEnforced",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "actualProfileSurvivesRestartAndUnknownMeasurementsStayUnknown",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.CalibrationStoreTest.xml",
+      "class": "com.xiuyin.app.calibration.CalibrationStoreTest",
+      "method": "changedEnvironmentSuggestsRecalibrationWithoutChangingProfile",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "snapshotsAndInputArraysCannotMutateRingAndClearErasesIt",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "eventTimeMustRemainInsideActualRetainedSamples",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "aGapOrRestartDiscardsOldAudioRatherThanFabricatingContinuity",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "keepsOnlyTheLatestFiveSecondsInOrderWithoutPadding",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "oversizedSingleFramePreservesItsLastSamples",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "eventLookupUsesActualStreamSampleOriginAndReturnsAnIndependentCopy",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.calibration.PcmRingBufferTest.xml",
+      "class": "com.xiuyin.app.calibration.PcmRingBufferTest",
+      "method": "missingInvalidFutureAndClearedEventAudioCannotCreateACaseClip",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.data.SampleLibraryTest.xml",
+      "class": "com.xiuyin.app.data.SampleLibraryTest",
+      "method": "stableIdRetrievesExpectedMelodyAndUnknownIdIsAbsent",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.data.SampleLibraryTest.xml",
+      "class": "com.xiuyin.app.data.SampleLibraryTest",
+      "method": "sampleLibraryIsCompleteDistinctAndClearlyLabeled",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "splitBarTieAndPolyphonyRoundTripWithoutQuantization",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "typeOneTracksRetainTempoMeterKeyAndNoteChannel",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "runningStatusAndVelocityZeroPreserveExactTicks",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "excessiveNoteMeasureWorkIsRejectedBeforeExpandingEvents",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "cancellationStopsParsingAndConversionWithoutClearingInterrupt",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "unreleasedPedalIsUnknownRatherThanFileEndSoundDuration",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "conflictingSamePitchOverlapIsRejectedInsteadOfCorruptingOffPairing",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "pedalSeparatesKeyReleaseFromSoundAndResetReleasesPedal",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "zeroGracePrecedesSamePitchOnsetAndNeverTakesItsRelease",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "rejectsUnsupportedTimingTruncationAndUnclosedNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.midi.MidiCodecTest.xml",
+      "class": "com.xiuyin.app.midi.MidiCodecTest",
+      "method": "exactTickResolutionBeyondSmfLimitIsNotRounded",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.monitor.LogFilterTest.xml",
+      "class": "com.xiuyin.app.monitor.LogFilterTest",
+      "method": "searchIncludesDetailAndModuleAndIgnoresAsciiCase",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.monitor.LogFilterTest.xml",
+      "class": "com.xiuyin.app.monitor.LogFilterTest",
+      "method": "levelAndTextBothNeedToMatch",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.monitor.LogFilterTest.xml",
+      "class": "com.xiuyin.app.monitor.LogFilterTest",
+      "method": "filteringNeverMutatesFrozenSnapshotAndUnknownLevelIsRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.monitor.LogFilterTest.xml",
+      "class": "com.xiuyin.app.monitor.LogFilterTest",
+      "method": "emptyQueryRetainsAllEntriesAndNewestFirstOrder",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "profileCannotWeakenDefaultThresholdsOrUseNonfiniteValues",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "strongRealOctaveEvidenceIsNotRemovedByTargetOrFixedPitchList",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "weakSimultaneousOctaveIsExplicitlyAmbiguous",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "realLowFundamentalSurvivesAlongsideLouderUpperNote",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "unsupportedBassCandidateIsUncertainWithoutCreatingAnyNewNote",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoAcousticEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoAcousticEvidenceTest",
+      "method": "noNeuralCandidateDoesNotInventAcousticNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "unconfirmedSpikeDoesNotBecomeAnAttack",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "silenceHasNoNotesAndScoresAreIndependentCopies",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "releaseNeedsThreeConsecutiveLowFrames",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "gapDoesNotConfirmAcrossMissingEvidence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "resamplingChunkBoundariesPreserveIdenticalPCM",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "sustainedHighOnsetDoesNotRepeatAndNewEdgeCanRepeat",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "needsThreeFramesAndDoesNotTreatSustainAsAttack",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "independentChordContainsAllConfirmedKeys",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "overloadCannotConfirmPriorCandidateOrInferPedal",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.PianoEvidenceTrackerTest.xml",
+      "class": "com.xiuyin.app.pitch.PianoEvidenceTrackerTest",
+      "method": "nonfiniteEvidenceRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "broadbandImpulseIsUncertain",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "quietRealBassAboveExistingFloorSurvives",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "pureHigherNoteCannotSupplyLowerOctaves",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "higherOctaveAndFifthDoNotExplainAbsentBass",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "weakFundamentalWithNonSharedFifthHarmonicPreservesBassAcross40Notes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "nonFinitePcmIsRejectedExplicitly",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "genuineBassOctaveFifthAcross52NotesAndThreePhasesRemainSupported",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "moderateDetuningRetainsRealBassAndOctave",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "hundredBroadbandTestNoiseInputsAreUncertain",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "absentNeuralCandidateCannotBeInventedFromSpectrum",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "rawNeuralArraysRemainUnmodified",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest.xml",
+      "class": "com.xiuyin.app.pitch.ResidualHarmonicEvidenceTest",
+      "method": "lowFifthRetainsBothNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.playback.ScorePlaybackPlanTest.xml",
+      "class": "com.xiuyin.app.playback.ScorePlaybackPlanTest",
+      "method": "aLongNoteCrossingSelectedStartIsRetainedButExpiredNotesAreNot",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.playback.ScorePlaybackPlanTest.xml",
+      "class": "com.xiuyin.app.playback.ScorePlaybackPlanTest",
+      "method": "startingLaterDoesNotReplayEarlierGraceNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "invalidIdentifiersCannotEscapeTheReportRoot",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "restartRoundTripAndIdempotentSavePreserveActualEvidence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "conflictRetainsOriginalInsteadOfReplacingIt",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "legacyVersionOneDecodesAsBothHandsAndNewHandChoiceRoundTrips",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "deletionPreventsOldSessionResurrectionButAllowsLaterPractice",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeReportStoreTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeReportStoreTest",
+      "method": "corruptReportIsVisibleAndNeverSilentlyDeleted",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "openingAndSilenceNeverCreatePracticedEvidence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "loopContinuesAfterAWholePass",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "pauseFreezesAndResumeSupportsNewAudioClockWithoutBypassingLock",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "manualSeekDoesNotAwardACleanWholePass",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "reinforcementRequiresTheWholeRangeCorrectConsecutively",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.PracticeSessionTest.xml",
+      "class": "com.xiuyin.app.practice.PracticeSessionTest",
+      "method": "reportHasRevisionRawEvidenceAndNoFabricatedAccuracy",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "aGapDoesNotSpliceAnOnsetCandidateAcrossMissingAudio",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "wrongStopsAndCorrectNewOnsetRecovers",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "rangeAndManualSeekUseActualMeasurePositions",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "freeModeRecordsWrongWithoutLockingOrInventingPosition",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "decayedRecentEvidenceCannotReuseAnInitiallyStrongFrameToLock",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "onlyNearbyGraceIsOptionalAndRawEvidenceRemainsVisible",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "acousticAmbiguityInTargetPreventsWrongAndMissedAccusations",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "missingOrWeakSupportResetsTheStreakAndTwoFreshFramesCanConfirmAgain",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "attackActivationIsRetainedInsteadOfReplacingItWithLaterSustainValues",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "previousNoteResonanceDoesNotCauseAFalseStop",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "explicitStaffSelectionFiltersTargetsButNeverFiltersDetectedAudio",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "duplicateAndBackwardFramesAreIgnoredAndInvalidEvidenceRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "sustainDoesNotAdvanceAndEveryNewOnsetRequiresMultipleFrames",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "aCorrectNoteAlsoWaitsForTwoCurrentFramesAfterAnInterruption",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "repeatedNotesNeedSeparateAttacksEvenAtSamePitch",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "partialChordDoesNotAccuseMissingNotes",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "positionalMissedEvidenceDoesNotLockStopOnErrorMode",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "lowEvidenceAndClippingNeverLock",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "twoFollowingMatchesAreRequiredBeforeCallingAnythingMissed",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "finalNearbyMatchWithoutSuccessorStaysUncertain",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.practice.ScoreFollowerTest.xml",
+      "class": "com.xiuyin.app.practice.ScoreFollowerTest",
+      "method": "aMissingFrameIndexBreaksSupportEvenInsideTheCandidateTimeWindow",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.GraceTupletTest.xml",
+      "class": "com.xiuyin.app.score.GraceTupletTest",
+      "method": "graceRetainsZeroDurationAndIsNotRequiredChordTone",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.GraceTupletTest.xml",
+      "class": "com.xiuyin.app.score.GraceTupletTest",
+      "method": "zeroDurationOrdinaryNoteAndIncompleteTupletRemainInvalid",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.GraceTupletTest.xml",
+      "class": "com.xiuyin.app.score.GraceTupletTest",
+      "method": "exactTripletDurationIsNotMisreportedAsWrittenMismatch",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "malformedClefNumberIsRejectedAndMissingStaffDefinitionIsFlagged",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "parsedDocumentExtractsExplicitComposerAndWorkNumber",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "missingTimeIsReviewableAndDoesNotInventMeter",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "wholeRestHasExactDurationAndNoInventedConfidence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "duplicatePartAndPitchOrRestAmbiguityFail",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "alterationsAndSourcePositionsArePreserved",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "overfullMeasureIsAnError",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "shortMeasureIsFlaggedWithoutAddingEvents",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "rationalTimeAndForwardHaveNoFloatingPointDrift",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "implicitPickupAllowsShortDuration",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "blankWorkTitleCanUseDeclaredMovementTitle",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "beatFractionsNormalizeAndRetainExactArithmetic",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "attributesAreInheritedBetweenMeasures",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "pianoChordAndSecondStaffUseActualCursorAndDurations",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "keyModeIsPreservedAndAccidentalMismatchNeverRewritesPitch",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "compressedEmptyOversizeAndWrongEncodingAreRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "repeatGraceTransposeAndMicrotonesAreExplicitlyRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "parsedDocumentKeepsMissingTitleNullAndDoesNotInventPages",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "unsupportedDirectionsAreVisibleInsteadOfSilentlyDropped",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "deeplyNestedAndExcessiveNodeInputIsRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "identicalBytesHaveStableScoreAndEventIds",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "visualAndPerformedTiesMustAgree",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "typeAndDotsAreCheckedAgainstPerformedDuration",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "invalidCursorChordAndNumericOverflowFail",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "sameVoiceOverlapIsFlagged",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "malformedXmlAndUnknownEntityFail",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.MusicXmlParserTest.xml",
+      "class": "com.xiuyin.app.score.MusicXmlParserTest",
+      "method": "dtdAndExternalEntitiesAreBlockedBeforeParsing",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "modulationRemainsModulationAndOutOfRangeTranspositionIsAtomic",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "changingMeterAndStaffHeadersRevalidatesExistingEvents",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "explicitEnharmonicTargetAndMinorModeArePreserved",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "absentKeyIsNotInventedAndMidiSpellingHasCorrectPitch",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "restAndWrittenDotChangesModifyCoreData",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "repairingStructureRemovesRecomputedIssuesButPreservesSourceWarnings",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "replacingPitchRetainsIdentityProvenanceAndDoesNotInventConfidence",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "invalidTargetsAndValuesAreRejectedWithoutChangingInput",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "transposeUpdatesEveryPitchAndKeyWhileKeepingIdsAndSourceLocations",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreEditingTest.xml",
+      "class": "com.xiuyin.app.score.ScoreEditingTest",
+      "method": "insertAndDeleteUseStableIdsAndExposeOrphanChordInsteadOfShiftingTime",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "displayPriorityAndEmptyCustomTitleFallback",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "searchFindsEveryDeclaredTextFieldLocally",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "tagsFilterExactlyAndDeletedRowsAreNeverListed",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "sourceMetadataPreflightIsPureAndRejectsUnboundedInput",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "editLimitsTrimDeduplicateAndRejectOverflowBeforeSaving",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "sortingIsDeterministicAndUnpracticedRowsDoNotPretendRecentPractice",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreMetadataTest.xml",
+      "class": "com.xiuyin.app.score.ScoreMetadataTest",
+      "method": "duplicateDisplayNamesRemainSeparateRecords",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "retainedSourceIssuesRemainVisibleInCompiledOutput",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "aRestKeepsSilenceAndMeasurePositionInsteadOfCompressingTheTimeline",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "samePitchInAnotherVoiceDoesNotConsumeTheFirstVoicesTie",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "tieChainSpanningThreeMeasuresCreatesOneSustainedNote",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "independentPartsAndStavesShareTheSameChordTime",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "unmatchedOrGappedTiesAreVisibleAndNeverSilentlyJoined",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "inconsistentMeasureLengthsAndInvalidDurationsAreRejected",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "crossStaffTieWithinOneVoiceCanRemainOneSound",
+      "status": "passed"
+    },
+    {
+      "suiteFile": "TEST-com.xiuyin.app.score.ScoreTimelineTest.xml",
+      "class": "com.xiuyin.app.score.ScoreTimelineTest",
+      "method": "pickupAndFractionalDurationsKeepExactBoundaries",
+      "status": "passed"
+    }
+  ]
+}

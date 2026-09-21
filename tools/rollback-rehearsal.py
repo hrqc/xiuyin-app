@@ -35,9 +35,16 @@ def main():
     adb = sdk / "platform-tools/adb.exe"
     aapt = sdk / "build-tools/35.0.0/aapt2.exe"
     candidate = ROOT / "app/build/outputs/apk/debug/app-debug.apk"
-    stable_dir = ROOT / "outputs/releases/v0.1.1"
+    stable_dir = ROOT / "outputs/releases/v0.2.0"
     stable_manifest = json.loads((stable_dir / "release-manifest.json").read_text(encoding="utf-8-sig"))
     stable = stable_dir / stable_manifest["installableApk"]["file"]
+    baseline_version = "0.2.0"
+    version_match = re.search(r'versionName = "([^"]+)"', (ROOT / "app/build.gradle.kts").read_text(encoding="utf8"))
+    if version_match is None:
+        raise ValueError("Candidate build version is missing")
+    candidate_version = version_match.group(1)
+    result["baselineVersion"] = baseline_version
+    result["candidateVersion"] = candidate_version
     if stable.resolve().parent != stable_dir.resolve():
         raise ValueError("Invalid stable artifact path")
     if hashlib.sha256(stable.read_bytes()).hexdigest().upper() != stable_manifest["installableApk"]["sha256"].upper():
@@ -102,9 +109,34 @@ def main():
         with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
             if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise RuntimeError("Database integrity check failed")
-            return {"scoreMetadata": metadata_snapshot, "digitalScoreSources": sources, "schema": connection.execute("PRAGMA user_version").fetchone()[0],
+            return {"extendedFiles": extended_snapshot(folder), "scoreMetadata": metadata_snapshot, "digitalScoreSources": sources, "schema": connection.execute("PRAGMA user_version").fetchone()[0],
                     "preparation": connection.execute("SELECT piece_id,mode,repeat_target FROM practice_preparation ORDER BY id").fetchall(),
                     "appState": connection.execute("SELECT state_key,state_value FROM app_state ORDER BY state_key").fetchall()}
+
+    def extended_snapshot(destination):
+        # Additive archives are ignored by old APKs but must survive artifact rollback byte-for-byte.
+        folders = ("score-revisions", "omr-sources", "practice-reports", "midi-sources", "piano-calibration", "misjudgment-cases")
+        existing = shell("run-as", PACKAGE, "ls", "-A", "files").split()
+        entries = []
+        for name in folders:
+            if name not in existing:
+                continue
+            root_path = "files/" + name
+            links = shell("run-as", PACKAGE, "find", root_path, "-type", "l").strip()
+            if links:
+                raise RuntimeError("Refusing linked business archive: " + name)
+            filenames = shell("run-as", PACKAGE, "find", root_path, "-type", "f").splitlines()
+            for filename in sorted(filenames):
+                if not re.fullmatch(r"files/[A-Za-z0-9._/-]+", filename) or ".." in Path(filename).parts or not filename.startswith(root_path + "/"):
+                    raise RuntimeError("Unexpected business archive path")
+                raw = run([adb, "-s", args.serial, "exec-out", "run-as", PACKAGE, "cat", filename])
+                if filename.endswith(".lock") and len(raw) == 0:
+                    continue
+                target = destination / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
+                entries.append({"file": filename, "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
+        return entries
 
     def launch(version):
         package = shell("dumpsys", "package", PACKAGE)
@@ -120,7 +152,7 @@ def main():
         (evidence / ("ui-" + version + ".xml")).write_text(xml, encoding="utf-8")
         result["actions"].append({"version": version, "launch": "passed"})
 
-    for artifact, expected in ((stable, "0.1.1"), (candidate, "0.2.0")):
+    for artifact, expected in ((stable, baseline_version), (candidate, candidate_version)):
         badging = run([aapt, "dump", "badging", artifact]).decode("utf-8", "replace")
         if "name='" + PACKAGE + "'" not in badging or "versionName='" + expected + "'" not in badging:
             raise RuntimeError("Unexpected artifact package/version")
@@ -140,24 +172,26 @@ def main():
         install = run([adb, "-s", args.serial, "install", "-r", "-d", stable]).decode("utf-8", "replace")
         if "Success" not in install:
             raise RuntimeError("Baseline install did not succeed")
-        launch("0.1.1")
+        launch(baseline_version)
         baseline_data = snapshot("baseline")
         if baseline_data != before:
             raise RuntimeError("Business data changed during rollback")
         result["baselineDataPreserved"] = True
         result["baselineScoreSourcesPreserved"] = True
         result["baselineMetadataPreserved"] = True
+        result["baselineExtendedFilesPreserved"] = True
         install = run([adb, "-s", args.serial, "install", "-r", candidate]).decode("utf-8", "replace")
         if "Success" not in install:
             raise RuntimeError("Candidate restoration failed")
-        launch("0.2.0")
+        launch(candidate_version)
         after = snapshot("restored")
         if after != before:
             raise RuntimeError("Business data changed after restoration")
         result["restoredDataPreserved"] = True
         result["restoredScoreSourcesPreserved"] = True
         result["restoredMetadataPreserved"] = True
-        launch("0.2.0")  # snapshot stops the app; leave the verified candidate running.
+        result["restoredExtendedFilesPreserved"] = True
+        launch(candidate_version)  # snapshot stops the app; leave the verified candidate running.
         candidate_restored = True
         result["status"] = "passed"
     except Exception as error:
@@ -168,11 +202,11 @@ def main():
                 restore = run([adb, "-s", args.serial, "install", "-r", candidate]).decode("utf-8", "replace")
                 if "Success" not in restore:
                     raise RuntimeError("Emergency candidate install did not succeed")
-                launch("0.2.0")
+                launch(candidate_version)
                 emergency_data = snapshot("emergency-restored")
                 if emergency_data != before:
                     raise RuntimeError("Emergency restore changed business data")
-                launch("0.2.0")
+                launch(candidate_version)
                 result["emergencyCandidateRestore"] = True
             except Exception as error:
                 result["emergencyRestoreFailure"] = str(error)

@@ -1,0 +1,181 @@
+{
+  "testKind": "second_independent_dotiam_after_residual_v3_algorithm_freeze",
+  "keys": {
+    "D2": "2",
+    "E2": "3",
+    "A2": "6",
+    "B2": "7",
+    "D3": "9",
+    "E3": "0",
+    "G3": "w",
+    "B3": "r",
+    "E4": "u",
+    "G4": "o",
+    "B4": "a",
+    "D5": "d",
+    "F5": "g",
+    "A5": "j"
+  },
+  "midi": {
+    "D2": 38,
+    "E2": 40,
+    "A2": 45,
+    "B2": 47,
+    "D3": 50,
+    "E3": 52,
+    "G3": 55,
+    "B3": 59,
+    "E4": 64,
+    "G4": 67,
+    "B4": 71,
+    "D5": 74,
+    "F5": 77,
+    "A5": 81
+  },
+  "groups": [
+    {
+      "label": "independent2-single-D2",
+      "notes": [
+        "D2"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-E2",
+      "notes": [
+        "E2"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-B2",
+      "notes": [
+        "B2"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-D3",
+      "notes": [
+        "D3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-G3",
+      "notes": [
+        "G3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-B3",
+      "notes": [
+        "B3"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-F5",
+      "notes": [
+        "F5"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-single-A5",
+      "notes": [
+        "A5"
+      ],
+      "holdMs": 650,
+      "gapMs": 750
+    },
+    {
+      "label": "independent2-E-minor-triad",
+      "notes": [
+        "E3",
+        "G3",
+        "B3"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "independent2-G-major-triad",
+      "notes": [
+        "G4",
+        "B4",
+        "D5"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "independent2-low-E-octave",
+      "notes": [
+        "E2",
+        "E3"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "independent2-low-D-fifth",
+      "notes": [
+        "D2",
+        "A2"
+      ],
+      "holdMs": 1000,
+      "gapMs": 1200
+    },
+    {
+      "label": "repeat-E4-1",
+      "notes": [
+        "E4"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-E4-2",
+      "notes": [
+        "E4"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-E4-3",
+      "notes": [
+        "E4"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-E4-4",
+      "notes": [
+        "E4"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    },
+    {
+      "label": "repeat-E4-5",
+      "notes": [
+        "E4"
+      ],
+      "holdMs": 180,
+      "gapMs": 420
+    }
+  ],
+  "truthBasis": "Actual source-buffer independent spectral audit is required before any model inference. No model results may select or discard trials.",
+  "frozenAcceptance": "Original thresholds: note precision/recall >=0.90, triads exact 2/2 with 100ms collection, repeats 5/5, onset timing +/-250ms; additionally both low-register interval groups must be exact, all extra notes listed. No adjustment from the new results."
+}

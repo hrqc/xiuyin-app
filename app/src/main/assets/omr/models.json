@@ -1,0 +1,21 @@
+{
+  "models": [
+    {
+      "name": "segnet_308_int8.tflite",
+      "bytes": 14515760,
+      "sha256": "a7caace11bcd3df8aaa6addfa89eb994a8bdade34f977430742e8565e7f0acb7"
+    },
+    {
+      "name": "encoder_414_int8.tflite",
+      "bytes": 13218480,
+      "sha256": "42f98864b83caa25e8da59bbfdf0f864d1860c3c13ac2a62e1e9e9fdaaba0a2c"
+    },
+    {
+      "name": "decoder_414_int8_scores.onnx",
+      "bytes": 47282392,
+      "sha256": "ecd142615ca408b20f2a6c11561775e281cd75fd22e4083aa3ce11db2e8687b4"
+    }
+  ],
+  "sourceCommit": "d8005852211026c5a67f6fededb6d4cede6680d5",
+  "scoreMeaning": "existing decoder logits softmax; uncalibrated"
+}

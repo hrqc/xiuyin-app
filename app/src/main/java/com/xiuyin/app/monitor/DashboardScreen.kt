@@ -37,6 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import com.xiuyin.app.pitch.PianoRecognitionFrame
+import com.xiuyin.app.pitch.RecognitionEngineSnapshot
+import com.xiuyin.app.practice.CompanionState
+import com.xiuyin.app.calibration.CalibrationState
 import com.xiuyin.app.AppState
 import com.xiuyin.app.BuildConfig
 import com.xiuyin.app.score.ScoreImportState
@@ -46,8 +50,6 @@ import com.xiuyin.app.audio.AudioStatus
 import com.xiuyin.app.audio.OnsetState
 import com.xiuyin.app.ui.audioMetricNumber
 import com.xiuyin.app.ui.audioStatusLabel
-import com.xiuyin.app.ui.detectedNotesLabel
-import com.xiuyin.app.ui.finalDecisionLabel
 import com.xiuyin.app.ui.onsetStateLabel
 import java.text.DateFormat
 import java.util.Date
@@ -59,7 +61,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 @Composable
-fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit, audio: AudioSnapshot, scores: ScoreImportState = ScoreImportState()) {
+fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit, audio: AudioSnapshot, scores: ScoreImportState = ScoreImportState(), recognition: RecognitionEngineSnapshot = RecognitionEngineSnapshot(), pianoFrame: PianoRecognitionFrame? = null, companion: CompanionState = CompanionState(), calibration: CalibrationState = CalibrationState(), onCalibration: () -> Unit = {}) {
     var query by remember { mutableStateOf("") }
     var selectedLevel by remember { mutableStateOf<String?>(null) }
     var frozenLogs by remember { mutableStateOf<List<LogEntry>?>(null) }
@@ -127,9 +129,15 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
         item {
             MonitorCard("版本与数据") {
                 MetricRow("当前版本", "v${BuildConfig.VERSION_NAME}")
-                MetricRow("Git Commit", BuildConfig.GIT_COMMIT)
+                MetricRow("Git 基础提交", BuildConfig.GIT_COMMIT)
+                MetricRow("构建时工作区", when (BuildConfig.GIT_WORKTREE_STATE) {
+                    "CLEAN" -> "已提交 · 工作区干净"
+                    "MODIFIED" -> "有未提交修改 · 基础提交不代表全部构建代码"
+                    else -> "未知 · 未能验证 Git 工作区"
+                })
                 MetricRow("Git Tag（构建时）", BuildConfig.GIT_TAG)
-                MetricRow("数据位置", "设备本地 SQLite · 不保存录音")
+                MetricRow("数据位置", "设备本地 SQLite 与私有归档")
+                MetricRow("音频保存", "默认仅在内存；短音频案例须本次明确同意后保存")
                 MetricRow("当前页面", "开发者监控")
                 state.error?.let {
                     Text("错误：$it", color = MaterialTheme.colorScheme.error)
@@ -152,8 +160,8 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                     },
                 )
                 MetricRow("Audio Engine", audioStatusLabel(audio))
-                MetricRow("Pitch Engine", "⚪ 未运行 · 音高与多音模型尚未接入")
-                MetricRow("OMR Engine", "⚪ 未运行 · 本地 OMR 模型尚未接入")
+                MetricRow("Pitch Engine", "${recognition.status} · ${recognition.message}")
+                MetricRow("OMR Engine", if (scores.importing) scores.progress ?: "本地处理中" else if (scores.selectedScore?.source?.format != null && scores.selectedScore.source.format != "MusicXML") "已载入本地识谱结果 · 待人工校对" else "本地模型可用 · 尚无当前图像识别运行")
                 MetricRow("Score Engine", when {
                     scores.importing -> "🟡 正在处理 · ${scores.progress.orEmpty()}"
                     scores.error != null || scores.storageIssues.isNotEmpty() -> "🟡 警告 · 请查看数字乐谱页"
@@ -163,7 +171,7 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                     scores.totalScoreCount > 0 -> "🟢 本地来源已读取 · ${scores.totalScoreCount} 份"
                     else -> "⚪ 未运行 · 尚未导入数字乐谱"
                 })
-                MetricRow("Tracking Engine", "⚪ 未运行 · V0.4")
+                MetricRow("Tracking Engine", "${companion.phase} · ${companion.reason}")
                 MetricRow("Microphone", audio.deviceName ?: if (audio.status == AudioStatus.IDLE) "未监听 · 尚未选择输入设备" else audio.statusMessage)
                 MetricRow("Backend / API", "不适用 · 本版无后端服务")
             }
@@ -176,25 +184,32 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                 MetricRow("Score ID", scores.selectedMetadata?.scoreId ?: "尚无")
                 MetricRow("来源 SHA256", scores.selectedScore?.id ?: "尚无")
                 MetricRow("校验疑点", scores.selectedScore?.issues?.size?.toString() ?: "尚未解析")
-                MetricRow("OMR Confidence / sourceBox", "不适用 · MusicXML 直接解析，无图像识别")
-                MetricRow("图像分辨率 / System / Staff / 二次识别", "尚未实现 · 不能用数字谱表数量冒充图像检测")
-                Text("结构化导入尚未连接实时陪练。解析结果与原文件只保存在本机。", style = MaterialTheme.typography.bodySmall)
+                MetricRow("OMR 分数 / 区域", if (scores.selectedScore?.source?.format == "MusicXML") "不适用 · MusicXML直接解析" else "实际模型分数，未校准；区域为谱表边界，非精确音符框")
+                MetricRow("图像识别记录", "原图分块、谱表裁切、二次识别证据随来源归档；详见原图校对")
+                Text("修订乐谱可从工作台开始陪练；原图、音符修订与报告只保存在本机。", style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
             MonitorCard("练习与实时链路") {
-                MetricRow("当前练习模式", state.preparation?.mode?.label ?: "尚未设置")
+                MetricRow("当前练习模式", if (companion.scoreId != null) companion.config.mode.label else state.preparation?.mode?.label ?: "尚未设置")
                 MetricRow("目标连续正确次数", state.preparation?.repeatTarget?.toString() ?: "尚未设置")
-                MetricRow("当前练习状态", "未开始演奏判定 · 仅保存练习设置")
-                MetricRow("LOCKED / 连续正确次数", "未锁定 · 不确定结果不增减正确次数")
-                MetricRow("当前小节 / 拍 / 音符", "尚未采集")
-                MetricRow("目标音符 / 识别音符", "乐谱候选未接入 / 音高模型未接入")
-                MetricRow("频率 / 音高偏差", "尚未采集")
-                MetricRow("Score Following", "未运行")
+                MetricRow("当前练习状态", companion.phase.name)
+                MetricRow("LOCKED / 连续正确次数", "${companion.phase} / ${companion.consecutivePasses}")
+                MetricRow("当前小节 / 起音", if (companion.scoreId == null) "尚未开始" else "${companion.measureIndex + 1} / ${companion.cursor + 1}")
+                MetricRow("目标 / 本次新起音 MIDI", "${companion.expectedMidi} / ${companion.detectedMidi}")
+                MetricRow("连续频率 / 音分偏差", "当前模型识别离散琴键；未实现调音器音分测量")
+                MetricRow("Score Following", "${companion.decision} · ${companion.reason}")
                 MetricRow("Audio Latency", audioMetricNumber(audio.audioLatencyMs, "ms"))
-                MetricRow("Pitch / Recognition Latency", "尚未测量 · 没有识别模型")
+                MetricRow("Pitch 计算耗时", recognition.computeMs?.let { "${it}ms；不等于端到端延迟" } ?: "尚未推理")
+                MetricRow("模型输入上下文", pianoFrame?.let { "${it.modelWindowMs}ms；实际录音时刻=${it.audioTimeSeconds}s" } ?: "尚未产生识别帧")
+                MetricRow("原始模型起音 / 持续 MIDI", pianoFrame?.let { "${it.onsetMidi} / ${it.activeMidi}" } ?: "尚无")
+                MetricRow("踏板状态", pianoFrame?.pedalState ?: "UNKNOWN")
                 MetricRow("Following / UI Cursor Latency", "尚未采集")
-                MetricRow("FPS / OMR Processing Time", "尚未采集")
+                MetricRow("FPS / OMR Processing Time", "帧率尚未采集；OMR 用时记录在本地导入日志")
+                MetricRow("校准 Profile", calibration.profile?.let { "${it.deviceName} · ${it.observedSeconds}秒真实输入" } ?: "尚未校准")
+                MetricRow("本地反馈案例", "${calibration.cases.size}项；保存授权=${calibration.caseConsent}")
+                calibration.environmentWarning?.let { MetricRow("校准提醒", it) }
+                OutlinedButton(onClick = onCalibration) { Text("环境校准与误判案例") }
             }
         }
         item {
@@ -210,11 +225,11 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                 MetricRow("持续音状态", if (audio.onsetState == OnsetState.SUSTAIN) "持续输入 · 不重复累计起音" else "未确认持续输入")
                 MetricRow("候选起音次数", if (audio.totalFrames > 0) audio.onsetCount.toString() else "尚未采集")
                 MetricRow("起音证据分（0–1）", audioMetricNumber(audio.onsetConfidence, "", 2))
-                MetricRow("检测音符（DetectedNotes）", detectedNotesLabel(audio))
-                MetricRow("音符置信度", if (audio.notes.isEmpty()) "暂无 · 音高模型未接入" else audio.notes.joinToString("、") { audioMetricNumber(it.confidence, "", 2) })
-                MetricRow("当前乐谱候选", "尚未接入乐谱约束")
-                MetricRow("最终判断", finalDecisionLabel(audio.decision))
-                MetricRow("判断置信度", audioMetricNumber(audio.decisionConfidence, "", 2))
+                MetricRow("检测音符（DetectedNotes）", pianoFrame?.onsetMidi?.joinToString("、") ?: "尚无真实识别帧")
+                MetricRow("音符激活证据", pianoFrame?.notes?.joinToString("、") { "${it.midi}: onset=${it.onsetScore}, frame=${it.frameScore}" } ?: "尚无真实识别帧")
+                MetricRow("当前乐谱候选", companion.expectedMidi.toString())
+                MetricRow("最终判断", "${companion.decision} · ${companion.reason}")
+                MetricRow("UNCERTAIN 音符 / 原因", pianoFrame?.candidateRejections?.toString() ?: "尚无识别证据")
                 MetricRow("输入帧分析耗时", audioMetricNumber(audio.processingMs, "ms", 2))
                 Text(
                     "起音证据分不是音符准确率。输入帧分析耗时是本地计算用时，不代表音频端到端延迟或识别延迟。钢琴校准与真实琴房效果尚未实测。",

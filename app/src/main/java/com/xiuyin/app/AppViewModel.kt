@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.audio.MicrophoneEngine
+import com.xiuyin.app.pitch.*
 import com.xiuyin.app.data.AppDatabase
 import com.xiuyin.app.data.LogEntry
 import com.xiuyin.app.data.PracticePreparation
@@ -36,17 +37,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         operation("保存音频诊断") {
             val mode = mutableState.value.preparation?.mode?.name ?: "未设置"
             database.appendLog(level, "Audio", message,
-                "$detail\nSaved Practice Mode: $mode\nCurrent Measure/Beat/Expected Notes: 未定位\nRaw Detected Notes: []\nRaw Confidence: 未实现\nFiltered Notes: []\nFinal Decision: UNCERTAIN\nDecision Confidence: 未实现\nLOCKED: 不适用")
+                "$detail\nSaved Practice Mode: $mode\nDiagnostic source: AudioRecord input metrics only; score judgments are logged by Practice module")
             refresh()
         }
     }
     val audio = audioEngine.state
+    private val mutableRecognition = MutableStateFlow(RecognitionEngineSnapshot())
+    val recognition = mutableRecognition.asStateFlow()
+    private val mutablePianoFrame = MutableStateFlow<PianoRecognitionFrame?>(null)
+    val pianoFrame = mutablePianoFrame.asStateFlow()
+    @Volatile private var recognitionListener: ((PianoRecognitionFrame) -> Unit)? = null
+    private val pcmGuard = Any()
+    private var observePcm = false
+    @Volatile private var pcmObserver: ((ShortArray, Int, Long) -> Unit)? = null
+    @Volatile private var audioStopped: (() -> Unit)? = null
+    private val pianoEngine: AudioRecognitionEngine = PianoRecognitionEngine(application, onFrame = { frame ->
+        mutablePianoFrame.value = frame
+        recognitionListener?.invoke(frame)
+    }, onStatus = { snapshot ->
+        val changed = mutableRecognition.value.status != snapshot.status
+        mutableRecognition.value = snapshot
+        if (changed) operation("保存识音诊断") {
+            database.appendLog(if (snapshot.status == RecognitionEngineStatus.ERROR) "ERROR" else "INFO", "Pitch", snapshot.message,
+                "modelSHA256=${snapshot.modelSha256}; frameCount=${snapshot.frameCount}; computeMs=${snapshot.computeMs}; calibratedAccuracy=false")
+            refresh()
+        }
+        if (snapshot.status == RecognitionEngineStatus.ERROR) {
+            audioEngine.stop("识音失败，收音已停止")
+            synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
+        }
+    })
+    fun setRecognitionListener(listener: ((PianoRecognitionFrame) -> Unit)?) { recognitionListener = listener }
+    fun setPcmObserver(listener: ((ShortArray, Int, Long) -> Unit)?, onStopped: (() -> Unit)?) { pcmObserver = listener; audioStopped = onStopped }
+    fun startCompanionAudio(config: PitchEvidenceConfig = PitchEvidenceConfig()) {
+        pianoEngine.stop()
+        pianoEngine.updateConfig(config)
+        mutablePianoFrame.value = null
+        synchronized(pcmGuard) { observePcm = true }
+        pianoEngine.start()
+        audioEngine.start()
+    }
 
-    fun startAudio() = audioEngine.start()
-    fun stopAudio(reason: String = "用户已停止监听") = audioEngine.stop(reason)
+    fun startAudio() { pianoEngine.stop(); synchronized(pcmGuard) { observePcm = true }; audioEngine.start() }
+    fun stopAudio(reason: String = "用户已停止监听") { synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }; audioEngine.stop(reason); pianoEngine.stop() }
     fun audioPermissionDenied() = audioEngine.permissionDenied()
 
-    init { initialize() }
+    init { audioEngine.setPcmListener { samples, count, first -> synchronized(pcmGuard) { if (observePcm) pcmObserver?.invoke(samples, count, first) }; pianoEngine.submitPcm(samples, count, first) }; initialize() }
 
     fun initialize() = operation("启动数据库") {
         check(database.healthCheck()) { "SQLite 健康检查失败" }
@@ -115,6 +151,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        recognitionListener = null
+        pcmObserver = null; audioStopped?.invoke(); audioStopped = null
+        audioEngine.setPcmListener(null)
+        pianoEngine.close()
         audioEngine.close()
         database.close()
         super.onCleared()

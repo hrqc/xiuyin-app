@@ -1,0 +1,334 @@
+package com.xiuyin.app.pitch
+
+import android.content.Context
+import android.os.SystemClock
+import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.io.File
+import java.io.InputStream
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.MessageDigest
+import java.util.UUID
+
+/** Phase 1 observes the unchanged production engine. It does not decide which MIDI notes are correct. */
+class OctaveBaselineTraceTest {
+    @Test fun frozenInputTraversesProductionEngineWithCompleteFrameTrace() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = requireNotNull(context.getExternalFilesDir(null))
+        val metadataFile = File(root, "octave-baseline-metadata.json")
+        val framesFile = File(root, "octave-baseline-frames.jsonl")
+        val startedAtMillis = System.currentTimeMillis()
+        val started = SystemClock.elapsedRealtime()
+        val metadata = JSONObject()
+            .put("schemaVersion", 1).put("runId", UUID.randomUUID().toString())
+            .put("startedAtMillis", startedAtMillis).put("stage", "INPUT_VALIDATION")
+            .put("chainPassed", false).put("traceComplete", false).put("accuracyValidated", false)
+            .put("scope", "frozen real WAV -> unchanged production asynchronous PianoRecognitionEngine; passive file replay, not microphone or music acceptance")
+            .put("expectedInputSha256", EXPECTED_SHA256).put("expectedSamples", EXPECTED_SAMPLES)
+            .put("expectedFrames", EXPECTED_FRAMES).put("expectedWindows", EXPECTED_WINDOWS)
+            .put("framesFile", framesFile.name)
+        // Invalidate the old success first, even when arguments or fixture validation fail.
+        metadataFile.writeText(metadata.toString(2), Charsets.UTF_8)
+        val trace = TraceCapture()
+        var engine: PianoRecognitionEngine? = null
+        var submitted = 0L
+        var submittedBlocks = 0L
+        var expectedRunningPublications = 0L
+        var failure: Throwable? = null
+        try {
+            framesFile.writeText("", Charsets.UTF_8)
+            val args = InstrumentationRegistry.getArguments()
+            val path = requireNotNull(args.getString("octaveBaselineWav")) {
+                "八度基线缺少 octaveBaselineWav；禁止跳过或以合成音频替代"
+            }
+            val expectedSha = requireNotNull(args.getString("octaveBaselineExpectedSha256")) {
+                "八度基线缺少 octaveBaselineExpectedSha256；必须显式指定冻结输入身份"
+            }
+            assertEquals("Phase 1 必须保留冻结输入，不能临时替换验收材料", EXPECTED_SHA256, expectedSha)
+            val wav = authorizedFile(context, path)
+            val inputSha = wav.inputStream().use(::sha256)
+            metadata.put("inputSha256", inputSha).put("inputBytes", wav.length())
+            assertEquals("冻结 WAV 的 SHA256 不匹配", expectedSha, inputSha)
+            val layout = readLayout(wav)
+            metadata.put("inputSamples", layout.samples).put("sampleRate", 48_000)
+                .put("channels", 1).put("pcmBits", 16).put("inputSeconds", layout.samples / 48_000.0)
+            assertEquals("冻结 WAV 样本数改变", EXPECTED_SAMPLES, layout.samples)
+            val modelSha = context.assets.open(PianoModel.MODEL_ASSET).use(::sha256)
+            metadata.put("modelSha256", modelSha).put("modelAsset", PianoModel.MODEL_ASSET)
+                .put("expectedModelSha256", PianoModel.MODEL_SHA256)
+            assertEquals("实际模型资源 SHA256 不匹配", PianoModel.MODEL_SHA256, modelSha)
+            metadata.put("stage", "REPLAY_RUNNING")
+            metadataFile.writeText(metadata.toString(2), Charsets.UTF_8)
+            val runningEngine = PianoRecognitionEngine(context, trace::acceptFrame, trace::acceptStatus)
+            engine = runningEngine
+            runningEngine.start()
+            awaitEngine(runningEngine) { runningEngine.snapshot.status == RecognitionEngineStatus.WARMING_UP }
+            // The first FIR output uses TAP_COUNT inputs, with one output per FACTOR thereafter.
+            val firstInferenceInputSamples = Streaming48kTo16k.TAP_COUNT.toLong() +
+                (PianoModel.INPUT_SAMPLES - 1L) * Streaming48kTo16k.FACTOR
+            RandomAccessFile(wav, "r").use { input ->
+                input.seek(layout.dataOffset)
+                val bytes = ByteArray(4096 * 2)
+                val littleEndian = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                val samples = ShortArray(4096)
+                var target = minOf(60_000L, layout.samples)
+                while (submitted < layout.samples) {
+                    while (submitted < target) {
+                        val count = minOf(samples.size.toLong(), target - submitted).toInt()
+                        input.readFully(bytes, 0, count * 2)
+                        repeat(count) { samples[it] = littleEndian.getShort(it * 2) }
+                        runningEngine.submitPcm(samples, count, submitted)
+                        submitted += count
+                        submittedBlocks++
+                        if (submitted >= firstInferenceInputSamples) expectedRunningPublications++
+                    }
+                    val converted = if (submitted < Streaming48kTo16k.TAP_COUNT) 0L else
+                        1L + (submitted - Streaming48kTo16k.TAP_COUNT) / Streaming48kTo16k.FACTOR
+                    val windows = if (converted < PianoModel.INPUT_SAMPLES) 0L else
+                        1L + (converted - PianoModel.INPUT_SAMPLES) / PianoRecognitionProcessor.STEP_SAMPLES
+                    val expectedFrames = if (windows == 0L) 0L else PianoModel.FRAME_COUNT +
+                        (windows - 1) * (PianoRecognitionProcessor.STEP_SAMPLES / PianoModel.HOP_SAMPLES)
+                    awaitEngine(runningEngine) {
+                        runningEngine.snapshot.frameCount >= expectedFrames &&
+                            trace.runningPublications() >= expectedRunningPublications
+                    }
+                    target = minOf(submitted + 24_576, layout.samples)
+                }
+                assertEquals("真实 data 区块必须全部读取", layout.dataOffset + layout.samples * 2, input.filePointer)
+            }
+            assertEquals(EXPECTED_SAMPLES, submitted)
+            assertEquals(EXPECTED_FRAMES, runningEngine.snapshot.frameCount)
+            assertEquals(expectedRunningPublications, trace.runningPublications())
+            assertEquals(RecognitionEngineStatus.RUNNING, runningEngine.snapshot.status)
+            val captured = trace.frames()
+            assertEquals(EXPECTED_FRAMES, captured.size.toLong())
+            assertEquals(EXPECTED_WINDOWS, captured.map { it.availableAudioTimeSeconds }.distinct().size)
+            metadata.put("replayAssertionsPassed", true)
+        } catch (error: Throwable) {
+            failure = error
+        } finally {
+            val beforeStop = engine?.snapshot
+            try {
+                engine?.stop()
+                if (engine != null) assertEquals("回放结束必须真正停止识音", RecognitionEngineStatus.IDLE, engine.snapshot.status)
+                metadata.put("statusBeforeStop", beforeStop?.status?.name ?: "NOT_STARTED")
+                    .put("statusAfterStop", engine?.snapshot?.status?.name ?: "NOT_STARTED")
+                    .put("engineFrames", beforeStop?.frameCount ?: 0L)
+                    .put("engineModelSha256", beforeStop?.modelSha256 ?: JSONObject.NULL)
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+            } finally {
+                // stop() shares the engine callback guard: no later frame can race serialization.
+                try { engine?.close() } catch (error: Throwable) {
+                    if (failure == null) failure = error else failure.addSuppressed(error)
+                }
+            }
+            try {
+                val captured = trace.frames()
+                val hashes = writeFrames(framesFile, captured)
+                val statuses = trace.statusCounts()
+                val complete = failure == null && metadata.optBoolean("replayAssertionsPassed") &&
+                    metadata.optString("statusAfterStop") == RecognitionEngineStatus.IDLE.name &&
+                    submitted == EXPECTED_SAMPLES && captured.size.toLong() == EXPECTED_FRAMES &&
+                    trace.runningPublications() == expectedRunningPublications
+                metadata.put("stage", if (complete) "TRACE_COMPLETE" else "FAILED")
+                    .put("chainPassed", complete).put("traceComplete", complete)
+                    .put("submittedSamples", submitted).put("submittedBlocks", submittedBlocks)
+                    .put("expectedRunningPublications", expectedRunningPublications)
+                    .put("runningPublications", trace.runningPublications())
+                    .put("allSubmittedBlocksProcessed", complete)
+                    .put("drainEvidence", "After first inference, production engine publishes RUNNING once per consumed PCM block; wait for all expected publications, including incomplete-window tail blocks")
+                    .put("statusPublicationCounts", JSONObject(statuses))
+                    .put("statusAfterClose", engine?.snapshot?.status?.name ?: "NOT_STARTED")
+                    .put("frames", captured.size).put("windows", captured.map { it.availableAudioTimeSeconds }.distinct().size)
+                    .put("firstFrameIndex", captured.firstOrNull()?.frameIndex ?: JSONObject.NULL)
+                    .put("lastFrameIndex", captured.lastOrNull()?.frameIndex ?: JSONObject.NULL)
+                    .put("acceptedOnsets", captured.sumOf { it.onsetMidi.size })
+                    .put("onsetFrames", captured.count { it.onsetMidi.isNotEmpty() })
+                    .put("uncertainFrames", captured.count { it.state == RecognitionState.UNCERTAIN })
+                    .put("uncertainCandidates", captured.sumOf { it.uncertainMidi.size })
+                    .put("clippedFrames", captured.count { it.clipped })
+                    .put("rawSequenceSha256", hashes.rawSequence)
+                    .put("deterministicSequenceSha256", hashes.deterministicSequence)
+                    .put("framesFileSha256", framesFile.inputStream().use(::sha256))
+                    .put("rawSequenceHashEncoding", "Per frame: int64 frameIndex then float32 rawOnsetScores[88] then float32 rawFrameScores[88], all big endian; concatenate frames in order; SHA-256")
+                    .put("deterministicSequenceHashEncoding", "UTF-8 JSONL with recursively sorted object keys and LF after each frame; Android JSONObject number formatting; omit computeMs only")
+                    .put("scoresMeaning", "Unmodified engine sigmoid activation scores, not logits or calibrated probabilities; index 0 = MIDI 21, index 87 = MIDI 108")
+                    .put("tailPolicy", "All real PCM blocks processed; incomplete final inference window is not zero-padded and produces no invented frames")
+                    .put("unavailableDiagnostics", JSONArray(listOf("independentOnsetScore", "octaveAmbiguityScore", "measuredNoteOffsets", "reliablePedalState")))
+                    .put("pitchAccuracy", JSONObject.NULL).put("falseStopRate", JSONObject.NULL)
+                    .put("elapsedWallMs", SystemClock.elapsedRealtime() - started)
+                    .put("failure", failure?.stackTraceToString() ?: JSONObject.NULL)
+                // The success flag is only written after the current trace was flushed and hashed.
+                metadataFile.writeText(metadata.toString(2), Charsets.UTF_8)
+            } catch (error: Throwable) {
+                if (failure == null) failure = error else failure.addSuppressed(error)
+                metadata.put("stage", "OUTPUT_FAILED").put("chainPassed", false).put("traceComplete", false)
+                    .put("failure", failure.stackTraceToString())
+                try { metadataFile.writeText(metadata.toString(2), Charsets.UTF_8) } catch (writeError: Throwable) {
+                    failure.addSuppressed(writeError)
+                }
+            }
+        }
+        failure?.let { throw it }
+        check(metadata.getBoolean("traceComplete")) { "基线逐帧输出不完整" }
+    }
+
+    /** Own only detached copies; never invoke the engine or perform I/O under this capture lock. */
+    private class TraceCapture {
+        private val captured = ArrayList<PianoRecognitionFrame>()
+        private val publications = linkedMapOf<String, Long>()
+
+        @Synchronized fun acceptFrame(frame: PianoRecognitionFrame) {
+            check(frame.frameIndex == captured.size.toLong()) { "实际模型帧不连续：${captured.size} -> ${frame.frameIndex}" }
+            val previous = captured.lastOrNull()
+            check(frame.audioTimeSeconds.isFinite() && frame.availableAudioTimeSeconds.isFinite())
+            check(frame.audioTimeSeconds >= 0.0 && frame.availableAudioTimeSeconds >= frame.audioTimeSeconds)
+            check(previous == null || frame.audioTimeSeconds > previous.audioTimeSeconds &&
+                frame.availableAudioTimeSeconds >= previous.availableAudioTimeSeconds)
+            check(frame.computeMs.isFinite() && frame.computeMs >= 0.0)
+            check(frame.rawOnsetScores.size == PianoModel.PIANO_KEYS && frame.rawFrameScores.size == PianoModel.PIANO_KEYS)
+            check(frame.rawOnsetScores.all { it.isFinite() && it in 0f..1f })
+            check(frame.rawFrameScores.all { it.isFinite() && it in 0f..1f })
+            captured.add(frame.copy(
+                onsetMidi = frame.onsetMidi.toSet(), activeMidi = frame.activeMidi.toSet(), notes = frame.notes.toList(),
+                rawOnsetScores = frame.rawOnsetScores.copyOf(), rawFrameScores = frame.rawFrameScores.copyOf(),
+                uncertainMidi = frame.uncertainMidi.toSet(), candidateRejections = frame.candidateRejections.toMap(),
+            ))
+        }
+
+        @Synchronized fun acceptStatus(snapshot: RecognitionEngineSnapshot) {
+            publications[snapshot.status.name] = (publications[snapshot.status.name] ?: 0L) + 1
+        }
+        @Synchronized fun runningPublications(): Long = publications[RecognitionEngineStatus.RUNNING.name] ?: 0L
+        @Synchronized fun statusCounts(): Map<String, Long> = publications.toMap()
+        @Synchronized fun frames(): List<PianoRecognitionFrame> = captured.toList()
+    }
+
+    private data class TraceHashes(val rawSequence: String, val deterministicSequence: String)
+
+    private fun writeFrames(file: File, frames: List<PianoRecognitionFrame>): TraceHashes {
+        val rawDigest = MessageDigest.getInstance("SHA-256")
+        val deterministicDigest = MessageDigest.getInstance("SHA-256")
+        val rawBytes = ByteBuffer.allocate(8 + PianoModel.PIANO_KEYS * 2 * 4).order(ByteOrder.BIG_ENDIAN)
+        file.bufferedWriter(Charsets.UTF_8).use { output ->
+            frames.forEach { frame ->
+                rawBytes.clear()
+                rawBytes.putLong(frame.frameIndex)
+                frame.rawOnsetScores.forEach { rawBytes.putFloat(it) }
+                frame.rawFrameScores.forEach { rawBytes.putFloat(it) }
+                rawDigest.update(rawBytes.array())
+                val row = frameJson(frame)
+                val deterministicLine = canonicalJson(row) + "\n"
+                deterministicDigest.update(deterministicLine.toByteArray(Charsets.UTF_8))
+                row.put("computeMs", frame.computeMs)
+                output.write(canonicalJson(row))
+                output.write("\n")
+            }
+        }
+        return TraceHashes(hex(rawDigest.digest()), hex(deterministicDigest.digest()))
+    }
+
+    private fun frameJson(frame: PianoRecognitionFrame): JSONObject {
+        val rejections = JSONObject()
+        frame.candidateRejections.toSortedMap().forEach { (midi, reason) -> rejections.put(midi.toString(), reason) }
+        return JSONObject().put("frameIndex", frame.frameIndex).put("audioTimeSeconds", frame.audioTimeSeconds)
+            .put("availableAudioTimeSeconds", frame.availableAudioTimeSeconds)
+            .put("state", frame.state.name).put("clipped", frame.clipped)
+            .put("onsetMidi", JSONArray(frame.onsetMidi.sorted())).put("activeMidi", JSONArray(frame.activeMidi.sorted()))
+            .put("rawOnsetScores", JSONArray(frame.rawOnsetScores.toList()))
+            .put("rawFrameScores", JSONArray(frame.rawFrameScores.toList()))
+            .put("uncertainMidi", JSONArray(frame.uncertainMidi.sorted())).put("candidateRejections", rejections)
+            .put("pedal", frame.pedalState).put("offset", JSONObject.NULL).put("offsetSupported", frame.offsetSupported)
+            .put("modelWindowMs", frame.modelWindowMs)
+            .put("notes", JSONArray(frame.notes.sortedBy { it.midi }.map { note ->
+                JSONObject().put("midi", note.midi).put("onsetScore", note.onsetScore)
+                    .put("frameScore", note.frameScore).put("onset", note.onset).put("active", note.active)
+            }))
+    }
+
+    private fun canonicalJson(value: Any?): String = when (value) {
+        null, JSONObject.NULL -> "null"
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString(",", "{", "}") { key ->
+            JSONObject.quote(key) + ":" + canonicalJson(value.get(key))
+        }
+        is JSONArray -> (0 until value.length()).joinToString(",", "[", "]") { canonicalJson(value.get(it)) }
+        is Number -> JSONObject.numberToString(value)
+        is Boolean -> value.toString()
+        is String -> JSONObject.quote(value)
+        else -> error("不可序列化的真实帧字段：${value.javaClass.name}")
+    }
+
+    private data class WavLayout(val dataOffset: Long, val samples: Long)
+
+    private fun readLayout(file: File): WavLayout = RandomAccessFile(file, "r").use { input ->
+        fun fourCc(): String = ByteArray(4).also(input::readFully).toString(Charsets.US_ASCII)
+        fun unsignedInt(): Long = Integer.reverseBytes(input.readInt()).toLong() and 0xffffffffL
+        fun unsignedShort(): Int = java.lang.Short.reverseBytes(input.readShort()).toInt() and 0xffff
+        require(input.length() >= 44 && fourCc() == "RIFF") { "缺少有效 WAV RIFF" }
+        require(unsignedInt() + 8 == input.length() && fourCc() == "WAVE") { "WAV 长度或类型无效" }
+        var validFormat = false
+        var result: WavLayout? = null
+        while (input.filePointer + 8 <= input.length()) {
+            val type = fourCc(); val length = unsignedInt(); val offset = input.filePointer
+            require(length <= input.length() - offset) { "WAV 区块越界" }
+            if (type == "fmt ") {
+                require(length >= 16 && !validFormat)
+                val pcm = unsignedShort(); val channels = unsignedShort(); val rate = unsignedInt()
+                val bytesPerSecond = unsignedInt(); val alignment = unsignedShort(); val bits = unsignedShort()
+                validFormat = pcm == 1 && channels == 1 && rate == 48_000L &&
+                    bytesPerSecond == 96_000L && alignment == 2 && bits == 16
+                require(validFormat) { "八度基线必须为 48kHz 单声道 16-bit PCM" }
+            } else if (type == "data") {
+                require(validFormat && length > 0 && length % 2 == 0L && result == null)
+                result = WavLayout(offset, length / 2)
+            }
+            val next = offset + length + length % 2
+            require(next <= input.length())
+            input.seek(next)
+        }
+        require(input.filePointer == input.length()) { "WAV 存在不完整尾部区块" }
+        requireNotNull(result) { "缺少真实 PCM data 区块" }
+    }
+
+    private fun authorizedFile(context: Context, path: String): File {
+        val file = File(path).canonicalFile
+        val roots = listOfNotNull(context.filesDir, context.getExternalFilesDir(null))
+            .map { it.canonicalPath + File.separator }
+        require(roots.any { file.path.startsWith(it) } && file.isFile && file.length() in 44..64L * 1024 * 1024) {
+            "基线输入必须位于此 App 私有测试目录且不超过 64MiB"
+        }
+        return file
+    }
+
+    private fun awaitEngine(engine: PianoRecognitionEngine, predicate: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + 30_000
+        while (!predicate()) {
+            check(engine.snapshot.status != RecognitionEngineStatus.ERROR) { engine.snapshot.message }
+            check(SystemClock.elapsedRealtime() < deadline) { "真实基线异步回放等待超时：${engine.snapshot}" }
+            Thread.sleep(10)
+        }
+        check(engine.snapshot.status != RecognitionEngineStatus.ERROR) { engine.snapshot.message }
+    }
+
+    private fun sha256(input: InputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(65_536)
+        while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+        return hex(digest.digest())
+    }
+
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+    companion object {
+        private const val EXPECTED_SHA256 = "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20"
+        private const val EXPECTED_SAMPLES = 1_274_880L
+        private const val EXPECTED_FRAMES = 816L
+        private const val EXPECTED_WINDOWS = 50
+    }
+}

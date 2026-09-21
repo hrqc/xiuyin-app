@@ -1,0 +1,20 @@
+Andromr uses Open-Source-Software.
+
+GitHub projects:
+- liebharc/homr: AGPL 3.0
+- papoteur-mga/relieur: Apache 2.0
+- teticio/kivy-tensorflow-helloworld: MIT
+- Android-for-Python/androidstorage4kivy: MIT
+
+Libaries:
+- numpy: Custom
+- Pillow: MIT-CMU
+- Opencv: Apache 2.0
+- LiteRT: Apache 2.0
+- onnxruntime: MIT
+
+Base App:
+- Kivy: MIT
+- KivyMD: MIT
+- Buildozer: MIT
+- Pyjnius: MIT

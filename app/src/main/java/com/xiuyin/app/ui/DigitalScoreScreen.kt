@@ -70,6 +70,10 @@ fun DigitalScoreScreen(
     onDeleteScore: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
     storageIssues: List<String> = emptyList(),
+    onWorkbench: () -> Unit = {},
+    onImportImages: () -> Unit = {},
+    onImportMidi: () -> Unit = {},
+    onCamera: () -> Unit = {},
 ) {
     var editingScoreId by rememberSaveable { mutableStateOf<String?>(null) }
     var deletingScoreId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -135,7 +139,7 @@ fun DigitalScoreScreen(
                 TextButton(onClick = onBack) { Text("返回曲库") }
                 Text("导入与数字乐谱", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "把已有的 MusicXML 留在本机，逐小节查看音符与疑点。",
+                    "把图片、PDF、MusicXML 或 MIDI 留在本机，逐小节校对与练习。",
                     color = XiuyinMuted,
                     style = MaterialTheme.typography.bodyLarge,
                 )
@@ -149,12 +153,11 @@ fun DigitalScoreScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("本地解析 · 数据校对视图", fontWeight = FontWeight.SemiBold)
                     Text(
-                        "本版支持未压缩的 .musicxml / .xml（score-partwise），最大 2 MiB。" +
-                            "图片、PDF、MIDI 与压缩 MXL 尚不支持。",
+                        "MusicXML 最大 2 MiB；图片与 PDF 本地识别，最多 20 页。MIDI 支持标准 SMF 0/1 PPQ；压缩 MXL 尚不支持。",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        "完整五线谱排版、简谱、移调、编辑、试听与 OMR 尚未实现；本页不会启动陪练。",
+                        "打开工作台可查看双谱、修谱、移调、试听与陪练。图片识谱请务必对照原图校正，模型分数不是准确率。",
                         style = MaterialTheme.typography.bodySmall,
                         color = XiuyinMuted,
                     )
@@ -182,6 +185,11 @@ fun DigitalScoreScreen(
                     modifier = Modifier.fillMaxWidth().testTag("score_import"),
                     shape = RoundedCornerShape(14.dp),
                 ) { Text(if (importing) "正在处理文件…" else "选择 MusicXML 文件") }
+                OutlinedButton(onClick = onImportMidi, enabled = !importing, modifier = Modifier.fillMaxWidth().testTag("score_import_midi")) { Text("选择 MIDI 文件") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onImportImages, enabled = !importing, modifier = Modifier.weight(1f).testTag("score_import_images")) { Text("图片 / PDF") }
+                    OutlinedButton(onClick = onCamera, enabled = !importing, modifier = Modifier.weight(1f).testTag("score_camera")) { Text("拍照识谱") }
+                }
                 if (importing) {
                     Text(
                         progress ?: "正在处理本地文件",
@@ -290,11 +298,12 @@ fun DigitalScoreScreen(
                         modifier = Modifier.testTag("score_issue_count"),
                     )
                     Text(
-                        "数据直接来自 MusicXML，未经过 OMR；没有生成识别置信度。" +
+                        (if (selectedScore.source.format in setOf("MusicXML", "MIDI")) "数据来自结构化文件；没有图像识别置信度。" else "来自本地 OMR 模型；模型分数未经准确率校准，需对照原图修谱。") +
                             "未发现疑点不等于全谱已经人工验证。",
                         style = MaterialTheme.typography.bodySmall,
                         color = XiuyinMuted,
                     )
+                    Button(onClick = onWorkbench, enabled = !importing, modifier = Modifier.fillMaxWidth().testTag("open_score_workbench")) { Text("打开乐谱工作台") }
                     selectedMetadata?.let { metadata ->
                         ScoreMetadataDetails(
                             metadata, enabled = !importing,

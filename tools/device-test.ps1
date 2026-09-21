@@ -182,15 +182,51 @@ try {
         $install = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'install', '-r', $apk) -LogPath (Join-Path $outputRoot ([IO.Path]::GetFileNameWithoutExtension($apk) + '-install.log'))
         if ($install.exitCode -ne 0 -or $install.output -notmatch '(?m)^\s*Success\s*$') { throw "APK 安装未成功：$apk" }
     }
+    & 'C:\Python314\python.exe' (Join-Path $PSScriptRoot 'prepare_device_fixtures.py') --serial $deviceSerial --report (Join-Path $outputRoot 'input-manifest.json')
+    if ($LASTEXITCODE -ne 0) { throw '真实测试素材准备失败，禁止用替代输入放行' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
     Write-InstrumentationXml -Result $result -Path (Join-Path $outputRoot 'TEST-instrumentation.xml') -Raw $instrumentation.output -StartedAt $testStarted -Duration $duration
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
+    $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
+    # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
+    $mainReplayRemote = '/sdcard/Android/data/com.xiuyin.app/files/practice-replay-result.json'
+    $pull = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'pull', $mainReplayRemote, $mainReplayPath) -LogPath (Join-Path $outputRoot 'autopiano-report-pull.log')
+    if ($pull.exitCode -ne 0 -or -not (Test-Path -LiteralPath $mainReplayPath -PathType Leaf)) { throw '实际App主回放证据原字节复制失败' }
+    $remoteHash = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'sha256sum', $mainReplayRemote) -LogPath (Join-Path $outputRoot 'autopiano-report-device-sha.log')
+    $hashMatch = [regex]::Match($remoteHash.output, '^[a-f0-9]{64}')
+    $hashStream = [IO.File]::OpenRead($mainReplayPath)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { $localHash = [BitConverter]::ToString($hasher.ComputeHash($hashStream)).Replace('-', '').ToLowerInvariant() }
+    finally { $hasher.Dispose(); $hashStream.Dispose() }
+    if ($remoteHash.exitCode -ne 0 -or -not $hashMatch.Success -or $localHash -ne $hashMatch.Value) { throw '实际App主回放证据传输前后哈希不同' }
+    & 'C:\Python314\python.exe' (Join-Path $PSScriptRoot 'evaluation/evaluate-practice-audio.py') --replay $mainReplayPath --timeline (Join-Path $projectRoot 'reports/autopiano-input-worklet/expected-timeline.json') --output (Join-Path $outputRoot 'autopiano-acoustic-evaluation.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Autopiano实际App声学门禁未通过' }
+    $corpusPath = Join-Path $PSScriptRoot 'evaluation/website-corpus.json'
+    $corpus = Get-Content -LiteralPath $corpusPath -Raw -Encoding utf8 | ConvertFrom-Json
+    if (@($corpus.cases).Count -lt 2) { throw '两组既有网站回归均为必需，清单不完整' }
+    foreach ($fixture in $corpus.cases) {
+        if ($fixture.id -notmatch '^[a-z0-9-]+$') { throw 'Invalid website fixture id' }
+        $replayStart = Get-Date
+        $replayText = & 'C:\Python314\python.exe' (Join-Path $PSScriptRoot 'replay-practice.py') --serial $deviceSerial --wav (Join-Path $projectRoot $fixture.wav) --timeline (Join-Path $projectRoot $fixture.timeline) --expected-wav-sha $fixture.wavSha256 --expected-timeline-sha $fixture.timelineSha256 | Out-String
+        $replayCode = $LASTEXITCODE
+        $replayText | Set-Content -LiteralPath (Join-Path $outputRoot ($fixture.id + '-replay.json')) -Encoding utf8
+        $replay = $replayText | ConvertFrom-Json
+        $rawReplay = Get-Content -LiteralPath (Join-Path $replay.report 'instrumentation.log') -Raw -Encoding utf8
+        $replayResult = ConvertFrom-InstrumentationOutput -Output $rawReplay -ExitCode $replayCode
+        Write-InstrumentationXml -Result $replayResult -Path (Join-Path $outputRoot ('TEST-' + $fixture.id + '.xml')) -Raw $rawReplay -StartedAt $replayStart -Duration (((Get-Date) - $replayStart).TotalSeconds)
+
+        & 'C:\Python314\python.exe' (Join-Path $PSScriptRoot 'evaluation/evaluate-practice-audio.py') --replay (Join-Path $replay.report 'practice-replay-result.json') --timeline (Join-Path $projectRoot $fixture.timeline) --output (Join-Path $outputRoot ($fixture.id + '-acoustic-evaluation.json'))
+        $acousticCode = $LASTEXITCODE
+        if ($replay.status -ne 'PASSED' -or $replayResult.status -ne 'passed') { throw ('实际网站陪练回放失败：' + $fixture.id + '；' + $replay.report) }
+        if ($acousticCode -ne 0) { throw ('实际网站声学门禁未通过：' + $fixture.id) }
+
+    }
     $exitCode = 0
-    Write-Host ("原生仪器测试通过：$($result.tests) 个用例；失败 0；跳过 0。")
+    Write-Host ("原生仪器测试通过：$($result.tests) 个主用例，及 $(@($corpus.cases).Count) 组独立网站回放；失败 0；跳过 0。")
 } catch {
     $failure = $_.Exception.Message
     [Console]::Error.WriteLine('原生仪器测试失败：' + $failure)

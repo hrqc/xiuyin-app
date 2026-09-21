@@ -1,0 +1,2078 @@
+{
+  "schema": 1,
+  "mode": "baseline_freeze",
+  "processingStatus": "PASSED",
+  "acousticAcceptance": "FAILED",
+  "originalMusicAcceptance": "FAILED",
+  "reproducibilityPass": null,
+  "comparison": null,
+  "summary": {
+    "expectedCount": 23,
+    "actualOnsetCount": 30,
+    "matchedCount": 23,
+    "precision": 0.7666666666666667,
+    "recall": 1.0,
+    "samples": 1274880,
+    "frames": 816,
+    "exportedEventCount": 37,
+    "extraCount": 7,
+    "missedCount": 0,
+    "expectedGroups": 17,
+    "FREE": {
+      "correct": 9,
+      "wrong": 4,
+      "missed": 3,
+      "completed": false
+    },
+    "correctReferenceSTOP": {
+      "correct": 0,
+      "wrong": 12,
+      "missed": 0,
+      "completed": false,
+      "confirmedInputs": 17,
+      "uncertainFrames": 804,
+      "lockedTransitions": 1,
+      "finalPhase": "LOCKED"
+    },
+    "controlledWrongReference": {
+      "lockedTransitions": 2,
+      "correctionTransitions": 1
+    }
+  },
+  "metrics": {
+    "notePrecision": {
+      "numerator": 23,
+      "denominator": 30,
+      "value": 0.7666666666666667,
+      "definition": "One-to-one matched notes / all accepted onset notes."
+    },
+    "noteRecall": {
+      "numerator": 23,
+      "denominator": 23,
+      "value": 1.0,
+      "definition": "One-to-one matched notes / independently expected onset notes."
+    },
+    "octaveFalsePositiveRate": {
+      "numerator": 7,
+      "denominator": 13,
+      "value": 0.5384615384615384,
+      "definition": "Single-note reference groups with >=1 unmatched accepted +12-semitone onset assigned by the unchanged independent evaluator / all single-note reference groups, including repeats. A group counts once."
+    },
+    "trueOctaveExactRecall": {
+      "numerator": 1,
+      "denominator": 1,
+      "value": 1.0,
+      "definition": "Exact reference octave dyads / all reference octave dyads. Exact preserves no-extra and <=100ms chord-spread requirements."
+    },
+    "repeatedTargetOnsetRecall": {
+      "numerator": 5,
+      "denominator": 5,
+      "value": 1.0,
+      "definition": "One-to-one matched expected onset notes in repeat-labelled reference groups / all expected onset notes in those groups. Extra notes remain penalized separately."
+    },
+    "repeatedStrictGroupRecall": {
+      "numerator": 0,
+      "denominator": 5,
+      "value": 0.0,
+      "definition": "Exact repeat-labelled groups / all repeat-labelled groups. Same repeat selector and exact predicate as the original evaluator."
+    },
+    "falseLockEvents": 1,
+    "falseLockEventsPerExpectedGroup": {
+      "numerator": 1,
+      "denominator": 17,
+      "value": 0.058823529411764705,
+      "definition": "Transitions from non-LOCKED to LOCKED on the correct reference / expected reference groups. Descriptive event density only; not an independent per-trial false-stop probability. Consequential WRONG records while already LOCKED are not additional locks."
+    }
+  },
+  "acousticGates": {
+    "notePrecisionAtLeast90Percent": false,
+    "noteRecallAtLeast90Percent": true,
+    "noExtraAcceptedOnsets": false,
+    "noMissedExpectedOnsets": true,
+    "allGroupsExact": false,
+    "atLeastTwoTriadsExact": true,
+    "allDyadsExact": true,
+    "fiveRepeatedNotesExact": false
+  },
+  "followerGates": {
+    "freeComplete": false,
+    "freeAllGroupsCorrect": false,
+    "freeNoWrong": false,
+    "freeNoMissed": false,
+    "correctReferenceStopComplete": false,
+    "correctReferenceStopAllGroupsCorrect": false,
+    "correctReferenceStopNoWrong": false,
+    "correctReferenceStopNoMissed": true,
+    "correctReferenceStopNoFalseLock": false,
+    "controlledWrongReferenceLocks": true,
+    "controlledWrongReferenceRecovers": true
+  },
+  "falseLockEvents": [
+    {
+      "frame": 37,
+      "audioSeconds": 1.1853125,
+      "fromPhase": "RUNNING",
+      "toPhase": "LOCKED",
+      "decision": "WRONG"
+    }
+  ],
+  "octaveFalsePositiveGroupLabels": [
+    "independent2-single-D2",
+    "independent2-single-B2",
+    "repeat-E4-1",
+    "repeat-E4-2",
+    "repeat-E4-3",
+    "repeat-E4-4",
+    "repeat-E4-5"
+  ],
+  "unsupported": {
+    "ambiguityRate": null,
+    "ambiguityResolutionSeconds": null,
+    "phoneEndToEndLatencySeconds": null,
+    "reason": "This baseline exporter has no AMBIGUOUS_OCTAVE or ambiguity-resolution instrumentation and no physical-phone latency observation. UNCERTAIN is not an octave-ambiguity label."
+  },
+  "availableAudioContext": {
+    "status": "DERIVED_FROM_PRODUCTION_SCHEDULE",
+    "formula": "window=0 for frame<32 else 1+(frame-32)//16; availableSeconds=126/48000+(17920+8192*window)/16000",
+    "modelInputSeconds": 1.12,
+    "modelStepSeconds": 0.512,
+    "frameHopSeconds": 0.032,
+    "frameTimestampFirOffsetSeconds": 0.0013125,
+    "acceptedOnsetFrameContextAheadSeconds": {
+      "count": 20,
+      "minimum": 0.12931249999999395,
+      "mean": 0.3597124999999991,
+      "maximum": 0.6093125000000015
+    },
+    "matchedAvailableAfterReferenceActionSeconds": {
+      "count": 23,
+      "minimum": 0.2239583333333286,
+      "mean": 0.46755253623188375,
+      "maximum": 0.6932916666666689
+    },
+    "matchedAudioClockMinusReferenceActionSeconds": {
+      "count": 23,
+      "minimum": 0.05731249999999832,
+      "mean": 0.07389221014492779,
+      "maximum": 0.09464583333333465
+    },
+    "sparseEventContext": [
+      {
+        "frame": 34,
+        "audioSeconds": 1.0893125000000001,
+        "derivedAvailableAudioSeconds": 1.634625,
+        "availableAheadOfFrameSeconds": 0.5453124999999999
+      },
+      {
+        "frame": 37,
+        "audioSeconds": 1.1853125,
+        "derivedAvailableAudioSeconds": 1.634625,
+        "availableAheadOfFrameSeconds": 0.4493125
+      },
+      {
+        "frame": 78,
+        "audioSeconds": 2.4973125,
+        "derivedAvailableAudioSeconds": 2.6586250000000002,
+        "availableAheadOfFrameSeconds": 0.1613125000000002
+      },
+      {
+        "frame": 81,
+        "audioSeconds": 2.5933125,
+        "derivedAvailableAudioSeconds": 3.1706250000000002,
+        "availableAheadOfFrameSeconds": 0.5773125000000001
+      },
+      {
+        "frame": 123,
+        "audioSeconds": 3.9373125,
+        "derivedAvailableAudioSeconds": 4.194625,
+        "availableAheadOfFrameSeconds": 0.2573125000000003
+      },
+      {
+        "frame": 124,
+        "audioSeconds": 3.9693125,
+        "derivedAvailableAudioSeconds": 4.194625,
+        "availableAheadOfFrameSeconds": 0.22531250000000025
+      },
+      {
+        "frame": 126,
+        "audioSeconds": 4.0333125,
+        "derivedAvailableAudioSeconds": 4.194625,
+        "availableAheadOfFrameSeconds": 0.1613125000000002
+      },
+      {
+        "frame": 167,
+        "audioSeconds": 5.3453125,
+        "derivedAvailableAudioSeconds": 5.730625,
+        "availableAheadOfFrameSeconds": 0.3853124999999995
+      },
+      {
+        "frame": 170,
+        "audioSeconds": 5.4413125,
+        "derivedAvailableAudioSeconds": 5.730625,
+        "availableAheadOfFrameSeconds": 0.2893124999999994
+      },
+      {
+        "frame": 211,
+        "audioSeconds": 6.7533125,
+        "derivedAvailableAudioSeconds": 7.266625,
+        "availableAheadOfFrameSeconds": 0.5133125000000005
+      },
+      {
+        "frame": 214,
+        "audioSeconds": 6.8493125,
+        "derivedAvailableAudioSeconds": 7.266625,
+        "availableAheadOfFrameSeconds": 0.4173125000000004
+      },
+      {
+        "frame": 256,
+        "audioSeconds": 8.1933125,
+        "derivedAvailableAudioSeconds": 8.802625,
+        "availableAheadOfFrameSeconds": 0.6093125000000015
+      },
+      {
+        "frame": 259,
+        "audioSeconds": 8.2893125,
+        "derivedAvailableAudioSeconds": 8.802625,
+        "availableAheadOfFrameSeconds": 0.5133125000000014
+      },
+      {
+        "frame": 300,
+        "audioSeconds": 9.601312499999999,
+        "derivedAvailableAudioSeconds": 9.826625,
+        "availableAheadOfFrameSeconds": 0.22531250000000114
+      },
+      {
+        "frame": 303,
+        "audioSeconds": 9.697312499999999,
+        "derivedAvailableAudioSeconds": 9.826625,
+        "availableAheadOfFrameSeconds": 0.12931250000000105
+      },
+      {
+        "frame": 345,
+        "audioSeconds": 11.041312499999998,
+        "derivedAvailableAudioSeconds": 11.362625,
+        "availableAheadOfFrameSeconds": 0.3213125000000012
+      },
+      {
+        "frame": 348,
+        "audioSeconds": 11.137312499999998,
+        "derivedAvailableAudioSeconds": 11.362625,
+        "availableAheadOfFrameSeconds": 0.22531250000000114
+      },
+      {
+        "frame": 389,
+        "audioSeconds": 12.4493125,
+        "derivedAvailableAudioSeconds": 12.898625000000001,
+        "availableAheadOfFrameSeconds": 0.44931250000000134
+      },
+      {
+        "frame": 392,
+        "audioSeconds": 12.5453125,
+        "derivedAvailableAudioSeconds": 12.898625000000001,
+        "availableAheadOfFrameSeconds": 0.35331250000000125
+      },
+      {
+        "frame": 458,
+        "audioSeconds": 14.6573125,
+        "derivedAvailableAudioSeconds": 14.946625000000001,
+        "availableAheadOfFrameSeconds": 0.2893125000000012
+      },
+      {
+        "frame": 459,
+        "audioSeconds": 14.6893125,
+        "derivedAvailableAudioSeconds": 14.946625000000001,
+        "availableAheadOfFrameSeconds": 0.25731250000000117
+      },
+      {
+        "frame": 461,
+        "audioSeconds": 14.7533125,
+        "derivedAvailableAudioSeconds": 14.946625000000001,
+        "availableAheadOfFrameSeconds": 0.1933125000000011
+      },
+      {
+        "frame": 528,
+        "audioSeconds": 16.8973125,
+        "derivedAvailableAudioSeconds": 17.506625,
+        "availableAheadOfFrameSeconds": 0.6093124999999979
+      },
+      {
+        "frame": 531,
+        "audioSeconds": 16.993312500000002,
+        "derivedAvailableAudioSeconds": 17.506625,
+        "availableAheadOfFrameSeconds": 0.5133124999999978
+      },
+      {
+        "frame": 597,
+        "audioSeconds": 19.1053125,
+        "derivedAvailableAudioSeconds": 19.554624999999998,
+        "availableAheadOfFrameSeconds": 0.4493124999999978
+      },
+      {
+        "frame": 600,
+        "audioSeconds": 19.2013125,
+        "derivedAvailableAudioSeconds": 19.554624999999998,
+        "availableAheadOfFrameSeconds": 0.3533124999999977
+      },
+      {
+        "frame": 667,
+        "audioSeconds": 21.345312500000002,
+        "derivedAvailableAudioSeconds": 21.602625,
+        "availableAheadOfFrameSeconds": 0.2573124999999976
+      },
+      {
+        "frame": 670,
+        "audioSeconds": 21.441312500000002,
+        "derivedAvailableAudioSeconds": 21.602625,
+        "availableAheadOfFrameSeconds": 0.16131249999999753
+      },
+      {
+        "frame": 686,
+        "audioSeconds": 21.953312500000003,
+        "derivedAvailableAudioSeconds": 22.114624999999997,
+        "availableAheadOfFrameSeconds": 0.16131249999999397
+      },
+      {
+        "frame": 687,
+        "audioSeconds": 21.985312500000003,
+        "derivedAvailableAudioSeconds": 22.114624999999997,
+        "availableAheadOfFrameSeconds": 0.12931249999999395
+      },
+      {
+        "frame": 689,
+        "audioSeconds": 22.0493125,
+        "derivedAvailableAudioSeconds": 22.626624999999997,
+        "availableAheadOfFrameSeconds": 0.5773124999999979
+      },
+      {
+        "frame": 706,
+        "audioSeconds": 22.5933125,
+        "derivedAvailableAudioSeconds": 23.138624999999998,
+        "availableAheadOfFrameSeconds": 0.5453124999999979
+      },
+      {
+        "frame": 709,
+        "audioSeconds": 22.6893125,
+        "derivedAvailableAudioSeconds": 23.138624999999998,
+        "availableAheadOfFrameSeconds": 0.4493124999999978
+      },
+      {
+        "frame": 725,
+        "audioSeconds": 23.2013125,
+        "derivedAvailableAudioSeconds": 23.650624999999998,
+        "availableAheadOfFrameSeconds": 0.4493124999999978
+      },
+      {
+        "frame": 728,
+        "audioSeconds": 23.2973125,
+        "derivedAvailableAudioSeconds": 23.650624999999998,
+        "availableAheadOfFrameSeconds": 0.3533124999999977
+      },
+      {
+        "frame": 744,
+        "audioSeconds": 23.8093125,
+        "derivedAvailableAudioSeconds": 24.162625,
+        "availableAheadOfFrameSeconds": 0.3533124999999977
+      },
+      {
+        "frame": 747,
+        "audioSeconds": 23.9053125,
+        "derivedAvailableAudioSeconds": 24.162625,
+        "availableAheadOfFrameSeconds": 0.2573124999999976
+      }
+    ],
+    "limitation": "Derived audio-buffer availability, excluding queue/compute/UI/hardware time. Reference times are keyboard actions, not acoustic onset truth. Neither this context nor sample-clock error is measured phone end-to-end latency."
+  },
+  "acousticEvaluation": {
+    "schema": 1,
+    "processingStatus": "PASSED",
+    "acousticAcceptance": "FAILED",
+    "sourceSha256": "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20",
+    "samples": 1274880,
+    "frames": 816,
+    "exportedEventCount": 37,
+    "expectedCount": 23,
+    "actualOnsetCount": 30,
+    "matchedCount": 23,
+    "precision": 0.7666666666666667,
+    "recall": 1.0,
+    "timingToleranceSeconds": 0.25,
+    "chordSpreadLimitSeconds": 0.1,
+    "triadsExact": 2,
+    "triadsTotal": 2,
+    "dyadsExact": 2,
+    "dyadsTotal": 2,
+    "repeatExact": 0,
+    "repeatTotal": 5,
+    "gates": {
+      "notePrecisionAtLeast90Percent": false,
+      "noteRecallAtLeast90Percent": true,
+      "noExtraAcceptedOnsets": false,
+      "noMissedExpectedOnsets": true,
+      "allGroupsExact": false,
+      "atLeastTwoTriadsExact": true,
+      "allDyadsExact": true,
+      "fiveRepeatedNotesExact": false
+    },
+    "extras": [
+      {
+        "id": 1,
+        "midi": 50,
+        "time": 1.0893125000000001,
+        "frame": 34
+      },
+      {
+        "id": 4,
+        "midi": 59,
+        "time": 3.9693125,
+        "frame": 124
+      },
+      {
+        "id": 21,
+        "midi": 76,
+        "time": 21.345312500000002,
+        "frame": 667
+      },
+      {
+        "id": 22,
+        "midi": 76,
+        "time": 21.953312500000003,
+        "frame": 686
+      },
+      {
+        "id": 25,
+        "midi": 76,
+        "time": 22.5933125,
+        "frame": 706
+      },
+      {
+        "id": 27,
+        "midi": 76,
+        "time": 23.2013125,
+        "frame": 725
+      },
+      {
+        "id": 29,
+        "midi": 76,
+        "time": 23.8093125,
+        "frame": 744
+      }
+    ],
+    "misses": [],
+    "groups": [
+      {
+        "index": 0,
+        "label": "independent2-single-D2",
+        "kind": "single",
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          38
+        ],
+        "matched": [
+          {
+            "id": 0,
+            "midi": 38,
+            "time": 1.0893125000000001,
+            "frame": 34
+          }
+        ],
+        "extras": [
+          {
+            "id": 1,
+            "midi": 50,
+            "time": 1.0893125000000001,
+            "frame": 34
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 1,
+        "label": "independent2-single-E2",
+        "kind": "single",
+        "expectedMidi": [
+          40
+        ],
+        "detectedMidi": [
+          40
+        ],
+        "matched": [
+          {
+            "id": 2,
+            "midi": 40,
+            "time": 2.4973125,
+            "frame": 78
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 2,
+        "label": "independent2-single-B2",
+        "kind": "single",
+        "expectedMidi": [
+          47
+        ],
+        "detectedMidi": [
+          47
+        ],
+        "matched": [
+          {
+            "id": 3,
+            "midi": 47,
+            "time": 3.9373125,
+            "frame": 123
+          }
+        ],
+        "extras": [
+          {
+            "id": 4,
+            "midi": 59,
+            "time": 3.9693125,
+            "frame": 124
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 3,
+        "label": "independent2-single-D3",
+        "kind": "single",
+        "expectedMidi": [
+          50
+        ],
+        "detectedMidi": [
+          50
+        ],
+        "matched": [
+          {
+            "id": 5,
+            "midi": 50,
+            "time": 5.3453125,
+            "frame": 167
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 4,
+        "label": "independent2-single-G3",
+        "kind": "single",
+        "expectedMidi": [
+          55
+        ],
+        "detectedMidi": [
+          55
+        ],
+        "matched": [
+          {
+            "id": 6,
+            "midi": 55,
+            "time": 6.7533125,
+            "frame": 211
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 5,
+        "label": "independent2-single-B3",
+        "kind": "single",
+        "expectedMidi": [
+          59
+        ],
+        "detectedMidi": [
+          59
+        ],
+        "matched": [
+          {
+            "id": 7,
+            "midi": 59,
+            "time": 8.1933125,
+            "frame": 256
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 6,
+        "label": "independent2-single-F5",
+        "kind": "single",
+        "expectedMidi": [
+          77
+        ],
+        "detectedMidi": [
+          77
+        ],
+        "matched": [
+          {
+            "id": 8,
+            "midi": 77,
+            "time": 9.601312499999999,
+            "frame": 300
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 7,
+        "label": "independent2-single-A5",
+        "kind": "single",
+        "expectedMidi": [
+          81
+        ],
+        "detectedMidi": [
+          81
+        ],
+        "matched": [
+          {
+            "id": 9,
+            "midi": 81,
+            "time": 11.041312499999998,
+            "frame": 345
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 8,
+        "label": "independent2-E-minor-triad",
+        "kind": "triad",
+        "expectedMidi": [
+          52,
+          55,
+          59
+        ],
+        "detectedMidi": [
+          52,
+          55,
+          59
+        ],
+        "matched": [
+          {
+            "id": 10,
+            "midi": 52,
+            "time": 12.4493125,
+            "frame": 389
+          },
+          {
+            "id": 11,
+            "midi": 55,
+            "time": 12.4493125,
+            "frame": 389
+          },
+          {
+            "id": 12,
+            "midi": 59,
+            "time": 12.4493125,
+            "frame": 389
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 9,
+        "label": "independent2-G-major-triad",
+        "kind": "triad",
+        "expectedMidi": [
+          67,
+          71,
+          74
+        ],
+        "detectedMidi": [
+          67,
+          71,
+          74
+        ],
+        "matched": [
+          {
+            "id": 15,
+            "midi": 67,
+            "time": 14.6893125,
+            "frame": 459
+          },
+          {
+            "id": 13,
+            "midi": 71,
+            "time": 14.6573125,
+            "frame": 458
+          },
+          {
+            "id": 14,
+            "midi": 74,
+            "time": 14.6573125,
+            "frame": 458
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.03200000000000003,
+        "exact": true
+      },
+      {
+        "index": 10,
+        "label": "independent2-low-E-octave",
+        "kind": "octave",
+        "expectedMidi": [
+          40,
+          52
+        ],
+        "detectedMidi": [
+          40,
+          52
+        ],
+        "matched": [
+          {
+            "id": 16,
+            "midi": 40,
+            "time": 16.8973125,
+            "frame": 528
+          },
+          {
+            "id": 17,
+            "midi": 52,
+            "time": 16.8973125,
+            "frame": 528
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 11,
+        "label": "independent2-low-D-fifth",
+        "kind": "perfect_fifth",
+        "expectedMidi": [
+          38,
+          45
+        ],
+        "detectedMidi": [
+          38,
+          45
+        ],
+        "matched": [
+          {
+            "id": 18,
+            "midi": 38,
+            "time": 19.1053125,
+            "frame": 597
+          },
+          {
+            "id": 19,
+            "midi": 45,
+            "time": 19.1053125,
+            "frame": 597
+          }
+        ],
+        "extras": [],
+        "spreadSeconds": 0.0,
+        "exact": true
+      },
+      {
+        "index": 12,
+        "label": "repeat-E4-1",
+        "kind": "single",
+        "expectedMidi": [
+          64
+        ],
+        "detectedMidi": [
+          64
+        ],
+        "matched": [
+          {
+            "id": 20,
+            "midi": 64,
+            "time": 21.345312500000002,
+            "frame": 667
+          }
+        ],
+        "extras": [
+          {
+            "id": 21,
+            "midi": 76,
+            "time": 21.345312500000002,
+            "frame": 667
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 13,
+        "label": "repeat-E4-2",
+        "kind": "single",
+        "expectedMidi": [
+          64
+        ],
+        "detectedMidi": [
+          64
+        ],
+        "matched": [
+          {
+            "id": 23,
+            "midi": 64,
+            "time": 21.985312500000003,
+            "frame": 687
+          }
+        ],
+        "extras": [
+          {
+            "id": 22,
+            "midi": 76,
+            "time": 21.953312500000003,
+            "frame": 686
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 14,
+        "label": "repeat-E4-3",
+        "kind": "single",
+        "expectedMidi": [
+          64
+        ],
+        "detectedMidi": [
+          64
+        ],
+        "matched": [
+          {
+            "id": 24,
+            "midi": 64,
+            "time": 22.5933125,
+            "frame": 706
+          }
+        ],
+        "extras": [
+          {
+            "id": 25,
+            "midi": 76,
+            "time": 22.5933125,
+            "frame": 706
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 15,
+        "label": "repeat-E4-4",
+        "kind": "single",
+        "expectedMidi": [
+          64
+        ],
+        "detectedMidi": [
+          64
+        ],
+        "matched": [
+          {
+            "id": 26,
+            "midi": 64,
+            "time": 23.2013125,
+            "frame": 725
+          }
+        ],
+        "extras": [
+          {
+            "id": 27,
+            "midi": 76,
+            "time": 23.2013125,
+            "frame": 725
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      },
+      {
+        "index": 16,
+        "label": "repeat-E4-5",
+        "kind": "single",
+        "expectedMidi": [
+          64
+        ],
+        "detectedMidi": [
+          64
+        ],
+        "matched": [
+          {
+            "id": 28,
+            "midi": 64,
+            "time": 23.8093125,
+            "frame": 744
+          }
+        ],
+        "extras": [
+          {
+            "id": 29,
+            "midi": 76,
+            "time": 23.8093125,
+            "frame": 744
+          }
+        ],
+        "spreadSeconds": 0.0,
+        "exact": false
+      }
+    ],
+    "matches": [
+      {
+        "expected": {
+          "id": 0,
+          "groupIndex": 0,
+          "group": "independent2-single-D2",
+          "midi": 38,
+          "time": 1.0106666666666655
+        },
+        "actual": {
+          "id": 0,
+          "midi": 38,
+          "time": 1.0893125000000001,
+          "frame": 34
+        },
+        "errorSeconds": 0.07864583333333464
+      },
+      {
+        "expected": {
+          "id": 1,
+          "groupIndex": 1,
+          "group": "independent2-single-E2",
+          "midi": 40,
+          "time": 2.4293333333333322
+        },
+        "actual": {
+          "id": 2,
+          "midi": 40,
+          "time": 2.4973125,
+          "frame": 78
+        },
+        "errorSeconds": 0.06797916666666781
+      },
+      {
+        "expected": {
+          "id": 2,
+          "groupIndex": 2,
+          "group": "independent2-single-B2",
+          "midi": 47,
+          "time": 3.8613333333333344
+        },
+        "actual": {
+          "id": 3,
+          "midi": 47,
+          "time": 3.9373125,
+          "frame": 123
+        },
+        "errorSeconds": 0.0759791666666656
+      },
+      {
+        "expected": {
+          "id": 3,
+          "groupIndex": 3,
+          "group": "independent2-single-D3",
+          "midi": 50,
+          "time": 5.280000000000001
+        },
+        "actual": {
+          "id": 5,
+          "midi": 50,
+          "time": 5.3453125,
+          "frame": 167
+        },
+        "errorSeconds": 0.06531249999999922
+      },
+      {
+        "expected": {
+          "id": 4,
+          "groupIndex": 4,
+          "group": "independent2-single-G3",
+          "midi": 55,
+          "time": 6.690666666666665
+        },
+        "actual": {
+          "id": 6,
+          "midi": 55,
+          "time": 6.7533125,
+          "frame": 211
+        },
+        "errorSeconds": 0.06264583333333462
+      },
+      {
+        "expected": {
+          "id": 5,
+          "groupIndex": 5,
+          "group": "independent2-single-B3",
+          "midi": 59,
+          "time": 8.109333333333332
+        },
+        "actual": {
+          "id": 7,
+          "midi": 59,
+          "time": 8.1933125,
+          "frame": 256
+        },
+        "errorSeconds": 0.08397916666666738
+      },
+      {
+        "expected": {
+          "id": 6,
+          "groupIndex": 6,
+          "group": "independent2-single-F5",
+          "midi": 77,
+          "time": 9.530666666666669
+        },
+        "actual": {
+          "id": 8,
+          "midi": 77,
+          "time": 9.601312499999999,
+          "frame": 300
+        },
+        "errorSeconds": 0.07064583333333019
+      },
+      {
+        "expected": {
+          "id": 7,
+          "groupIndex": 7,
+          "group": "independent2-single-A5",
+          "midi": 81,
+          "time": 10.949333333333335
+        },
+        "actual": {
+          "id": 9,
+          "midi": 81,
+          "time": 11.041312499999998,
+          "frame": 345
+        },
+        "errorSeconds": 0.09197916666666295
+      },
+      {
+        "expected": {
+          "id": 8,
+          "groupIndex": 8,
+          "group": "independent2-E-minor-triad",
+          "midi": 52,
+          "time": 12.370666666666665
+        },
+        "actual": {
+          "id": 10,
+          "midi": 52,
+          "time": 12.4493125,
+          "frame": 389
+        },
+        "errorSeconds": 0.07864583333333464
+      },
+      {
+        "expected": {
+          "id": 9,
+          "groupIndex": 8,
+          "group": "independent2-E-minor-triad",
+          "midi": 55,
+          "time": 12.38133333333333
+        },
+        "actual": {
+          "id": 11,
+          "midi": 55,
+          "time": 12.4493125,
+          "frame": 389
+        },
+        "errorSeconds": 0.06797916666666914
+      },
+      {
+        "expected": {
+          "id": 10,
+          "groupIndex": 8,
+          "group": "independent2-E-minor-triad",
+          "midi": 59,
+          "time": 12.38133333333333
+        },
+        "actual": {
+          "id": 12,
+          "midi": 59,
+          "time": 12.4493125,
+          "frame": 389
+        },
+        "errorSeconds": 0.06797916666666914
+      },
+      {
+        "expected": {
+          "id": 11,
+          "groupIndex": 9,
+          "group": "independent2-G-major-triad",
+          "midi": 67,
+          "time": 14.600000000000001
+        },
+        "actual": {
+          "id": 15,
+          "midi": 67,
+          "time": 14.6893125,
+          "frame": 459
+        },
+        "errorSeconds": 0.08931249999999835
+      },
+      {
+        "expected": {
+          "id": 12,
+          "groupIndex": 9,
+          "group": "independent2-G-major-triad",
+          "midi": 71,
+          "time": 14.600000000000001
+        },
+        "actual": {
+          "id": 13,
+          "midi": 71,
+          "time": 14.6573125,
+          "frame": 458
+        },
+        "errorSeconds": 0.05731249999999832
+      },
+      {
+        "expected": {
+          "id": 13,
+          "groupIndex": 9,
+          "group": "independent2-G-major-triad",
+          "midi": 74,
+          "time": 14.600000000000001
+        },
+        "actual": {
+          "id": 14,
+          "midi": 74,
+          "time": 14.6573125,
+          "frame": 458
+        },
+        "errorSeconds": 0.05731249999999832
+      },
+      {
+        "expected": {
+          "id": 14,
+          "groupIndex": 10,
+          "group": "independent2-low-E-octave",
+          "midi": 40,
+          "time": 16.821333333333335
+        },
+        "actual": {
+          "id": 16,
+          "midi": 40,
+          "time": 16.8973125,
+          "frame": 528
+        },
+        "errorSeconds": 0.07597916666666649
+      },
+      {
+        "expected": {
+          "id": 15,
+          "groupIndex": 10,
+          "group": "independent2-low-E-octave",
+          "midi": 52,
+          "time": 16.821333333333335
+        },
+        "actual": {
+          "id": 17,
+          "midi": 52,
+          "time": 16.8973125,
+          "frame": 528
+        },
+        "errorSeconds": 0.07597916666666649
+      },
+      {
+        "expected": {
+          "id": 16,
+          "groupIndex": 11,
+          "group": "independent2-low-D-fifth",
+          "midi": 38,
+          "time": 19.04
+        },
+        "actual": {
+          "id": 18,
+          "midi": 38,
+          "time": 19.1053125,
+          "frame": 597
+        },
+        "errorSeconds": 0.065312500000001
+      },
+      {
+        "expected": {
+          "id": 17,
+          "groupIndex": 11,
+          "group": "independent2-low-D-fifth",
+          "midi": 45,
+          "time": 19.04
+        },
+        "actual": {
+          "id": 19,
+          "midi": 45,
+          "time": 19.1053125,
+          "frame": 597
+        },
+        "errorSeconds": 0.065312500000001
+      },
+      {
+        "expected": {
+          "id": 18,
+          "groupIndex": 12,
+          "group": "repeat-E4-1",
+          "midi": 64,
+          "time": 21.28
+        },
+        "actual": {
+          "id": 20,
+          "midi": 64,
+          "time": 21.345312500000002,
+          "frame": 667
+        },
+        "errorSeconds": 0.065312500000001
+      },
+      {
+        "expected": {
+          "id": 19,
+          "groupIndex": 13,
+          "group": "repeat-E4-2",
+          "midi": 64,
+          "time": 21.890666666666668
+        },
+        "actual": {
+          "id": 23,
+          "midi": 64,
+          "time": 21.985312500000003,
+          "frame": 687
+        },
+        "errorSeconds": 0.09464583333333465
+      },
+      {
+        "expected": {
+          "id": 20,
+          "groupIndex": 14,
+          "group": "repeat-E4-3",
+          "midi": 64,
+          "time": 22.501333333333335
+        },
+        "actual": {
+          "id": 24,
+          "midi": 64,
+          "time": 22.5933125,
+          "frame": 706
+        },
+        "errorSeconds": 0.09197916666666472
+      },
+      {
+        "expected": {
+          "id": 21,
+          "groupIndex": 15,
+          "group": "repeat-E4-4",
+          "midi": 64,
+          "time": 23.119999999999997
+        },
+        "actual": {
+          "id": 26,
+          "midi": 64,
+          "time": 23.2013125,
+          "frame": 725
+        },
+        "errorSeconds": 0.08131250000000279
+      },
+      {
+        "expected": {
+          "id": 22,
+          "groupIndex": 16,
+          "group": "repeat-E4-5",
+          "midi": 64,
+          "time": 23.74133333333333
+        },
+        "actual": {
+          "id": 28,
+          "midi": 64,
+          "time": 23.8093125,
+          "frame": 744
+        },
+        "errorSeconds": 0.06797916666667092
+      }
+    ],
+    "maximumAbsoluteTimingErrorSeconds": 0.09464583333333465,
+    "matching": "Per-MIDI maximum-cardinality then minimum-error chronological one-to-one matching; no event reuse or time shifting.",
+    "eventMeaning": "rawOnsetMidi is the production engine accepted onset set after acoustic/temporal confirmation, not raw 88-dimensional NN activations. Practice CORRECT/WRONG/UNCERTAIN decisions never filter these events.",
+    "eventCoverage": "Current PracticePcmIntegrationTest exports every nonempty frame.onsetMidi via (confirmedInput || onsetMidi.isNotEmpty()). Sparse empty frames are omitted. The evaluator cannot reconstruct raw logits or prove missing-event absence from an older exporter; use the test APK/source identity manifest.",
+    "scope": "Actual App file replay acoustic gate only. Keyboard timestamps are independently measured action times, not acoustic ground-truth onset or phone microphone latency. Follower correctness/false locks have separate mandatory gates."
+  },
+  "reference": {
+    "sourceKind": "website synthesized piano output, not microphone or real piano-room recording",
+    "expectedTimelineBasis": "independent FFT of the actual BufferSource audio confirms MIDI from fundamental and harmonic lattice; trusted keyboard down/up times relative to sample-contiguous capture; source-spectral-audit.json created before model inference",
+    "timingLimit": "Keyboard action times are not acoustic onset ground truth. Sample-contiguous AudioWorklet capture; site starts buffered samples at actual AudioContext.currentTime; the website soundfont attack/release remain in the recording. Do not claim hardware microphone latency."
+  },
+  "scope": "Phase 1 diagnostic baseline. Reproducing a known failure does not satisfy musical acceptance or authorize product release.",
+  "reproducibilityEvidence": {
+    "sparseEvents": [
+      {
+        "frame": 34,
+        "audioSeconds": 1.0893125000000001,
+        "rawOnsetMidi": [
+          38,
+          50
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "RUNNING"
+      },
+      {
+        "frame": 37,
+        "audioSeconds": 1.1853125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "WRONG",
+        "cursor": 0,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 78,
+        "audioSeconds": 2.4973125,
+        "rawOnsetMidi": [
+          40
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 81,
+        "audioSeconds": 2.5933125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 123,
+        "audioSeconds": 3.9373125,
+        "rawOnsetMidi": [
+          47
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 124,
+        "audioSeconds": 3.9693125,
+        "rawOnsetMidi": [
+          59
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 126,
+        "audioSeconds": 4.0333125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 167,
+        "audioSeconds": 5.3453125,
+        "rawOnsetMidi": [
+          50
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 170,
+        "audioSeconds": 5.4413125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 211,
+        "audioSeconds": 6.7533125,
+        "rawOnsetMidi": [
+          55
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 0,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 214,
+        "audioSeconds": 6.8493125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "MISSED",
+        "cursor": 5,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 256,
+        "audioSeconds": 8.1933125,
+        "rawOnsetMidi": [
+          59
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 5,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 259,
+        "audioSeconds": 8.2893125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 6,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 300,
+        "audioSeconds": 9.601312499999999,
+        "rawOnsetMidi": [
+          77
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 6,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 303,
+        "audioSeconds": 9.697312499999999,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 7,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 345,
+        "audioSeconds": 11.041312499999998,
+        "rawOnsetMidi": [
+          81
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 7,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 348,
+        "audioSeconds": 11.137312499999998,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 8,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 389,
+        "audioSeconds": 12.4493125,
+        "rawOnsetMidi": [
+          52,
+          55,
+          59
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 8,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 392,
+        "audioSeconds": 12.5453125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 9,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 458,
+        "audioSeconds": 14.6573125,
+        "rawOnsetMidi": [
+          71,
+          74
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 9,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 459,
+        "audioSeconds": 14.6893125,
+        "rawOnsetMidi": [
+          67
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 9,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 461,
+        "audioSeconds": 14.7533125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 10,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 528,
+        "audioSeconds": 16.8973125,
+        "rawOnsetMidi": [
+          40,
+          52
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 10,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 531,
+        "audioSeconds": 16.993312500000002,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 11,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 597,
+        "audioSeconds": 19.1053125,
+        "rawOnsetMidi": [
+          38,
+          45
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 11,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 600,
+        "audioSeconds": 19.2013125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "CORRECT",
+        "cursor": 12,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 667,
+        "audioSeconds": 21.345312500000002,
+        "rawOnsetMidi": [
+          64,
+          76
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 670,
+        "audioSeconds": 21.441312500000002,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 686,
+        "audioSeconds": 21.953312500000003,
+        "rawOnsetMidi": [
+          76
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 687,
+        "audioSeconds": 21.985312500000003,
+        "rawOnsetMidi": [
+          64
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 689,
+        "audioSeconds": 22.0493125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "WRONG",
+        "cursor": 12,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 706,
+        "audioSeconds": 22.5933125,
+        "rawOnsetMidi": [
+          64,
+          76
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 709,
+        "audioSeconds": 22.6893125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 725,
+        "audioSeconds": 23.2013125,
+        "rawOnsetMidi": [
+          64,
+          76
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 728,
+        "audioSeconds": 23.2973125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "WRONG",
+        "cursor": 12,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 744,
+        "audioSeconds": 23.8093125,
+        "rawOnsetMidi": [
+          64,
+          76
+        ],
+        "uncertainMidi": [],
+        "decision": "UNCERTAIN",
+        "cursor": 12,
+        "stopDecision": "UNCERTAIN",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      },
+      {
+        "frame": 747,
+        "audioSeconds": 23.9053125,
+        "rawOnsetMidi": [],
+        "uncertainMidi": [],
+        "decision": "WRONG",
+        "cursor": 12,
+        "stopDecision": "WRONG",
+        "stopCursor": 0,
+        "stopPhase": "LOCKED"
+      }
+    ],
+    "stopTransitions": [
+      {
+        "frame": 37,
+        "audioSeconds": 1.1853125,
+        "fromPhase": "RUNNING",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 1,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 214,
+        "audioSeconds": 6.8493125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 2,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 259,
+        "audioSeconds": 8.2893125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 3,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 303,
+        "audioSeconds": 9.697312499999999,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 4,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 348,
+        "audioSeconds": 11.137312499999998,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 5,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 392,
+        "audioSeconds": 12.5453125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 6,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 461,
+        "audioSeconds": 14.7533125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 7,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 531,
+        "audioSeconds": 16.993312500000002,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 8,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 600,
+        "audioSeconds": 19.2013125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 9,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 689,
+        "audioSeconds": 22.0493125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 10,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 728,
+        "audioSeconds": 23.2973125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 11,
+        "missed": 0,
+        "rawOnsetMidi": []
+      },
+      {
+        "frame": 747,
+        "audioSeconds": 23.9053125,
+        "fromPhase": "LOCKED",
+        "toPhase": "LOCKED",
+        "decision": "WRONG",
+        "wrong": 12,
+        "missed": 0,
+        "rawOnsetMidi": []
+      }
+    ],
+    "stopEvidence": [
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 1.0893125000000001,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          38,
+          50
+        ],
+        "evidenceScore": 0.8670856952667236
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 6.7533125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          55
+        ],
+        "evidenceScore": 0.9969817996025085
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 8.1933125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          59
+        ],
+        "evidenceScore": 0.9965701699256897
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 9.601312499999999,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          77
+        ],
+        "evidenceScore": 0.8686431646347046
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 11.041312499999998,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          81
+        ],
+        "evidenceScore": 0.9315221309661865
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 12.4493125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          52,
+          55,
+          59
+        ],
+        "evidenceScore": 0.9865561723709106
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 14.6573125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          71,
+          74,
+          67
+        ],
+        "evidenceScore": 0.9681004881858826
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 16.8973125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          40,
+          52
+        ],
+        "evidenceScore": 0.9117916226387024
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 19.1053125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          38,
+          45
+        ],
+        "evidenceScore": 0.9722429513931274
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 21.953312500000003,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          76,
+          64
+        ],
+        "evidenceScore": 0.8140309453010559
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 23.2013125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          64,
+          76
+        ],
+        "evidenceScore": 0.8083201050758362
+      },
+      {
+        "decision": "WRONG",
+        "targetIndex": 0,
+        "measureIndex": 0,
+        "audioSeconds": 23.8093125,
+        "expectedMidi": [
+          38
+        ],
+        "detectedMidi": [
+          64,
+          76
+        ],
+        "evidenceScore": 0.9088999629020691
+      }
+    ]
+  },
+  "inputIdentity": {
+    "sourceWavSha256": "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20",
+    "sourceWavContentVerified": true,
+    "timelineJsonSha256": "cdfc2bccc23a8bfe0a23dbbfe8a6a4e76561a31cff383ff0a2930e359a1fd099",
+    "replayJsonSha256": "99f0543c47f99c8e7df9eea89cef54001a3326975532224b55c42f4b021732e0",
+    "independentEvaluatorSha256": "7edecddcdb02cd0a4d40d759672c6f13740d3c35fe8732ccc098922371b13a8b",
+    "octaveEvaluatorSha256": "b7e75b6486c38ce5d3863891c3c5460ffa7a5246644ca009eaa224a4a2802fc7",
+    "replayPath": "D:\\codex\\修音app\\reports\\practice-replay-20260921T123355Z-701b3f41\\practice-replay-result.json",
+    "timelinePath": "D:\\codex\\修音app\\reports\\dotiam-piano-independent2-20260921\\expected-timeline.json",
+    "wavPath": "D:\\codex\\修音app\\reports\\dotiam-piano-independent2-20260921\\dotiam-session-0.wav"
+  }
+}

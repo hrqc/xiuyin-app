@@ -66,6 +66,9 @@ data class ScoreEvent(
     val sourceLine: Int,
     val confidence: Double? = null,
     val sourceBox: SourceBox? = null,
+    val grace: Boolean = false,
+    val tupletActual: Int? = null,
+    val tupletNormal: Int? = null,
 ) { val isRest: Boolean get() = pitch == null }
 data class ScoreMeasure(
     val id: String,

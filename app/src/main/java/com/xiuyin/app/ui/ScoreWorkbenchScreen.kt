@@ -1,0 +1,316 @@
+package com.xiuyin.app.ui
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import com.xiuyin.app.playback.PlaybackSnapshot
+import com.xiuyin.app.score.*
+import java.util.UUID
+import kotlin.math.roundToInt
+
+@Composable
+fun ScoreWorkbenchScreen(
+    state: ScoreWorkbenchState,
+    playback: PlaybackSnapshot,
+    onBack: () -> Unit,
+    onSelect: (String) -> Unit,
+    onEdit: (ScorePatch, Int?) -> Unit,
+    onTranspose: (Int, Int?) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+    onVerify: () -> Unit,
+    onRestoreEvent: () -> Unit,
+    onRestoreMeasure: (String) -> Unit,
+    onPlay: (Int, Float, Int, Boolean, Boolean) -> Unit,
+    onStop: () -> Unit,
+    onPractice: () -> Unit,
+    modifier: Modifier = Modifier,
+    onExportMidi: (Int) -> Unit = {},
+) {
+    val revision = state.revision
+    val score = revision?.current
+    var mode by rememberSaveable { mutableStateOf(ScoreDisplayMode.BOTH) }
+    var editing by remember { mutableStateOf<ScoreEvent?>(null) }
+    var insertingIn by remember { mutableStateOf<ScoreMeasure?>(null) }
+    var editingMeasure by remember { mutableStateOf<ScoreMeasure?>(null) }
+    var transposeOpen by remember { mutableStateOf(false) }
+    var restoreTarget by remember { mutableStateOf<String?>(null) }
+    var reviewIndex by rememberSaveable { mutableStateOf(0) }
+    var bpm by rememberSaveable { mutableStateOf(80) }
+    var volume by rememberSaveable { mutableStateOf(0.35f) }
+    var loop by rememberSaveable { mutableStateOf(false) }
+    var metronome by rememberSaveable { mutableStateOf(false) }
+    var startMeasure by rememberSaveable { mutableStateOf(0) }
+    val measures = score?.parts?.flatMap { part -> part.measures.map { part.name to it } }.orEmpty()
+    val selected = measures.flatMap { it.second.events }.firstOrNull { it.id == state.selectedEventId }
+    val active = state.timeline?.events?.filter { playback.playing && playback.positionBeat >= it.startBeat.toDouble() && playback.positionBeat < it.endBeat.toDouble() }?.map { it.eventId }?.toSet().orEmpty()
+    val list = rememberLazyListState()
+    LaunchedEffect(playback.playing, active.firstOrNull()) {
+        if (playback.playing) {
+            val index = measures.indexOfFirst { (_, m) -> m.events.any { it.id in active } }
+            if (index >= 0 && index + 4 !in list.layoutInfo.visibleItemsInfo.map { it.index }) list.animateScrollToItem(index + 4)
+        }
+    }
+    DisposableEffect(Unit) { onDispose { onStop() } }
+    LazyColumn(modifier.fillMaxSize().padding(horizontal = 16.dp).testTag("workbench"), state = list,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                TextButton(onClick = onBack) { Text("返回我的乐谱") }
+                Text(state.title, style = MaterialTheme.typography.headlineMedium)
+                Text("轻点音符校对，让谱子更贴近你的演奏。", color = XiuyinMuted)
+                if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(state.message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("workbench_status"))
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("workbench_error")) }
+                state.timelineProblem?.let { Text("时间线需修正：$it", color = MaterialTheme.colorScheme.error) }
+            }
+        }
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ScoreDisplayMode.entries.forEach { option -> FilterChip(mode == option, { mode = option }, { Text(option.label) }, modifier = Modifier.testTag("display_${option.name}")) }
+                }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onUndo, enabled = revision?.canUndo == true && !state.busy, modifier = Modifier.testTag("score_undo")) { Text("撤销") }
+                    OutlinedButton(onClick = onRedo, enabled = revision?.canRedo == true && !state.busy, modifier = Modifier.testTag("score_redo")) { Text("重做") }
+                    OutlinedButton(onClick = { transposeOpen = true }, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_transpose")) { Text("移调") }
+                    Button(onClick = onPractice, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_start_practice")) { Text("开始陪练") }
+                }
+                OutlinedButton(onClick = { onExportMidi(bpm) }, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_export_midi")) { Text("导出当前修订 MIDI") }
+                Text("简谱使用首调：大调以 1 为主音，小调以 6 为主音。原文件与命名信息独立保留。", style = MaterialTheme.typography.bodySmall, color = XiuyinMuted)
+            }
+        }
+        item {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("听一遍 · 本地合成音色", style = MaterialTheme.typography.titleMedium)
+                    Text("速度 $bpm BPM · 音量 ${(volume * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall)
+                    Slider(bpm.toFloat(), { bpm = it.roundToInt() }, valueRange = 30f..240f, modifier = Modifier.testTag("playback_tempo"))
+                    Slider(volume, { volume = it }, valueRange = 0f..1f, modifier = Modifier.testTag("playback_volume"))
+                    Row {
+                        FilterChip(loop, { loop = !loop }, { Text("循环") })
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(metronome, { metronome = !metronome }, { Text("节拍器") })
+                    }
+                    val count = state.timeline?.measures?.size ?: 0
+                    if (count > 0) ChoiceField("起始小节", (startMeasure + 1).toString(), (1..count).map(Int::toString), { startMeasure = it.toInt() - 1 }, "playback_start_measure")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onPlay(bpm, volume, startMeasure.coerceAtMost((count - 1).coerceAtLeast(0)), loop, metronome) }, enabled = score != null && !state.busy && !playback.playing, modifier = Modifier.testTag("score_play")) { Text("试听") }
+                        OutlinedButton(onClick = onStop, enabled = playback.playing, modifier = Modifier.testTag("score_stop")) { Text("停止") }
+                    }
+                    Text(playback.error ?: playback.message, color = if (playback.error == null) XiuyinMuted else MaterialTheme.colorScheme.error, modifier = Modifier.testTag("playback_status"))
+                    if (score?.parts?.any { p -> p.measures.any { m -> m.events.any { it.grace } } } == true) Text("装饰音以 80 ms 参考时长试听；原谱零时值保持不变。", style = MaterialTheme.typography.bodySmall)
+                    Text("试听高亮来自音频播放位置；实时陪练需单独开始。", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("校对与修谱", style = MaterialTheme.typography.titleMedium)
+                    if (selected == null) Text("选择下方音符，或在小节中增加音符。") else {
+                        Text("${selected.pitch?.displayName ?: "休止符"} · 起点 ${selected.offset} · 时长 ${selected.duration}", modifier = Modifier.testTag("selected_event_details"))
+                        Text(if (selected.id in revision!!.verifiedEventIds) "✓ 用户已确认" else "待人工确认", modifier = Modifier.testTag("selected_verification"))
+                        selected.confidence?.let { Text("模型分数 ${"%.3f".format(it)}（未经准确率校准）", style = MaterialTheme.typography.bodySmall) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { editing = selected }, enabled = !state.busy, modifier = Modifier.testTag("edit_selected_note")) { Text("修改音符") }
+                            TextButton(onClick = onVerify, enabled = !state.busy, modifier = Modifier.testTag("verify_selected_note")) { Text("确认无误") }
+                        }
+                    }
+                    if (selected != null) TextButton(onClick = { restoreTarget = "event" }, enabled = !state.busy,
+                        modifier = Modifier.testTag("restore_original_note")) { Text("恢复此音符原始结果") }
+                    if (state.sourceImages.isNotEmpty()) SourceReference(state.sourceImages, selected?.sourceBox)
+                    val issues = (score?.issues.orEmpty() + state.timeline?.issues.orEmpty()).distinctBy { it.id }
+                    if (issues.isNotEmpty()) {
+                        Text("${issues.size} 处结构或来源提示", color = MaterialTheme.colorScheme.error)
+                        val targets = issues.mapNotNull { issue -> issue.eventId ?: measures.firstOrNull { it.second.id == issue.measureId }?.second?.events?.firstOrNull()?.id }.distinct()
+                        if (targets.isNotEmpty()) Row {
+                            TextButton(onClick = { reviewIndex = Math.floorMod(reviewIndex - 1, targets.size); onSelect(targets[reviewIndex]) }, modifier = Modifier.testTag("previous_review_issue")) { Text("上一个疑点") }
+                            TextButton(onClick = { reviewIndex = (reviewIndex + 1) % targets.size; onSelect(targets[reviewIndex]) }, modifier = Modifier.testTag("next_review_issue")) { Text("下一个疑点") }
+                        }
+                        issues.take(8).forEach { issue ->
+                            TextButton(onClick = { issue.eventId?.let(onSelect) }, enabled = issue.eventId != null) { Text(issue.message, style = MaterialTheme.typography.bodySmall) }
+                        }
+                        if (issues.size > 8) Text("其余提示可在数字乐谱数据页查看。", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+        itemsIndexed(measures, key = { _, pair -> pair.second.id }) { index, (partName, measure) ->
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(vertical = 12.dp)) {
+                    Text("$partName · 第 ${measure.number} 小节", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp))
+                    NotationMeasure(measure, mode, state.selectedEventId, active, revision?.fingerings.orEmpty(), onSelect)
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
+                        TextButton(onClick = { editingMeasure = measure }, enabled = !state.busy, modifier = Modifier.testTag("edit_measure_$index")) { Text("拍号 / 调号 / 谱号") }
+                        TextButton(onClick = { restoreTarget = measure.id }, enabled = !state.busy, modifier = Modifier.testTag("restore_measure_$index")) { Text("恢复此小节原始结果") }
+                        TextButton(onClick = { insertingIn = measure }, enabled = !state.busy, modifier = Modifier.testTag("insert_note_$index")) { Text("添加音符") }
+                    }
+                }
+            }
+        }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+    restoreTarget?.let { target -> AlertDialog(onDismissRequest = { restoreTarget = null }, title = { Text("恢复${if (target == "event") "音符" else "小节"}原始结果？") },
+        text = { Text("将移除该范围的用户确认和指法，其他内容保留；可以撤销。") },
+        confirmButton = { TextButton(onClick = { if (target == "event") onRestoreEvent() else onRestoreMeasure(target); restoreTarget = null }, modifier = Modifier.testTag("restore_original_confirm")) { Text("恢复") } },
+        dismissButton = { TextButton(onClick = { restoreTarget = null }) { Text("取消") } }) }
+    editing?.let { event -> EventEditor(event, revision?.fingerings?.get(event.id), false,
+        onDismiss = { editing = null }, onSave = { changed, finger -> onEdit(ScorePatch.ReplaceEvent(event.id, changed), finger); editing = null },
+        onDelete = { onEdit(ScorePatch.DeleteEvent(event.id), null); editing = null }) }
+    insertingIn?.let { measure ->
+        val event = remember(measure.id) { ScoreEvent("user-" + UUID.randomUUID(), BeatFraction.ZERO, BeatFraction.of(1), ScorePitch("C", 0, 4), 1, "1", false, "quarter", 0, emptySet(), -1, -1) }
+        EventEditor(event, null, true, onDismiss = { insertingIn = null }, onSave = { changed, finger -> onEdit(ScorePatch.InsertEvent(measure.id, changed), finger); insertingIn = null }, onDelete = {})
+    }
+    editingMeasure?.let { measure -> MeasureEditor(measure, { editingMeasure = null }) { patch -> onEdit(patch, null); editingMeasure = null } }
+    if (transposeOpen && score != null) TransposeEditor(score, { transposeOpen = false }) { semitones, key -> onTranspose(semitones, key); transposeOpen = false }
+}
+
+@Composable
+internal fun ChoiceField(label: String, value: String, options: List<String>, onChange: (String) -> Unit, tag: String) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag(tag)) { Text("$label：$value") }
+        DropdownMenu(expanded, { expanded = false }) { options.forEach { item -> DropdownMenuItem(text = { Text(item) }, onClick = { onChange(item); expanded = false }) } }
+    }
+}
+
+private fun fraction(text: String): BeatFraction {
+    val parts = text.trim().split('/')
+    require(parts.size in 1..2) { "拍时格式为整数或分数，例如 1/2" }
+    return BeatFraction.of(parts[0].trim().toLong(), if (parts.size == 2) parts[1].trim().toLong() else 1)
+}
+
+@Composable
+private fun EventEditor(event: ScoreEvent, fingering: Int?, insert: Boolean, onDismiss: () -> Unit, onSave: (ScoreEvent, Int?) -> Unit, onDelete: () -> Unit) {
+    var rest by remember { mutableStateOf(event.isRest) }
+    var grace by remember { mutableStateOf(event.grace) }
+    var tupletActual by remember { mutableStateOf(event.tupletActual?.toString().orEmpty()) }
+    var tupletNormal by remember { mutableStateOf(event.tupletNormal?.toString().orEmpty()) }
+    var step by remember { mutableStateOf(event.pitch?.step ?: "C") }
+    var alter by remember { mutableStateOf((event.pitch?.alter ?: 0).toString()) }
+    var octave by remember { mutableStateOf((event.pitch?.octave ?: 4).toString()) }
+    var type by remember { mutableStateOf(event.type ?: "quarter") }
+    var dots by remember { mutableStateOf(event.dots.toString()) }
+    var offset by remember { mutableStateOf(event.offset.toString()) }
+    var duration by remember { mutableStateOf(event.duration.toString()) }
+    var staff by remember { mutableStateOf(event.staff.toString()) }
+    var voice by remember { mutableStateOf(event.voice) }
+    var finger by remember { mutableStateOf(fingering?.toString().orEmpty()) }
+    var chord by remember { mutableStateOf(event.chord) }
+    var tieStart by remember { mutableStateOf("start" in event.ties) }
+    var tieStop by remember { mutableStateOf("stop" in event.ties) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var deleting by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (insert) "添加音符" else "修正音符") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("拍时单位为四分音符；保存后谱面、简谱、移调、试听和陪练共用此修订。", style = MaterialTheme.typography.bodySmall)
+                FilterChip(rest, { rest = !rest }, { Text("休止符") }, modifier = Modifier.testTag("edit_rest"))
+                if (!rest) {
+                    ChoiceField("音名", step, listOf("C", "D", "E", "F", "G", "A", "B"), { step = it }, "edit_pitch_step")
+                    ChoiceField("升降号半音", alter, (-2..2).map(Int::toString), { alter = it }, "edit_pitch_alter")
+                    OutlinedTextField(octave, { octave = it }, label = { Text("八度（中央 C 为 4）") }, singleLine = true, modifier = Modifier.testTag("edit_pitch_octave"))
+                }
+                ChoiceField("时值符号", type, listOf("whole", "half", "quarter", "eighth", "16th", "32nd", "64th", "128th"), { type = it; duration = ScoreEditing.writtenDuration(it, dots.toInt()).toString() }, "edit_note_type")
+                ChoiceField("附点", dots, (0..4).map(Int::toString), { dots = it; duration = ScoreEditing.writtenDuration(type, it.toInt()).toString() }, "edit_note_dots")
+                OutlinedTextField(offset, { offset = it }, label = { Text("小节内起点（0 起算）") }, singleLine = true, modifier = Modifier.testTag("edit_note_offset"))
+                OutlinedTextField(duration, { duration = it }, label = { Text("实际时长（可填 1/3 等连音分数）") }, singleLine = true, modifier = Modifier.testTag("edit_note_duration"))
+                OutlinedTextField(staff, { staff = it }, label = { Text("谱表编号") }, singleLine = true, modifier = Modifier.testTag("edit_note_staff"))
+                OutlinedTextField(voice, { voice = it }, label = { Text("声部") }, singleLine = true, modifier = Modifier.testTag("edit_note_voice"))
+                OutlinedTextField(finger, { finger = it }, label = { Text("指法 1–5，留空清除") }, singleLine = true, modifier = Modifier.testTag("edit_note_finger"))
+                FilterChip(grace, { grace = !grace; if (grace) { duration = "0"; rest = false; tieStart = false; tieStop = false } else duration = ScoreEditing.writtenDuration(type, dots.toInt()).toString() }, { Text("装饰音（记谱时值为零）") })
+                OutlinedTextField(tupletActual, { tupletActual = it }, label = { Text("连音实际数量，普通音符留空") }, singleLine = true)
+                OutlinedTextField(tupletNormal, { tupletNormal = it }, label = { Text("连音正常数量，如三连音 3:2") }, singleLine = true)
+                FilterChip(chord, { chord = !chord }, { Text("和弦成员（与前音同时）") })
+                Row { FilterChip(tieStart, { tieStart = !tieStart }, { Text("延音线开始") }); Spacer(Modifier.width(4.dp)); FilterChip(tieStop, { tieStop = !tieStop }, { Text("延音线结束") }) }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (!insert) TextButton(onClick = { deleting = true }, modifier = Modifier.testTag("edit_note_delete")) { Text("删除这个音符", color = MaterialTheme.colorScheme.error) }
+            }
+        }, confirmButton = { Button(onClick = {
+            try {
+                val pitch = if (rest) null else ScorePitch(step, alter.toInt(), octave.toInt()).also { require(it.midi in 0..127) { "音高超出范围" } }
+                val start = fraction(offset); val length = fraction(duration); val staffNumber = staff.toInt()
+                require(start >= BeatFraction.ZERO && (if (grace) length == BeatFraction.ZERO else length > BeatFraction.ZERO)) { "起点不能为负，时长必须为正" }
+                require(staffNumber in 1..32 && voice.isNotBlank()) { "谱表或声部无效" }
+                val fingeringValue = finger.trim().takeIf { it.isNotEmpty() }?.toInt()?.also { require(it in 1..5) { "指法必须为 1–5" } }
+                val actual = tupletActual.takeIf { it.isNotBlank() }?.toInt()
+                val normal = tupletNormal.takeIf { it.isNotBlank() }?.toInt()
+                require((actual == null) == (normal == null) && (actual == null || actual in 1..32) && (normal == null || normal in 1..32)) { "连音比例无效" }
+                require(!grace || (pitch != null && !tieStart && !tieStop)) { "装饰音不能为休止符或延音" }
+                onSave(event.copy(pitch = pitch, grace = grace, tupletActual = actual, tupletNormal = normal, offset = start, duration = length, staff = staffNumber, voice = voice.trim(), chord = chord,
+                    type = type, dots = dots.toInt(), ties = buildSet { if (tieStart) add("start"); if (tieStop) add("stop") }), fingeringValue)
+            } catch (exception: IllegalArgumentException) { error = exception.message ?: "请输入有效音符参数" }
+        }, modifier = Modifier.testTag("edit_note_save")) { Text("保存修正") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+    if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这个音符？") }, text = { Text("会更新所有谱式和试听，可使用撤销恢复。") },
+        confirmButton = { TextButton(onClick = onDelete, modifier = Modifier.testTag("edit_note_delete_confirm")) { Text("删除") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留") } })
+}
+
+@Composable
+private fun MeasureEditor(measure: ScoreMeasure, onDismiss: () -> Unit, onSave: (ScorePatch.UpdateMeasure) -> Unit) {
+    var beats by remember { mutableStateOf(measure.time?.beats?.toString().orEmpty()) }
+    var beatType by remember { mutableStateOf(measure.time?.beatType?.toString().orEmpty()) }
+    var fifths by remember { mutableStateOf(measure.fifths?.toString().orEmpty()) }
+    var staves by remember { mutableStateOf(measure.declaredStaves.toString()) }
+    var clefs by remember { mutableStateOf(measure.clefs) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("第 ${measure.number} 小节设置") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("仅修改当前小节。后续小节如需改变，请分别校正。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(beats, { beats = it }, label = { Text("拍号分子，未知留空") }, singleLine = true, modifier = Modifier.testTag("measure_beats"))
+            OutlinedTextField(beatType, { beatType = it }, label = { Text("拍号分母，未知留空") }, singleLine = true, modifier = Modifier.testTag("measure_beat_type"))
+            OutlinedTextField(fifths, { fifths = it }, label = { Text("调号：升号正数，降号负数，0=C") }, singleLine = true, modifier = Modifier.testTag("measure_fifths"))
+            OutlinedTextField(staves, { staves = it }, label = { Text("谱表数量") }, singleLine = true, modifier = Modifier.testTag("measure_staves"))
+            repeat((staves.toIntOrNull() ?: 0).coerceIn(0, 8)) { index ->
+                val staff = index + 1
+                val clef = clefs.firstOrNull { it.staff == staff } ?: ScoreClef(staff, "G", 2)
+                ChoiceField("谱表 $staff 谱号", "${clef.sign}${clef.line}", listOf("G2", "F4", "C3", "C4"), { value ->
+                    clefs = clefs.filterNot { it.staff == staff } + ScoreClef(staff, value.take(1), value.drop(1).toInt(), clef.octaveChange)
+                }, "measure_clef_$staff")
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = { Button(onClick = {
+        try {
+            val time = if (beats.isBlank() && beatType.isBlank()) null else ScoreTime(beats.toInt(), beatType.toInt())
+            require(time == null || (time.beats in 1..64 && time.beatType in listOf(1, 2, 4, 8, 16, 32, 64))) { "拍号无效" }
+            val key = fifths.takeIf { it.isNotBlank() }?.toInt(); require(key == null || key in -7..7) { "调号应为 -7 至 7" }
+            val count = staves.toInt(); require(count in 1..32) { "谱表数量应为 1–32" }
+            onSave(ScorePatch.UpdateMeasure(measure.id, time, key, clefs.filter { it.staff <= count }, count))
+        } catch (exception: IllegalArgumentException) { error = exception.message ?: "设置无效" }
+    }, modifier = Modifier.testTag("measure_save")) { Text("保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+}
+
+@Composable
+private fun TransposeEditor(score: DigitalScore, onDismiss: () -> Unit, onApply: (Int, Int?) -> Unit) {
+    var semitones by remember { mutableStateOf("0") }
+    var target by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val current = score.parts.flatMap { it.measures }.firstNotNullOfOrNull { it.fifths }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("整谱移调") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("改变实际音高与调号，同时更新五线谱、简谱、试听和陪练。可撤销。")
+            Text("当前首个调号：${current ?: "未知"}（升号为正、降号为负）")
+            OutlinedTextField(semitones, { semitones = it }, label = { Text("半音数：+12 升八度，-12 降八度") }, singleLine = true, modifier = Modifier.testTag("transpose_semitones"))
+            OutlinedTextField(target, { target = it }, label = { Text("目标调号 -7..7，可留空自动拼写") }, singleLine = true, modifier = Modifier.testTag("transpose_target_key"))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        }
+    }, confirmButton = { Button(onClick = {
+        try {
+            val shift = semitones.trim().toInt(); val key = target.trim().takeIf { it.isNotEmpty() }?.toInt()
+            ScoreEditing.transpose(score, shift, key)
+            onApply(shift, key)
+        } catch (exception: IllegalArgumentException) { error = exception.message ?: "移调参数无效" }
+    }, modifier = Modifier.testTag("transpose_apply")) { Text("应用移调") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+}

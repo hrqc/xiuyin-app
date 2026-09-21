@@ -1,0 +1,30 @@
+{
+  "url": "https://storage.googleapis.com/magentadata/models/onsets_frames_transcription/tflite/onsets_frames_wavinput_no_offset_uni.tflite",
+  "bytes": 75860620,
+  "sha256": "69ac3567d8ee5fda620225a49c62839c3e82165e89d54d1af63caac877605dfc",
+  "officialMd5Matched": true,
+  "seconds": 3.03,
+  "headers": {
+    "Last-Modified": "Tue, 05 Nov 2019 00:18:36 GMT",
+    "ETag": "\"c6a0d8f678b498c3ec76f94884b45917\"",
+    "x-goog-hash": "crc32c=ow9/xg=="
+  },
+  "modelId": "magenta-onsets-frames-no-offset-uni-2019",
+  "inputSampleRate": 16000,
+  "inputSamples": 17920,
+  "frameCount": 32,
+  "hopSamples": 512,
+  "spectralWindowSamples": 2048,
+  "midiRange": [
+    21,
+    108
+  ],
+  "outputMeaning": "frame/onset logits -> sigmoid activation scores; not calibrated accuracy",
+  "offsetSupported": false,
+  "pedalSupported": false,
+  "minimumInputWindowMs": 1120,
+  "sourceRepository": "https://github.com/magenta/magenta",
+  "validation": "Unverified for physical-phone piano accuracy",
+  "sourceProjectLicenseReported": "Apache-2.0",
+  "modelLicenseVerification": "UNVERIFIED_LOCAL_LICENSE_TEXT_NOT_AVAILABLE"
+}

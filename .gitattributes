@@ -1,0 +1,12 @@
+# Frozen source/config bytes must survive checkout with any core.autocrlf setting.
+# Instruction/product Markdown is deliberately outside these source-only rules.
+/app/** -text
+/tools/** -text
+/gradle/** -text
+/*.cmd -text
+/*.kts -text
+/*.properties -text
+/gradlew -text
+/gradlew.bat -text
+/.gitignore -text
+/.gitattributes -text

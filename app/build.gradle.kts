@@ -12,6 +12,16 @@ fun gitValue(vararg args: String): String = try {
     }.standardOutput.asText.get().trim().ifEmpty { if (args.firstOrNull() == "describe") "not-tagged-at-build" else "uncommitted" }
 } catch (_: Exception) { "uncommitted" }
 
+fun gitWorktreeState(): String = try {
+    val status = providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "-c", "safe.directory=${rootDir.absolutePath}", "status", "--porcelain", "--untracked-files=normal")
+        isIgnoreExitValue = true
+    }
+    if (status.result.get().exitValue != 0) "UNKNOWN"
+    else if (status.standardOutput.asText.get().isBlank()) "CLEAN" else "MODIFIED"
+} catch (_: Exception) { "UNKNOWN" }
+
 android {
     namespace = "com.xiuyin.app"
     compileSdk = 36
@@ -19,15 +29,18 @@ android {
         applicationId = "com.xiuyin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 5
+        versionName = "0.3.0-octave.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_COMMIT", "\"${gitValue("rev-parse", "HEAD")}\"")
+        buildConfigField("String", "GIT_WORKTREE_STATE", "\"${gitWorktreeState()}\"")
         buildConfigField("String", "GIT_TAG", "\"${gitValue("describe", "--tags", "--exact-match", "HEAD")}\"")
     }
     signingConfigs.getByName("debug") {
         storeFile = rootProject.file("tools/local/signing/xiuyin-debug.keystore")
     }
+    sourceSets.getByName("main").assets.srcDirs(rootProject.file("tools/local/piano-model/bundle-assets"), rootProject.file("tools/local/omr-probe/bundle-assets"))
+    androidResources { noCompress += listOf("tflite", "onnx") }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -44,10 +57,15 @@ kotlin {
     }
 }
 dependencies {
+    // Verified local official runtimes; binary hashes and source URLs: libs/runtime-manifest.json.
+    implementation(files("libs/litert-2.1.6.aar", "libs/litert-api-2.1.6.aar", "libs/onnxruntime-android-1.27.0.aar"))
+    // Local CPU inference does not use AiPackModelProvider or Play model delivery.
+    implementation(files("libs/guava-33.5.0-android.jar", "libs/failureaccess-1.0.3.jar", "libs/kotlinx-coroutines-guava-1.11.0.jar"))
     val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("androidx.activity:activity-compose:1.13.0")
     // 2.11 requires API 37 + AGP 9.1; keep the API 36 compatible release.
     //noinspection GradleDependency
@@ -69,3 +87,6 @@ dependencies {
 
 
 tasks.withType<JavaCompile>().configureEach { options.encoding = "UTF-8" }
+
+// Full Guava supplies ListenableFuture; exclude the tiny legacy duplicate interface jar.
+configurations.configureEach { exclude(group = "com.google.guava", module = "listenablefuture") }

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "source": "https://tools.dotiam.com/ultimate-virtual-piano",
+  "acceptance": "Every group correct in FREE and STOP_ON_ERROR; zero wrong, missed, false locks; incorrect reference must lock then recover; original ±250ms acoustic gate remains separate",
+  "cases": [
+    {
+      "id": "dotiam-regression",
+      "scope": "Earlier independent failure now regression after generic acoustic fix",
+      "wav": "reports/dotiam-piano-holdout-20260921/dotiam-session-0.wav",
+      "timeline": "reports/dotiam-piano-holdout-20260921/expected-timeline.json",
+      "wavSha256": "d63a0c56ff08ee04746ac832cf8b89f35d26ed5c1f8ab335d55125086c6cf671",
+      "timelineSha256": "4c336547eaba3726222fce4c0a588cd3310730d87470ee5f3dfda2c814ab5b2f",
+      "role": "REGRESSION"
+    },
+    {
+      "id": "dotiam-independent2",
+      "scope": "REGRESSION after observed independent failure; never reuse as unseen acceptance",
+      "wav": "reports/dotiam-piano-independent2-20260921/dotiam-session-0.wav",
+      "timeline": "reports/dotiam-piano-independent2-20260921/expected-timeline.json",
+      "wavSha256": "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20",
+      "timelineSha256": "cdfc2bccc23a8bfe0a23dbbfe8a6a4e76561a31cff383ff0a2930e359a1fd099",
+      "role": "REGRESSION"
+    }
+  ]
+}

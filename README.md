@@ -1,47 +1,44 @@
-# 修音 · Android V0.2.0
+# 修音 · Android v0.3.0-octave.1 · 基线冻结检查点
 
-温馨琴房风格的原生 Android App。保留 PRODUCT.md 的产品目标；本地音频与OMR相关增量以 修音_APP_当前最终增量规范.md 为准，开发规范继续遵循 AGENTS.md。
+在原有 Kotlin/Compose App 上增量加入本地识谱、修谱、试听和真实识音陪练，保留温馨界面、曲库及全部命名管理。PRODUCT.md 与 AGENTS.md 不变。
 
-最新需求差异和小版本顺序见 docs/FINAL_SPEC_GAP_ANALYSIS.md。本版在既有音频基础上增加 MusicXML 本地导入、数字乐谱校验，以及《修音_无名称乐谱自定义命名与查找_增量需求.md》要求的命名与本地管理，不代表 OMR 或高精度音频识别完成。
+当前不是“全部实测通过”的正式完整交付：原 DotIAM 低八度误检已修复并转为回归；第二组独立网站输入仍有 7 个额外高八度，造成错音误停。最终门禁 274 项中 273 通过、1 失败、0 跳过，未发布 v0.3.0 稳定版。两张真实谱图可生成数字谱，但 207 个复核提示及逐音准确率仍须人工核对。详情见 [网站验收结果](docs/DOTIAM_ACCEPTANCE_RESULTS.md)、PROJECT_STATUS.md 与 reports/20260921T122742473Z/。
 
-## 当前范围
+## 本轮八度专项 Phase 1
 
-- 首页、3 首原创示例的曲库、静态乐谱详情、练习设置页。
-- 连续 / 错音即停 / 强化训练的设置预览，可保存到本机 SQLite。
-- 最近打开与配置在关闭、重新打开后保留。
-- 独立监控页面显示实际数据库状态、构建标识、运行日志；支持搜索、筛选、暂停与确认清空。
-- 练习页新增内置麦克风检查：主动点击后才申请权限；显示实际输入电平、估计底噪、实验起音与不确定状态。
-- 音频只在内存中处理；停止、退出练习/监控页或退后台会释放麦克风，不自动恢复监听。
-- 示例旋律标 TEST DATA，仅用于基础页面；不是识谱或演奏识别结果。
+按最新任务书第29节完成Baseline Freeze，不改生产算法。工作区冻结门禁已实跑通过，完整产品门禁仍是275项274通过、1个既有DotIAM2失败、0跳过。两个真实App逐帧回放一致，和历史诊断分数最大差0；新旧精度完全一致，**7个额外上八度仍存在，问题尚未解决**。
 
-V0.2.0 保留 V0.1.1 音频输入基础。采集使用手机内置麦克风；多音数组和四类决策已留接口，但尚无音高模型、正式多音判断、跟谱、错音锁定、校准、试听或拍照识谱。没有识别结果时始终UNCERTAIN，不输出假音符、不计正确次数。起音证据分不是准确率，突然增大的噪声也可能触发候选起音。手机琴房效果未实测；不申请相机或互联网权限。
+原失败版本与材料身份冻结在 `outputs/baselines/octave-v030-20260921/`。阶段范围、指标、数据集角色和回退方法见 [八度基线说明](docs/OCTAVE_BASELINE.md) 与 [阶段测试矩阵](docs/TEST_MATRIX_OCTAVE1.md)。最终提交上的复测、安装包、标签和实际Push身份，以 `outputs/checkpoints/v0.3.0-octave.1/checkpoint-manifest.json` 为准；该目录是预发布检查点，不是稳定版发布。
 
-## MusicXML 本地导入
+```bat
+C:\Python314\python.exe tools\check-octave-phase1.py --serial emulator-5560
+```
 
-曲库 → 导入与数字乐谱 → 选择 MusicXML 文件。本版只支持无 DTD、UTF-8、未压缩 score-partwise 子集，最大2MiB；含外部DTD的常见导出需先导出不含DTD的版本。MXL/MIDI/PDF/图片、反复/装饰/连音组等未支持语义会明确拒绝，不编造识别结果。
+第一轮还发现内存压力下模型冷启动队列溢出，校准页未显示识音错误。后续同APK原断言及完整复测通过，但该既有风险仍未修复，已保留失败证据。Phase1不改生产代码，后续安全层需要处理。
 
-数字事件视图显示实际音高、精确拍时、和弦、谱表/声部和小节结构疑点，NEEDS_REVIEW不会自动修音。完整五线谱排版、简谱、移调、试听、编辑及实时陪练目标联动仍待后续小版实现。当前MusicXML直接解析，不生成OMR置信度/sourceBox。
+## 使用流程
 
-原XML按SHA256保存在App私有files/digital-scores/，同内容去重、重启可再打开，最多100份/合计100MiB。来源读取有15秒时限、最多两个占用请求；文件提供者忽略取消时会明确超时或提示稍后重试，不无限等待或创建线程。解析及元数据预检后才保存来源，完整写入后在排他锁保护下原子移动发布。目录内零字节.archive.lock是正常归档锁，不要手动删除；锁异常会阻止写入和删除。临时残留/坏文件显式提示，不能静默覆盖源文件。与旧SQLite数据隔离，回退旧版不删除导入谱。导入只读取用户主动选取的本地文件，不上传，不保存录音。
+1. 打开“曲库 → 导入与数字乐谱”，选择本机图片/PDF、MusicXML或MIDI；也可调用系统相机。App本地处理，不上传。
+2. 无曲名时自定义名称，或保留递增“未命名乐谱”。在详情中可重命名、填写别名/标签、收藏、按名称/原名/作者/来源搜索和排序。
+3. 打开“乐谱工作台”：五线谱/简谱/双谱共用当前Digital Score；选择音符修改音高、时值、休止、和弦、谱表、声部、连音、指法等；原图可放大对照。疑点不自动当作正确结果。
+4. 修改后可撤销/重做、恢复原始音符或小节、移调、真实合成试听及导出当前MIDI。试听从实际AudioTrack播放头获得位置；音色为本地合成，不是原声钢琴。
+5. 点击“开始陪练”，选择自由跟弹/错音即停/循环/强化及范围；存在谱面警告须先人工核对再确认。双谱表支持左/右/双手，单谱表不猜手别。
+6. 首次主动开始时申请麦克风权限。目标音和原始模型音符分别显示；低证据保持UNCERTAIN，Confirmed Wrong才锁停。正确重弹可恢复；暂停/继续不会跳过错误。“我弹对了”只保存已授权的核查案例，不自动解锁。
+7. “环境校准”观察至少5秒真实输入后可保存Profile；未知延迟/混响/踏板残响保持未知。仅允许有界参数调整，下一次开始生效，不在设备上临时训练主模型。
+8. 结束练习后本地保存报告，有确认击键才更新最近练习。进行中会话使用打开时的修订快照；修谱后须重新打开陪练应用新修订。
 
-## 无名称乐谱与“我的乐谱”
+手机现场麦克风/相机和复杂双手效果尚未实测；网站PCM或琴房录音回放不等于手机现场通过。模型1.12秒输入上下文和批次计算会带来可感知等待，计算耗时不等于端到端延迟。当前没有调音器的连续频率/音分偏差功能。
 
-没有明确原始曲名时，导入后提示“未检测到曲名，请为这份乐谱命名”。可以输入“周三左手练习”等名称，也可以暂时跳过，使用持久编号“未命名乐谱 001”。以后从乐谱详情的“查看名称与文件信息”进入编辑；名称最多120字符，别名最多20项、每项100字符，标签最多20项、每项50字符。别名和标签可用逗号分隔。
+## 本地输入范围
 
-显示名依次使用自定义名、原始名、临时名。清空自定义名会回到原始名或临时名，不改音符、原始曲名或原文件。允许不同乐谱同名，内部以UUID区分；同一文件内容重复导入沿用原记录，保留名称、别名、标签、收藏和首次导入时间。
+- JPEG/PNG及PDF：真正本地OMR。最多20页，8M像素/图片、20MiB/图片、64MiB/PDF与整次来源预算；低置信区真实重识别。模型分数未校准，sourceBox仅谱表级，不是精确单音框。拍号/复杂声部、奏法、欠拍等仍须人工校对。完整透视/阴影自动校正与裁剪流程尚未实现。
+- MusicXML：原有无DTD、UTF-8、未压缩score-partwise有限子集，最多2MiB；MXL、复杂反复及不支持语义明确拒绝，不假装无损。
+- MIDI：SMF0/1、PPQ时间基，最大16MiB；按实际音符/时间直接解析，不走OMR。没有雕版时值的MIDI仍保留精确节拍并提示校对；不猜左右手。SMPTE/type2等不支持时明确失败。
+- 三首内置原创TEST DATA可生成可编辑副本；它们是练习资料，绝非OMR或演奏识别输出。
 
-“我的乐谱”支持完全本地搜索：名称、别名、标签、来源文件名、作者和作品号等；支持标签筛选，以及最近导入、最近练习、名称、收藏优先排序。收藏与重命名互不覆盖。详情展示来源、导入时间、最近练习时间、页数和拍调信息；文件未声明的信息保持未知，不根据文件名或排版猜测。本版导入谱未连接真实陪练，最近练习为空是正常状态，打开或编辑谱不会生成练习记录。
+## 构建与检测
 
-删除前会确认影响，并提供“仅删除乐谱”“删除乐谱及练习记录”“取消”。本版导入谱没有音符修谱结果或真实练习记录，删除不影响内置曲目的练习设置。应用先写入本地删除状态，再删除该来源文件；失败会保留原因，刷新后重试，不把未删除完的来源自动加回曲库。为防止自动复活，本机保留命名与删除状态；用户主动重新导入同一文件时会恢复原命名。此操作不宣称安全擦除所有数据库历史。
-
-命名数据单独保存在score_metadata.db，原xiuyin.db保持schema1。源码实现、事务和删除兼容细节见docs/DIGITAL_SCORE_ARCHITECTURE.md。
-## 环境与构建
-
-Android Studio 可直接打开本目录。Kotlin 2.3.21，AGP 8.13.2，Gradle 8.14.3，Compose BOM 2025.12.00，compile/target SDK 36，最低 Android 8.0（API26）。
-
-本机 SDK 在 D:\codex\sanjing-reader\tools\android-sdk，已通过当前项目 local.properties 引用；该文件不提交。其他机器请创建自己的 local.properties，例如 sdk.dir=D:/Android/Sdk。本机缺失依赖会明确报错，默认不自动下载。
-
-CMD：
+Android最低API26，compile/target36；Kotlin2.3.21、AGP8.13.2、Gradle8.14.3、Compose BOM2025.12.00。本机SDK通过不提交的local.properties引用D:/codex/sanjing-reader/tools/android-sdk。
 
 ```bat
 cd /d "D:\codex\修音app"
@@ -49,36 +46,31 @@ build.cmd :app:assembleDebug
 check.cmd
 ```
 
-build.cmd 会仅为构建进程设置 Java 临时目录，避免当前 Windows 环境的 Unix Domain Socket 错误，不修改全局环境变量。中文项目路径显式启用 Android 的路径兼容开关，并以实际构建验证结果为准。
+默认离线构建，不自动下载或修改全局环境。tools/build.ps1核对全部本地识音/OMR模型SHA，缺失则阻断；assets、AAR/JAR大文件不放普通Git。`tools/prepare_inference_assets.py`默认离线核验，已授权时`--download-small-runtime`仅下载清单内小型官方运行库。模型来源/许可见docs/THIRD_PARTY.md与assets清单。
 
-完整 check.cmd 需要恰好一台在线 Android 模拟器，执行单测、Lint、Debug/Release 构建、原生 Android 仪器测试及本地APK回退演练，记录 reports/<run_id>/report.json 和 SUMMARY.md。设备步骤先编译同一套 androidTest 源码，再由 tools/device-test.ps1 安装应用及测试 APK，并实际执行 adb am instrument -w -r 与 AndroidJUnitRunner。此入口避开当前离线缓存缺失的 Gradle UTP 主机插件，不省略或替换测试用例。
+完整检测需恰好一台在线Android模拟器：单元测试、严格Lint、Debug/Release、真实AndroidJUnitRunner、候选→v0.2.0→候选回退。`tools/prepare_device_fixtures.py`校验并复制用户已授权谱图和实际网站PCM；缺素材明确失败，不能以静音代替音乐。测试不操作物理手机、不卸载/清空业务数据。
 
-执行器核对每个用例状态、最终 OK (N tests)、数量一致性和退出码，失败、跳过或不完整结果均阻止通过。原始仪器日志与 JUnit XML 在 app/build/outputs/androidTest-results/connected/adb/，本轮报告另保存 current-results；prior-results 只归档旧结果，不参与计数。不会自动操作物理手机或启用模拟器宿主麦克风。测试会以 install -r 更新测试包并操作修音 App；音频仪器测试会授予模拟器中修音的录音权限，使用虚拟输入检验真实AudioRecord管线。回退演练使用本机Python标准库、v0.1.1已留档调试APK，执行 install -r -d 再更新回候选；备份本应用SQLite并逐值核对业务数据及导入MusicXML源文件哈希，不卸载、不清数据、不删除其他App。详见 docs/ROLLBACK.md。
+报告保存run_id、提交SHA、脏工作区标志、每组用例数/失败/跳过/退出码、实际日志和回退数据比较。旧报告保留且不参与新结果计数。最终提交后必须重跑；最终报告和产物SHA作为外部清单保存，不循环回填提交。
 
-已构建 APK 后可单独运行同一设备执行器（仅模拟器）：
+## 安装、数据与停止
 
-```bat
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\device-test.ps1
-```
+现有稳定基础版仍在outputs/releases/v0.2.0，最终候选归档路径以PROJECT_STATUS/交付清单为准。开发构建位于app/build/outputs/apk/debug/app-debug.apk，包名com.xiuyin.app；仅调试签名可安装测试，release输出未正式签名，不是应用商店包。没有发布到公网或商店。
 
-## 安装与运行
+数据均在App私有目录：旧xiuyin.db、score_metadata.db维持schema1；MusicXML、OMR、MIDI原件和Raw/Original、当前修订/撤销、本地报告分别保存。坏数据保留并报错，不粗暴重建。删除乐谱需确认，使用持久删除状态防止扫描误复活。
 
-通过最终检测的本版安装包留档于 outputs\releases\v0.2.0\xiuyin-v0.2.0-debug.apk，同目录 release-manifest.json 记录确定的 Git SHA、SHA256 和检测报告。日常构建的调试 APK 默认输出 app\build\outputs\apk\debug\app-debug.apk。安装后应用名称为“修音”，包名 com.xiuyin.app。正式 release 构建为未签名产物，不作为商店发布包。
+App没有INTERNET权限。平时原始PCM只在5秒RAM内环形覆盖，停止收音立即清空。只有在校准页明确勾选本次进程同意后，异常或主动反馈才可落盘最多5秒案例；最多200项/100MiB，超过清最旧，可一键清理。不上传、不保存整次现场演奏。退出/退后台停止音频，返回不自动开麦。
 
-模拟器测试通过只代表已列设备/条件。将 APK 安装到自己的 Android 手机可继续人工验收；首次安装可能需要允许该来源安装。没有发布到公网或应用商店。
+Developer Dashboard显示真实版本/模型/输入/跟谱/数据/日志和本机内存CPU。当前监控仍在App进程中，关闭App后不会持续运行；独立跨进程监控与远程CI尚未实现，不能宣称已满足长期运行规范。日志清理有确认，不删乐谱；卸载或系统清除数据会删除所有私有数据。
 
-## 存储、日志与停止
+## Git与回退
 
-数据保存在 Android 应用私有目录：xiuyin.db保存原练习设置和诊断日志，score_metadata.db保存导入谱名称等管理信息，files/digital-scores/保存原MusicXML及归档锁。不上传、不保存录音。关闭 App 即停止前台监控。日志仅保留最新200条；监控里的清空日志需再次确认，不会删除曲目配置。卸载或系统“清除数据”会删除本地数据。
+dev为工作分支；main及v0.1.0/v0.1.1/v0.2.0稳定归档保留。远程私有仓库为 [hrqc/xiuyin-app](https://github.com/hrqc/xiuyin-app)，origin已配置，既有两个分支与三个标签已Push并核对SHA。本轮将完整既有候选作为v0.3.0-octave.1预发布检查点留档；该标签只证明基线冻结复现，最终同步结果见上述检查点清单。通过声明范围的最终固定SHA门禁后才创建新稳定Tag；有已知失败时不称完整验收。远程CI尚未配置；GitHub当前套餐对私有仓库分支保护返回HTTP403，服务端保护未启用。
 
-没有独立后端、付费接口或云同步。遇到数据库错误会保留数据、显示原因，并提供重试/诊断，不自动重建数据库。
+回退演练实际安装旧APK再恢复候选，比较旧SQLite业务值、元数据和所有新增业务归档哈希，不靠卸载来“通过”。代码回退使用新提交git revert；手机和正式签名包降级限制未验证。详情见docs/ROLLBACK.md。
 
-## 版本与回退
+旧v0.2.0琴房测试记录保留docs/ROOM_RECORDING_RESULTS.md；本轮新增模型后的证据另记PROJECT_STATUS，不能拿历史缺功能报告或阶段新报告代替最终安装包的实际验证。
 
-开发分支 dev，测试通过后才允许进入 main 并打稳定标签。具体当前状态见 PROJECT_STATUS.md。未配置远程仓库，本地提交不等于远程备份。
 
-上一稳定版本v0.1.1以及v0.1.0的源码、APK与校验值继续保留。原xiuyin.db的schema仍为1，独立score_metadata.db亦为schema1；旧版不会使用或清理新增命名库；本地模拟器回退与恢复是check.cmd必需门禁，真实结果保存在reports/<run_id>/rollback/。代码回退使用新提交git revert；APK必须保持签名和数据兼容，不能卸载来冒充无损回退。物理手机、正式签名发布包的降级限制尚未验证。用户明确本轮暂不设置远程仓库，不执行Push。
+模型转换与离线构建：`tools/prepare_omr_decoder.py --source <本地原始decoder_414_int8.onnx> --output tools/local/omr-probe/bundle-assets/omr/models/decoder_414_int8_scores.onnx` 可从固定哈希原文件重现打包模型；需要本地 onnx Python 依赖，脚本不会下载。原始与派生SHA均须精确匹配。模型与运行时完整性由 build.cmd 每次检查，缺失即停止。
 
-## 用户琴房实录测试
-
-本次两张谱图和视频已真实测试，**完整陪练验收未通过**；现有基础版缺少图片OMR、音高/多音及跟谱纠错。具体结果、证据与本地复现命令见 [琴房实录验收](docs/ROOM_RECORDING_RESULTS.md)，固定验收条件见 [测试矩阵](docs/TEST_MATRIX_ROOM_RECORDING1.md)。新增回放入口仅在测试APK中，主App没有“视频识别已可用”的功能。原稳定标签和产物继续保留。
+网站回放质量门禁使用冻结的本地录音及独立键盘标签。`tools/evaluation/website-corpus.json` 记录所需文件与SHA；文件保存在项目 reports 中而不进入 Git。只有源码、没有这些经授权的测试材料时，完整门禁将明确失败，不能静音替代或跳过。`tools/evaluation/evaluate-practice-audio.py --self-test` 可单独检查声学评估器；真实App回放工具为 `tools/replay-practice.py`。

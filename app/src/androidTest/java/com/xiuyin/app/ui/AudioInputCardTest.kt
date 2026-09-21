@@ -139,7 +139,7 @@ class AudioInputCardTest {
             .assertTextEquals("持续输入 · 不重复累计起音")
         compose.onNodeWithTag("audio_onset_count").performScrollTo().assertTextEquals("1")
         compose.onNodeWithTag("audio_onset_confidence").performScrollTo().assertTextEquals("0.88")
-        compose.onNodeWithTag("audio_detected_notes").performScrollTo().assertTextEquals("暂无（音高模型尚未接入）")
+        compose.onNodeWithTag("audio_detected_notes").performScrollTo().assertTextEquals("暂无（输入诊断不进行音符判定）")
         compose.onNodeWithTag("audio_final_decision").performScrollTo().assertTextEquals("暂无法判断（UNCERTAIN）")
         compose.onNodeWithText("正确（CORRECT）").assertDoesNotExist()
         compose.onNodeWithText("错误（WRONG）").assertDoesNotExist()

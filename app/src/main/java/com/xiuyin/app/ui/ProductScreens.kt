@@ -96,7 +96,7 @@ fun HomeScreen(
         }
         NoticeCard(
             "当前可以做什么",
-            "浏览示例谱、保存练习设置，并在练习页检查本机麦克风输入。音高识别、真实跟谱和拍照识谱尚未接入。",
+            "导入乐谱并校对，在工作台查看双谱、移调、试听，再开始本地麦克风陪练。识别疑点请先确认。",
         )
     }
 }
@@ -111,14 +111,14 @@ fun LibraryScreen(pieces: List<StudyPiece>, onOpenPiece: (String) -> Unit, onDig
             color = XiuyinMuted,
         )
         OutlinedButton(onClick = onDigitalScores, modifier = Modifier.fillMaxWidth()) { Text("导入与数字乐谱") }
-        Text("MusicXML 直接解析并保存至本机；图片 / PDF 识谱尚未接入。", color = XiuyinMuted, style = MaterialTheme.typography.bodySmall)
+        Text("MusicXML 直接导入；图片与 PDF 使用本地模型识谱并保留原图校对。", color = XiuyinMuted, style = MaterialTheme.typography.bodySmall)
         HorizontalDivider(color = XiuyinLine)
         pieces.forEach { piece -> PieceCard(piece, onClick = { onOpenPiece(piece.id) }) }
         if (pieces.isEmpty()) {
             NoticeCard("暂无可用示例", "请在开发监控中检查数据库是否正常。")
         }
         Text(
-            "这些四小节短谱用于基础页面验证（TEST DATA）。正式曲库、搜索与收藏计划在 V0.8 提供。",
+            "这些短谱为项目原创；导入曲库支持名称、别名、标签搜索与收藏，所有资料保存在本机。",
             style = MaterialTheme.typography.bodySmall,
             color = XiuyinMuted,
         )
@@ -126,7 +126,7 @@ fun LibraryScreen(pieces: List<StudyPiece>, onOpenPiece: (String) -> Unit, onDig
 }
 
 @Composable
-fun ScoreScreen(piece: StudyPiece, onBack: () -> Unit, onPrepare: () -> Unit) {
+fun ScoreScreen(piece: StudyPiece, onBack: () -> Unit, onPrepare: () -> Unit, onWorkbench: () -> Unit = {}) {
     ScreenColumn {
         TextButton(onClick = onBack) { Text("返回曲库") }
         Badge("原创入门示例")
@@ -144,9 +144,10 @@ fun ScoreScreen(piece: StudyPiece, onBack: () -> Unit, onPrepare: () -> Unit) {
         Button(onClick = onPrepare, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp), shape = RoundedCornerShape(14.dp)) {
             Text("设置练习模式")
         }
+        Button(onClick = onWorkbench, modifier = Modifier.fillMaxWidth()) { Text("打开乐谱工作台与陪练") }
         NoticeCard(
-            "这是静态示例谱",
-            "本页是原有静态示例；MusicXML 请从曲库的“导入与数字乐谱”打开。试听与实时陪练尚未接入，练习模式可先保存在本机。",
+            "原创练习谱",
+            "这里保留原谱预览；打开工作台可查看双谱、试听和开始实时陪练，原练习设置仍保留。",
         )
         Text(
             "来源：修音项目原创，可随应用使用、复制与修改。",
@@ -239,8 +240,8 @@ fun PracticeScreen(
             style = MaterialTheme.typography.bodySmall,
         )
         NoticeCard(
-            "实时陪练尚未接入",
-            "当前可检查收音与候选起音。音高、多音识别、乐谱约束、跟谱和强化判定将按后续小版本逐项验证。",
+            "进入乐谱工作台开始陪练",
+            "这里保留收音诊断与原练习设置。回到曲目页打开乐谱工作台，即可选择实时跟弹、错音即停或强化训练。",
         )
     }
 }

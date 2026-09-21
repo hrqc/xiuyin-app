@@ -16,3 +16,7 @@ __pycache__/
 
 # User supplied scores and recordings stay local, outside source control.
 谱子和视频/
+
+# Reproducible native inference runtimes: provenance tracked separately.
+app/libs/*.aar
+app/libs/*.jar

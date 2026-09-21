@@ -117,7 +117,7 @@ fun AudioInputCard(
             AudioMetric("检测音符", detectedNotesLabel(audio), "audio_detected_notes")
             AudioMetric("演奏判断", finalDecisionLabel(audio.decision), "audio_final_decision")
             Text(
-                "本版只检查收音与候选起音，尚未接入音高、多音识别、钢琴校准或跟谱。暂无法判断时不锁定位置，也不增加或清零正确次数。",
+                "此卡片只检查收音与候选起音；音符识别与跟谱请从乐谱工作台开始陪练。暂无法判断时不锁定位置，也不增加或清零正确次数。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -165,7 +165,7 @@ internal fun finalDecisionLabel(decision: FinalDecision): String = when (decisio
 
 internal fun detectedNotesLabel(audio: AudioSnapshot): String =
     if (audio.notes.isEmpty()) {
-        "暂无（音高模型尚未接入）"
+        "暂无（输入诊断不进行音符判定）"
     } else {
         audio.notes.joinToString("、") { note -> "MIDI ${note.midi}" }
     }

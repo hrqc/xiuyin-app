@@ -1,0 +1,27 @@
+修音：第三方来源与许可边界
+
+本安装包用于用户个人、本地测试。此范围不是许可证义务豁免，也不表示已确认可闭源商发。不能用 ONNX Runtime 的 MIT 或 LiteRT 的 Apache-2.0 许可替代模型、Andromr/homr 改编代码的适用许可。
+
+Andromr / homr
+来源 https://github.com/aicelen/Andromr
+固定源码 d8005852211026c5a67f6fededb6d4cede6680d5
+该版本 LICENSE 为 GNU AGPL version 3。上游 oss_licenses.txt 同样列出 liebharc/homr: AGPL 3.0。
+本项目 NativeOmrModels.java 改编其 java/LiteRTModel.java、java/Staff2Score.java 模型调用协议；词表与预处理参数来自同版本 homr。保留原始 AGPL 全文及上游告知。改动包括原生 Kotlin/Java 模块、资源关闭/取消/完整性校验、分割类别投票、真实 logits 输出与复核状态；没有照搬 Kivy UI。
+AGPL 改编代码不能按仅加署名即可闭源分发处理。源码、构建/转换脚本和适用告知应与对应二进制保持匹配并提供给接收者；本说明不宣称分发义务审查已经完成。
+
+Andromr 模型
+官方 v1.0 release 的 segnet_308_int8.zip、encoder_414_int8.zip、decoder_414_int8.zip 均只有权重，没有单独权重许可文本/例外。源码 AGPL 来源已保存；独立权重授权与再分发范围仍待核实，不标成 MIT，也不声称已获闭源商用授权。
+解码器派生只增加现存 logits 的 Identity 输出，未修改权重或原始 argmax。原始与派生 SHA 见 docs/THIRD_PARTY.md 与 assets/omr/models.json。
+
+Magenta 钢琴模型
+原始 URL https://storage.googleapis.com/magentadata/models/onsets_frames_transcription/tflite/onsets_frames_wavinput_no_offset_uni.tflite
+75860620 bytes; SHA256 69ac3567d8ee5fda620225a49c62839c3e82165e89d54d1af63caac877605dfc
+项目内未保存 Magenta 源 LICENSE 或本权重专用许可文本。此前来源项目按 Apache-2.0 标记，不能据此确认此 TFLite 文件独立授权；本包标记待核实。本次未下载或编造该许可。模型未修改；应用对真实 frame/onset logits 做 sigmoid，不声称分数是校准准确率。
+
+运行时与字体
+LiteRT 2.1.6/LiteRT API: Apache-2.0，原AAR LICENSE及完整THIRD_PARTY_NOTICE原样包含。
+ONNX Runtime Android 1.27.0: 本地POM声明MIT；包含本机已有Microsoft MIT正文（来自Python1.30.0）；Android1.27.0专属原生依赖告知清单未独立核实。
+Guava/failureaccess/kotlinx-coroutines: 来源/版本见 app/libs/runtime-manifest.json，通用Apache-2.0正文保留；不据此声称所有传递依赖许可清单已经完整。
+Bravura: SIL OFL 1.1，未修改字体，原许可证保留。
+
+每份复制文本的来源与SHA256见 license-provenance.json。完整说明见项目 docs/THIRD_PARTY.md。

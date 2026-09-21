@@ -52,6 +52,10 @@ class MicrophoneEngine(
     private var worker: Job? = null
     private var closed = false
     private val releaseFailure = AtomicReference<Throwable?>(null)
+    private val pcmListener = AtomicReference<((ShortArray, Int, Long) -> Unit)?>(null)
+
+    /** Borrowed PCM, valid only during callback. Consumer must copy promptly and never block capture. */
+    fun setPcmListener(listener: ((ShortArray, Int, Long) -> Unit)?) { pcmListener.set(listener) }
 
     fun start() {
         synchronized(guard) {
@@ -238,6 +242,13 @@ class MicrophoneEngine(
                     analyzerOnsets = 0
                 }
                 lastSilenced = silenced
+                if (!silenced) {
+                    try { pcmListener.get()?.invoke(samples, FRAME_SAMPLES, (counters.frames - 1) * FRAME_SAMPLES) }
+                    catch (error: Exception) {
+                        pcmListener.set(null)
+                        event("ERROR", "PCM识音回调失败，已断开识音消费；音频诊断继续", error.stackTraceToString())
+                    }
+                }
                 val processingStart = SystemClock.elapsedRealtimeNanos()
                 val analysis = if (silenced) null else analyzer.process(samples, FRAME_SAMPLES, timestamp)
                 val processingMs = if (analysis == null) null else (SystemClock.elapsedRealtimeNanos() - processingStart) / 1_000_000.0
@@ -247,7 +258,7 @@ class MicrophoneEngine(
                     if (counters.onsets <= 3 || counters.onsets % 10 == 0) {
                         val snapshotStatus = mutableState.value.status
                         event(
-                            "INFO", "能量起音候选累计 ${counters.onsets} 次；尚未进行音符或正确性判断",
+                            "INFO", "能量起音候选累计 ${counters.onsets} 次；本条为包络诊断，识音见独立Pitch Engine",
                             "captureSession=$session\n" +
                                 "timestampNanos=$timestamp\n" +
                                 "timestampMeaning=PCM 帧读取完成的单调时间；不是校准硬件采样时间\n" +
@@ -257,7 +268,7 @@ class MicrophoneEngine(
                                 "onsetConfidence=${analysis.onsetConfidence}\n" +
                                 "onsetConfidenceMeaning=能量起音启发式证据分数；不是识音准确率\n" +
                                 "onsetCount=${counters.onsets}\n" +
-                                "rawDetectedNotes=[]\nnoteInference=未启用\n" +
+                                "rawDetectedNotes=null\nnoteInference=本包络诊断不包含独立Pitch Engine的识别结果\n" +
                                 "decision=UNCERTAIN\ndecisionConfidence=null\n" +
                                 audioTransition(snapshotStatus, snapshotStatus),
                         )
@@ -327,10 +338,10 @@ class MicrophoneEngine(
         processingMs = null, audioLatencyMs = null,
     )
 
-    /** Audio lifecycle states are real; a musical practice state machine is not enabled. */
+    /** Musical decisions live in the separate practice module; this log reports capture transitions. */
     private fun audioTransition(before: AudioStatus, after: AudioStatus): String =
         "AudioStatusBefore=$before\nAudioStatusAfter=$after\n" +
-            "StateBefore=未启用（本版没有演奏状态机）\nStateAfter=未启用（本版没有演奏状态机）"
+            "StateBefore=本采集层不持有演奏状态\nStateAfter=本采集层不持有演奏状态"
     private fun event(level: String, message: String, detail: String = "") {
         try { onEvent(level, message, detail) } catch (error: Exception) {
             Log.e("XiuyinAudio", "音频日志回调失败", error)

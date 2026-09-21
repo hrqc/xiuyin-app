@@ -1,0 +1,47 @@
+{
+  "scope": "Local evidence only; this is not a complete legal redistribution audit",
+  "files": [
+    {
+      "file": "Andromr-AGPL-3.0.txt",
+      "bytes": 34309,
+      "sha256": "a6de0dc64ada3b5141517c0167b109dfc2adb3d1d8b27ff1745f337331b2a5f4",
+      "copiedFrom": "tools\\local\\omr-probe\\reference\\andromr\\LICENSE",
+      "scope": "Andromr adapted code; does not independently settle model weight licensing"
+    },
+    {
+      "file": "Andromr-upstream-oss-notices.txt",
+      "bytes": 377,
+      "sha256": "c741d7a8a54a5299b1255ee39e91bbb51189ee3e5447c86f3bf2eb3c7df4071a",
+      "copiedFrom": "tools\\local\\omr-probe\\reference\\andromr\\oss_licenses.txt",
+      "scope": "Original upstream list; includes components NOT shipped in this native app"
+    },
+    {
+      "file": "LiteRT-2.1.6-LICENSE.txt",
+      "bytes": 13575,
+      "sha256": "71c6915d04265772a0339bed47276942c678b45cc01534210ebe6984fd1aec65",
+      "copiedFrom": "app/libs/litert-2.1.6.aar!LICENSE; identical in litert-api-2.1.6.aar",
+      "scope": "LiteRT runtime only; not OMR or piano weights"
+    },
+    {
+      "file": "LiteRT-2.1.6-THIRD_PARTY_NOTICE.txt",
+      "bytes": 9026393,
+      "sha256": "3d0d4d9717bc89bc18449c02c08ab314226e3203b77d3db384f4887d51dc25b3",
+      "copiedFrom": "app/libs/litert-2.1.6.aar!THIRD_PARTY_NOTICE.txt; identical in litert-api-2.1.6.aar",
+      "scope": "Unmodified complete upstream runtime third-party notices; not all entries imply active app use"
+    },
+    {
+      "file": "Apache-2.0.txt",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "copiedFrom": "app/libs/failureaccess-1.0.3.jar!META-INF/LICENSE",
+      "scope": "Standard Apache-2.0 text from an existing packaged component"
+    },
+    {
+      "file": "ONNXRuntime-MIT.txt",
+      "bytes": 1094,
+      "sha256": "c250d6278f0b47a6439fb7592b08b58a55eb9f535aa49a1db63211c3f982b674",
+      "copiedFrom": "tools\\local\\omr-probe\\python-deps\\onnxruntime\\LICENSE",
+      "scope": "Microsoft MIT core license; copied from local Python 1.30.0 distribution. Android 1.27.0 POM independently declares MIT; exact Android native dependency notices remain unverified."
+    }
+  ]
+}

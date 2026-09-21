@@ -7,6 +7,9 @@ $reportDir = Join-Path $projectRoot "reports\$runId"
 New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 $sourceSha = (& git -c "safe.directory=$projectRoot" rev-parse HEAD 2>$null | Out-String).Trim()
 $dirty = [bool](& git -c "safe.directory=$projectRoot" status --porcelain)
+$versionMatch = [regex]::Match((Get-Content -LiteralPath (Join-Path $projectRoot 'app/build.gradle.kts') -Raw), 'versionName = "([^"]+)"')
+if (-not $versionMatch.Success) { throw '无法读取本次构建版本' }
+$versionName = $versionMatch.Groups[1].Value
 $started = Get-Date
 $steps = @()
 $device = $null
@@ -172,7 +175,7 @@ try {
         $taskStart = Get-Date
         $name = $task.Trim(':').Replace(':', '-')
         $log = Join-Path $reportDir "$name.log"
-        $taskArguments = @($task, '--console=plain')
+        $taskArguments = @($task, '--console=plain', '--no-daemon')
         if ($null -ne $group) {
             $group.status = 'running'
             $group.startedAt = $taskStart.ToUniversalTime().ToString('o')
@@ -182,7 +185,7 @@ try {
         $ErrorActionPreference = 'Continue'
         if ($task -eq 'adb:instrumentation') {
             # Compile the unchanged Android test set, then run the native runner.
-            & (Join-Path $projectRoot 'build.cmd') :app:assembleDebug :app:assembleDebugAndroidTest --console=plain 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
+            & (Join-Path $projectRoot 'build.cmd') :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --no-daemon 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
             $code = $LASTEXITCODE
             if ($code -eq 0) {
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'device-test.ps1') 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log -Append
@@ -207,8 +210,8 @@ try {
                 $hasher = [Security.Cryptography.SHA256]::Create()
                 try { $candidateHash = [BitConverter]::ToString($hasher.ComputeHash($hashStream)).Replace('-', '') }
                 finally { $hasher.Dispose(); $hashStream.Dispose() }
-                if ($rollback.status -ne 'passed' -or -not $rollback.baselineDataPreserved -or -not $rollback.restoredDataPreserved -or -not $rollback.baselineScoreSourcesPreserved -or -not $rollback.restoredScoreSourcesPreserved -or -not $rollback.baselineMetadataPreserved -or -not $rollback.restoredMetadataPreserved -or $rollback.candidateSha256 -ne $candidateHash) { throw '回退结果或候选产物哈希不符合门禁' }
-                if (@($rollback.actions | Where-Object { $_.version -eq '0.1.1' -and $_.launch -eq 'passed' }).Count -lt 1 -or @($rollback.actions | Where-Object { $_.version -eq '0.2.0' -and $_.launch -eq 'passed' }).Count -lt 2) { throw '缺少真实旧版/候选启动证据' }
+                if ($rollback.status -ne 'passed' -or -not $rollback.baselineDataPreserved -or -not $rollback.restoredDataPreserved -or -not $rollback.baselineScoreSourcesPreserved -or -not $rollback.restoredScoreSourcesPreserved -or -not $rollback.baselineMetadataPreserved -or -not $rollback.restoredMetadataPreserved -or -not $rollback.baselineExtendedFilesPreserved -or -not $rollback.restoredExtendedFilesPreserved -or $rollback.candidateSha256 -ne $candidateHash) { throw '回退结果或候选产物哈希不符合门禁' }
+                if (@($rollback.actions | Where-Object { $_.version -eq '0.2.0' -and $_.launch -eq 'passed' }).Count -lt 1 -or @($rollback.actions | Where-Object { $_.version -eq $versionName -and $_.launch -eq 'passed' }).Count -lt 2) { throw '缺少真实旧版/候选启动证据' }
             } catch { $taskFailure = "回退证据验证失败：$($_.Exception.Message)" }
         }
         if ($null -ne $group) {
@@ -249,19 +252,19 @@ try {
         if (!$failure) { $failure = '必需检查未全部成功；单元测试和设备测试必须分别存在本轮结果，且零失败、零跳过。' }
     }
     $report = [ordered]@{
-        run_id = $runId; version = '0.2.0'; sha = $sourceSha; dirty = $dirty; testSet = 'digital-score-1 + metadata-1'
+        run_id = $runId; version = $versionName; sha = $sourceSha; dirty = $dirty; testSet = 'digital-score-1 + metadata-1 + workbench-1 + audio-2 + OMR-1 + companion-1'
         startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
         status = $(if ($failure) {'failed'} else {'passed'}); failure = $failure; device = $device
         total = $total; passed = $counts.passed; failed = $failed; skipped = $skipped
         steps = @($steps); groups = @($groups.Values); suites = @($testRecords)
         priorResultsPolicy = 'prior-results 只保留上轮结果，不参与本轮计数；current-results 保存本轮新结果。'
-        notApplicable = @('本版无后端/API','音高多音识别、正式跟谱/锁定、校准、OMR 未实现')
-        unverified = @('物理 Android 手机与真实钢琴琴房','准确率/误停率/端到端音频延迟','Android 8-14 与 16 的设备兼容性')
-        remoteSync = '用户明确本轮不设置远程仓库，不执行 Push'
+        notApplicable = @('本版无后端/API')
+        unverified = @('物理 Android 手机现场输入','无人工逐音参考的琴房准确率/误停率','端到端手机音频延迟','Android 8-14 与 16 的设备兼容性')
+        remoteSync = '本检测命令不执行 Push；远程同步须单独核验对应 SHA'
     }
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $reportDir 'report.json') -Encoding utf8
     @(
-        "# 修音 V0.2.0 检测结果"
+        "# 修音 $versionName 检测结果"
         ""
         "Run: $runId"
         "SHA: $sourceSha"
@@ -275,7 +278,7 @@ try {
         "设备: $($device | ConvertTo-Json -Compress)"
         "完整明细与每步日志见同目录 report.json；current-results 仅包含本轮结果。"
         "prior-results 仅存档上轮输出，未计入本轮结果。失败时保留已有源码与用户数据。"
-        "真机/真实琴房与后续识别算法未验证。用户本轮不设置远程，不执行 Push。"
+        "此报告为软件工程与声明数据集门禁；真机现场和无真值琴房准确率未验证，另见真实材料验收报告。远程同步另行记录，不由本检测命令推断。"
     ) | Set-Content -LiteralPath (Join-Path $reportDir 'SUMMARY.md') -Encoding utf8
     Write-Host "报告目录：$reportDir"
 }

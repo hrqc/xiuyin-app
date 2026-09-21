@@ -1,0 +1,79 @@
+[
+  {
+    "name": "litert-2.1.6",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/litert/2.1.6/litert-2.1.6.aar",
+    "bytes": 11542373,
+    "sha256": "6bbbf3e1fedb7504d9f4ea492b9ee35b9d6e1185476601c987d7ec88a4ba31ed",
+    "packaged": true
+  },
+  {
+    "name": "litert-api-2.1.6",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/litert-api/2.1.6/litert-api-2.1.6.aar",
+    "bytes": 1316955,
+    "sha256": "985e2fe0924312c903f8bab3914bd63f9a38dc268543dab1d29f00762fb9ab20",
+    "packaged": true
+  },
+  {
+    "name": "onnxruntime-android-1.27.0",
+    "url": "https://repo.maven.apache.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar",
+    "bytes": 44532227,
+    "sha256": "077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb",
+    "packaged": true
+  },
+  {
+    "name": "guava-33.5.0-android",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.5.0-android/guava-33.5.0-android.jar",
+    "bytes": 2932219,
+    "sha256": "e380b435404653753e894be80ee6fdd5252d55b07f663d8a004b4e5898ecfaa0",
+    "packaged": true
+  },
+  {
+    "name": "failureaccess-1.0.3",
+    "url": "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar",
+    "bytes": 10763,
+    "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb",
+    "packaged": true
+  },
+  {
+    "name": "kotlinx-coroutines-guava-1.11.0",
+    "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-guava/1.11.0/kotlinx-coroutines-guava-1.11.0.jar",
+    "bytes": 18340,
+    "sha256": "82d3993130a494d6fab8b64705c8e10a61decd8af3d2e9274cfd8a3a5d80591f",
+    "packaged": true
+  },
+  {
+    "name": "ai-delivery-0.1.1-alpha01",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/play/ai-delivery/0.1.1-alpha01/ai-delivery-0.1.1-alpha01.aar",
+    "bytes": 219522,
+    "sha256": "91359fc01ef3d599f17e818ddcc9743c8ef4e23f87f179cbd6907c3754f37967",
+    "packaged": false
+  },
+  {
+    "name": "play-services-basement-18.4.0",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-basement/18.4.0/play-services-basement-18.4.0.aar",
+    "bytes": 286283,
+    "sha256": "ce5c936fd66814b3602f5c6a5e929911ff973d4b05f6de9996da596bef97cad2",
+    "packaged": false
+  },
+  {
+    "name": "play-services-tasks-18.2.0",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/gms/play-services-tasks/18.2.0/play-services-tasks-18.2.0.aar",
+    "bytes": 80343,
+    "sha256": "7f2aaa8f502068eaf54356ca92aec04271d6e7c416c52c45c0d23440fcbd1654",
+    "packaged": false
+  },
+  {
+    "name": "asset-delivery-2.3.0",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/play/asset-delivery/2.3.0/asset-delivery-2.3.0.aar",
+    "bytes": 340121,
+    "sha256": "ed21fdcebdcf62e315f4baee3555bc8223ee7b9d66d11a3a204c52a94734b5a5",
+    "packaged": false
+  },
+  {
+    "name": "core-common-2.0.4",
+    "url": "https://dl.google.com/dl/android/maven2/com/google/android/play/core-common/2.0.4/core-common-2.0.4.aar",
+    "bytes": 143765,
+    "sha256": "36400824014fc61d9379b13dd1ab13f6514847fb04347c0fdfe618bace78f3ed",
+    "packaged": false
+  }
+]

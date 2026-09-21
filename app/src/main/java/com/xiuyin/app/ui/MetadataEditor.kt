@@ -193,7 +193,7 @@ fun ScoreMetadataDetails(
             MetadataLine("调号", metadata.keySignatures.joinToString("、").ifEmpty { "未知" })
             MetadataLine("原始文件类型", metadata.sourceType)
             MetadataLine("命名方式", if (metadata.customNamed) "用户自定义" else if (metadata.originalTitle != null) "原始名称" else "临时名称")
-            MetadataLine("解析状态", if (metadata.recognitionComplete) "结构化解析完成；未使用 OMR" else "尚未完成")
+            MetadataLine("解析状态", if (metadata.recognitionComplete) { if (metadata.sourceType == "MusicXML") "结构化解析完成；未使用 OMR" else "本地模型识别结束；须对照原图校对" } else "尚未完成")
             MetadataLine("校对状态", if (metadata.hasReviewIssues) "存在待确认项" else "基础校验未发现疑点；未人工确认")
             metadata.firstMeasureSummary?.let { MetadataLine("首小节摘要", it) }
             MetadataLine("本地乐谱 ID", metadata.scoreId)
