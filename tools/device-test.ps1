@@ -1,0 +1,208 @@
+﻿param()
+$ErrorActionPreference = 'Stop'
+
+function ConvertFrom-InstrumentationOutput([string]$Output, [int]$ExitCode) {
+    $cases = @()
+    $problems = @()
+    $block = @{}
+    $continuation = $null
+    $startedCases = @{}
+    $finishedCases = @{}
+    $declaredCounts = @()
+    $finalCodes = @()
+    foreach ($line in ($Output -split '\r?\n')) {
+        if ($line -match '^INSTRUMENTATION_STATUS: ([^=]+)=(.*)$') {
+            $continuation = $Matches[1]
+            $block[$continuation] = $Matches[2]
+            continue
+        }
+        if ($line -match '^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$') {
+            $status = [int]$Matches[1]
+            $className = [string]$block['class']
+            $testName = [string]$block['test']
+            $key = $className + [char]0 + $testName
+            if ($block.ContainsKey('numtests')) {
+                $declared = 0
+                if ([int]::TryParse([string]$block['numtests'], [ref]$declared) -and $declared -gt 0) {
+                    $declaredCounts += $declared
+                } else { $problems += '状态块的 numtests 无效。' }
+            }
+            if ([string]::IsNullOrWhiteSpace($className) -or [string]::IsNullOrWhiteSpace($testName)) {
+                $problems += "状态码 $status 缺少 class/test，无法识别真实用例。"
+            } elseif ($status -eq 1) {
+                if ($startedCases.ContainsKey($key) -or $finishedCases.ContainsKey($key)) {
+                    $problems += "重复开始用例：$className#$testName"
+                }
+                $startedCases[$key] = $true
+            } elseif ($status -in @(0, -1, -2, -3, -4)) {
+                if ($finishedCases.ContainsKey($key)) {
+                    $problems += "重复结束用例：$className#$testName"
+                } else {
+                    if ($status -in @(0, -1, -2) -and -not $startedCases.ContainsKey($key)) {
+                        $problems += "用例没有开始记录：$className#$testName"
+                    }
+                    $finishedCases[$key] = $true
+                    $cases += [pscustomobject][ordered]@{
+                        className = $className; testName = $testName; statusCode = $status
+                        stack = [string]$block['stack']
+                    }
+                }
+            } else { $problems += "未支持的用例状态码：$status" }
+            $block = @{}
+            $continuation = $null
+            continue
+        }
+        if ($line -match '^INSTRUMENTATION_CODE:\s*(-?\d+)\s*$') {
+            $finalCodes += [int]$Matches[1]
+            $continuation = $null
+            continue
+        }
+        if ($line -match '^INSTRUMENTATION_(FAILED|ABORTED):') {
+            $problems += $line
+            $continuation = $null
+            continue
+        }
+        if ($line -match '^INSTRUMENTATION_RESULT:') {
+            $continuation = $null
+            continue
+        }
+        if ($continuation -eq 'stack') { $block['stack'] += "`n" + $line }
+    }
+    if ($block.Count -gt 0) { $problems += '存在没有结束状态码的用例块。' }
+    foreach ($key in $startedCases.Keys) {
+        if (-not $finishedCases.ContainsKey($key)) { $problems += '有已开始但未结束的用例。' }
+    }
+    $okMatches = [regex]::Matches($Output, '(?m)^\s*OK\s+\((\d+)\s+tests?\)\s*$')
+    $finalCount = 0
+    if ($okMatches.Count -eq 1) { $finalCount = [int]$okMatches[0].Groups[1].Value }
+    if ($okMatches.Count -ne 1 -or $finalCount -lt 1) { $problems += '缺少唯一且数量大于零的 OK (N tests) 完成摘要。' }
+    if ($cases.Count -ne $finalCount) { $problems += "完整用例数 $($cases.Count) 与完成摘要 $finalCount 不一致。" }
+    if ($finalCodes.Count -ne 1 -or $finalCodes[0] -ne -1) { $problems += '缺少唯一的 INSTRUMENTATION_CODE: -1 正常完成码。' }
+    if ($ExitCode -ne 0) { $problems += "ADB 进程退出码为 $ExitCode。" }
+    foreach ($count in $declaredCounts) {
+        if ($count -ne $finalCount) { $problems += '状态块 numtests 与最终数量不一致。'; break }
+    }
+    $failures = @($cases | Where-Object { $_.statusCode -eq -2 }).Count
+    $errors = @($cases | Where-Object { $_.statusCode -eq -1 }).Count
+    $skipped = @($cases | Where-Object { $_.statusCode -in @(-3, -4) }).Count
+    if ($failures -gt 0 -or $errors -gt 0 -or $skipped -gt 0) { $problems += '仪器测试存在失败、异常或跳过。' }
+    return [pscustomobject][ordered]@{
+        status = $(if ($problems.Count -eq 0) { 'passed' } else { 'failed' })
+        cases = @($cases); problems = @($problems); declaredTests = $finalCount
+        tests = $cases.Count; failures = $failures; errors = $errors; skipped = $skipped
+        exitCode = $ExitCode; finalCodes = @($finalCodes)
+    }
+}
+
+function Write-InstrumentationXml($Result, [string]$Path, [string]$Raw, [datetime]$StartedAt, [double]$Duration) {
+    $settings = New-Object Xml.XmlWriterSettings
+    $settings.Encoding = New-Object Text.UTF8Encoding($true)
+    $settings.Indent = $true
+    $writer = [Xml.XmlWriter]::Create($Path, $settings)
+    try {
+        $writer.WriteStartDocument()
+        $writer.WriteStartElement('testsuite')
+        $writer.WriteAttributeString('name', 'com.xiuyin.app.NativeInstrumentation')
+        foreach ($key in @('tests', 'failures', 'errors', 'skipped')) { $writer.WriteAttributeString($key, [string]$Result.$key) }
+        $writer.WriteAttributeString('timestamp', $StartedAt.ToUniversalTime().ToString('o'))
+        $writer.WriteAttributeString('time', $Duration.ToString('0.000', [Globalization.CultureInfo]::InvariantCulture))
+        $writer.WriteStartElement('properties')
+        $writer.WriteStartElement('property')
+        $writer.WriteAttributeString('name', 'xiuyin.runner.status')
+        $writer.WriteAttributeString('value', $Result.status)
+        $writer.WriteEndElement()
+        $writer.WriteEndElement()
+        foreach ($case in $Result.cases) {
+            $writer.WriteStartElement('testcase')
+            $writer.WriteAttributeString('classname', $case.className)
+            $writer.WriteAttributeString('name', $case.testName)
+            if ($case.statusCode -in @(-1, -2, -3, -4)) {
+                $element = if ($case.statusCode -eq -1) { 'error' } elseif ($case.statusCode -eq -2) { 'failure' } else { 'skipped' }
+                $writer.WriteStartElement($element)
+                $writer.WriteAttributeString('message', 'INSTRUMENTATION_STATUS_CODE: ' + $case.statusCode)
+                $writer.WriteString($case.stack)
+                $writer.WriteEndElement()
+            }
+            $writer.WriteEndElement()
+        }
+        $writer.WriteElementString('system-out', $Raw)
+        if ($Result.problems.Count -gt 0) { $writer.WriteElementString('system-err', ($Result.problems -join "`n")) }
+        $writer.WriteEndElement()
+        $writer.WriteEndDocument()
+    } finally { $writer.Dispose() }
+}
+
+function Invoke-AdbCapture([string[]]$AdbArguments, [string]$LogPath) {
+    $lines = New-Object 'Collections.Generic.List[string]'
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $adb @AdbArguments 2>&1 | ForEach-Object {
+            $line = $_.ToString()
+            $lines.Add($line)
+            Write-Host $line
+        }
+        $nativeCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    [IO.File]::WriteAllLines($LogPath, $lines.ToArray(), (New-Object Text.UTF8Encoding($true)))
+    return [pscustomobject]@{ exitCode = $nativeCode; output = ($lines -join "`n"); log = $LogPath }
+}
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$outputRoot = Join-Path $projectRoot 'app\build\outputs\androidTest-results\connected\adb'
+$started = Get-Date
+$previousUserHome = $env:ANDROID_USER_HOME
+$exitCode = 1
+$deviceSerial = $null
+$result = $null
+$failure = $null
+try {
+    New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+    $sdkLine = Get-Content -LiteralPath (Join-Path $projectRoot 'local.properties') | Where-Object { $_ -match '^sdk.dir=' } | Select-Object -First 1
+    if (-not $sdkLine) { throw 'local.properties 缺少 sdk.dir。' }
+    $sdkRoot = ($sdkLine -replace '^sdk.dir=', '').Replace('\:', ':').Replace('\\', '\')
+    $adb = Join-Path $sdkRoot 'platform-tools\adb.exe'
+    $appApk = Join-Path $projectRoot 'app\build\outputs\apk\debug\app-debug.apk'
+    $testApk = Join-Path $projectRoot 'app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk'
+    foreach ($path in @($adb, $appApk, $testApk)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "原生仪器测试缺少文件：$path" }
+    }
+    $env:ANDROID_USER_HOME = Join-Path $projectRoot 'tools\local\android'
+    New-Item -ItemType Directory -Path $env:ANDROID_USER_HOME -Force | Out-Null
+    $listing = Invoke-AdbCapture -AdbArguments @('devices') -LogPath (Join-Path $outputRoot 'devices.log')
+    if ($listing.exitCode -ne 0) { throw "ADB devices 失败：$($listing.exitCode)" }
+    $devices = @($listing.output -split '\r?\n' | Where-Object { $_ -match '^\S+\s+device\s*$' } | ForEach-Object { ($_ -split '\s+')[0] })
+    if ($devices.Count -ne 1 -or $devices[0] -notmatch '^emulator-\d+$') {
+        throw '只允许恰好一台在线模拟器；不会安装到物理手机。'
+    }
+    $deviceSerial = $devices[0]
+    if ($env:ANDROID_SERIAL -and $env:ANDROID_SERIAL -ne $deviceSerial) { throw '当前模拟器与调用方指定的 ANDROID_SERIAL 不一致。' }
+    foreach ($apk in @($appApk, $testApk)) {
+        Write-Host ('安装测试所需 APK：' + [IO.Path]::GetFileName($apk))
+        $install = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'install', '-r', $apk) -LogPath (Join-Path $outputRoot ([IO.Path]::GetFileNameWithoutExtension($apk) + '-install.log'))
+        if ($install.exitCode -ne 0 -or $install.output -notmatch '(?m)^\s*Success\s*$') { throw "APK 安装未成功：$apk" }
+    }
+    $testStarted = Get-Date
+    Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $duration = ((Get-Date) - $testStarted).TotalSeconds
+    $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
+    Write-InstrumentationXml -Result $result -Path (Join-Path $outputRoot 'TEST-instrumentation.xml') -Raw $instrumentation.output -StartedAt $testStarted -Duration $duration
+    if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
+    $exitCode = 0
+    Write-Host ("原生仪器测试通过：$($result.tests) 个用例；失败 0；跳过 0。")
+} catch {
+    $failure = $_.Exception.Message
+    [Console]::Error.WriteLine('原生仪器测试失败：' + $failure)
+} finally {
+    $env:ANDROID_USER_HOME = $previousUserHome
+    if (Test-Path -LiteralPath $outputRoot -PathType Container) {
+        [ordered]@{
+            executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
+            startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
+            status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
+            failure = $failure; result = $result
+        } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
+    }
+}
+exit $exitCode
