@@ -102,7 +102,7 @@ fun HomeScreen(
 }
 
 @Composable
-fun LibraryScreen(pieces: List<StudyPiece>, onOpenPiece: (String) -> Unit) {
+fun LibraryScreen(pieces: List<StudyPiece>, onOpenPiece: (String) -> Unit, onDigitalScores: () -> Unit = {}) {
     ScreenColumn {
         Text("琴谱在这里，\n随时可以翻开。", style = MaterialTheme.typography.headlineMedium)
         Text(
@@ -110,6 +110,8 @@ fun LibraryScreen(pieces: List<StudyPiece>, onOpenPiece: (String) -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
             color = XiuyinMuted,
         )
+        OutlinedButton(onClick = onDigitalScores, modifier = Modifier.fillMaxWidth()) { Text("导入与数字乐谱") }
+        Text("MusicXML 直接解析并保存至本机；图片 / PDF 识谱尚未接入。", color = XiuyinMuted, style = MaterialTheme.typography.bodySmall)
         HorizontalDivider(color = XiuyinLine)
         pieces.forEach { piece -> PieceCard(piece, onClick = { onOpenPiece(piece.id) }) }
         if (pieces.isEmpty()) {
@@ -144,7 +146,7 @@ fun ScoreScreen(piece: StudyPiece, onBack: () -> Unit, onPrepare: () -> Unit) {
         }
         NoticeCard(
             "这是静态示例谱",
-            "本版尚未接入试听、数字乐谱解析或实时陪练。选择练习模式后，可以先把设置保存在本机。",
+            "本页是原有静态示例；MusicXML 请从曲库的“导入与数字乐谱”打开。试听与实时陪练尚未接入，练习模式可先保存在本机。",
         )
         Text(
             "来源：修音项目原创，可随应用使用、复制与修改。",

@@ -1,8 +1,8 @@
-# 修音 · Android V0.1.1
+# 修音 · Android V0.2.0
 
-温馨琴房风格的原生 Android App。保留 PRODUCT.md 的产品目标；本地音频与OMR相关增量以 修音_本地高精度识别与识谱_统一增量需求.md 为准，开发规范继续遵循 AGENTS.md。
+温馨琴房风格的原生 Android App。保留 PRODUCT.md 的产品目标；本地音频与OMR相关增量以 修音_APP_当前最终增量规范.md 为准，开发规范继续遵循 AGENTS.md。
 
-统一需求差异和小版本实施顺序见 docs/UNIFIED_GAP_ANALYSIS.md。本版只交付音频输入基础，不代表高精度音频识别或OMR完成。
+最新需求差异和小版本顺序见 docs/FINAL_SPEC_GAP_ANALYSIS.md。本版在既有音频基础上增加 MusicXML 本地导入、数字乐谱校验，以及《修音_无名称乐谱自定义命名与查找_增量需求.md》要求的命名与本地管理，不代表 OMR 或高精度音频识别完成。
 
 ## 当前范围
 
@@ -14,8 +14,27 @@
 - 音频只在内存中处理；停止、退出练习/监控页或退后台会释放麦克风，不自动恢复监听。
 - 示例旋律标 TEST DATA，仅用于基础页面；不是识谱或演奏识别结果。
 
-V0.1.1 实现增量第19节第一版的音频输入基础。采集使用手机内置麦克风；多音数组和四类决策已留接口，但尚无音高模型、正式多音判断、跟谱、错音锁定、校准、试听、MusicXML或拍照识谱。没有识别结果时始终UNCERTAIN，不输出假音符、不计正确次数。起音证据分不是准确率，突然增大的噪声也可能触发候选起音。手机琴房效果未实测；不申请相机或互联网权限。
+V0.2.0 保留 V0.1.1 音频输入基础。采集使用手机内置麦克风；多音数组和四类决策已留接口，但尚无音高模型、正式多音判断、跟谱、错音锁定、校准、试听或拍照识谱。没有识别结果时始终UNCERTAIN，不输出假音符、不计正确次数。起音证据分不是准确率，突然增大的噪声也可能触发候选起音。手机琴房效果未实测；不申请相机或互联网权限。
 
+## MusicXML 本地导入
+
+曲库 → 导入与数字乐谱 → 选择 MusicXML 文件。本版只支持无 DTD、UTF-8、未压缩 score-partwise 子集，最大2MiB；含外部DTD的常见导出需先导出不含DTD的版本。MXL/MIDI/PDF/图片、反复/装饰/连音组等未支持语义会明确拒绝，不编造识别结果。
+
+数字事件视图显示实际音高、精确拍时、和弦、谱表/声部和小节结构疑点，NEEDS_REVIEW不会自动修音。完整五线谱排版、简谱、移调、试听、编辑及实时陪练目标联动仍待后续小版实现。当前MusicXML直接解析，不生成OMR置信度/sourceBox。
+
+原XML按SHA256保存在App私有files/digital-scores/，同内容去重、重启可再打开，最多100份/合计100MiB。来源读取有15秒时限、最多两个占用请求；文件提供者忽略取消时会明确超时或提示稍后重试，不无限等待或创建线程。解析及元数据预检后才保存来源，完整写入后在排他锁保护下原子移动发布。目录内零字节.archive.lock是正常归档锁，不要手动删除；锁异常会阻止写入和删除。临时残留/坏文件显式提示，不能静默覆盖源文件。与旧SQLite数据隔离，回退旧版不删除导入谱。导入只读取用户主动选取的本地文件，不上传，不保存录音。
+
+## 无名称乐谱与“我的乐谱”
+
+没有明确原始曲名时，导入后提示“未检测到曲名，请为这份乐谱命名”。可以输入“周三左手练习”等名称，也可以暂时跳过，使用持久编号“未命名乐谱 001”。以后从乐谱详情的“查看名称与文件信息”进入编辑；名称最多120字符，别名最多20项、每项100字符，标签最多20项、每项50字符。别名和标签可用逗号分隔。
+
+显示名依次使用自定义名、原始名、临时名。清空自定义名会回到原始名或临时名，不改音符、原始曲名或原文件。允许不同乐谱同名，内部以UUID区分；同一文件内容重复导入沿用原记录，保留名称、别名、标签、收藏和首次导入时间。
+
+“我的乐谱”支持完全本地搜索：名称、别名、标签、来源文件名、作者和作品号等；支持标签筛选，以及最近导入、最近练习、名称、收藏优先排序。收藏与重命名互不覆盖。详情展示来源、导入时间、最近练习时间、页数和拍调信息；文件未声明的信息保持未知，不根据文件名或排版猜测。本版导入谱未连接真实陪练，最近练习为空是正常状态，打开或编辑谱不会生成练习记录。
+
+删除前会确认影响，并提供“仅删除乐谱”“删除乐谱及练习记录”“取消”。本版导入谱没有音符修谱结果或真实练习记录，删除不影响内置曲目的练习设置。应用先写入本地删除状态，再删除该来源文件；失败会保留原因，刷新后重试，不把未删除完的来源自动加回曲库。为防止自动复活，本机保留命名与删除状态；用户主动重新导入同一文件时会恢复原命名。此操作不宣称安全擦除所有数据库历史。
+
+命名数据单独保存在score_metadata.db，原xiuyin.db保持schema1。源码实现、事务和删除兼容细节见docs/DIGITAL_SCORE_ARCHITECTURE.md。
 ## 环境与构建
 
 Android Studio 可直接打开本目录。Kotlin 2.3.21，AGP 8.13.2，Gradle 8.14.3，Compose BOM 2025.12.00，compile/target SDK 36，最低 Android 8.0（API26）。
@@ -34,7 +53,7 @@ build.cmd 会仅为构建进程设置 Java 临时目录，避免当前 Windows �
 
 完整 check.cmd 需要恰好一台在线 Android 模拟器，执行单测、Lint、Debug/Release 构建、原生 Android 仪器测试及本地APK回退演练，记录 reports/<run_id>/report.json 和 SUMMARY.md。设备步骤先编译同一套 androidTest 源码，再由 tools/device-test.ps1 安装应用及测试 APK，并实际执行 adb am instrument -w -r 与 AndroidJUnitRunner。此入口避开当前离线缓存缺失的 Gradle UTP 主机插件，不省略或替换测试用例。
 
-执行器核对每个用例状态、最终 OK (N tests)、数量一致性和退出码，失败、跳过或不完整结果均阻止通过。原始仪器日志与 JUnit XML 在 app/build/outputs/androidTest-results/connected/adb/，本轮报告另保存 current-results；prior-results 只归档旧结果，不参与计数。不会自动操作物理手机或启用模拟器宿主麦克风。测试会以 install -r 更新测试包并操作修音 App；音频仪器测试会授予模拟器中修音的录音权限，使用虚拟输入检验真实AudioRecord管线。回退演练使用本机Python标准库、v0.1.0已留档调试APK，执行 install -r -d 再更新回候选；备份本应用SQLite并逐值核对业务数据，不卸载、不清数据、不删除其他App。详见 docs/ROLLBACK.md。
+执行器核对每个用例状态、最终 OK (N tests)、数量一致性和退出码，失败、跳过或不完整结果均阻止通过。原始仪器日志与 JUnit XML 在 app/build/outputs/androidTest-results/connected/adb/，本轮报告另保存 current-results；prior-results 只归档旧结果，不参与计数。不会自动操作物理手机或启用模拟器宿主麦克风。测试会以 install -r 更新测试包并操作修音 App；音频仪器测试会授予模拟器中修音的录音权限，使用虚拟输入检验真实AudioRecord管线。回退演练使用本机Python标准库、v0.1.1已留档调试APK，执行 install -r -d 再更新回候选；备份本应用SQLite并逐值核对业务数据及导入MusicXML源文件哈希，不卸载、不清数据、不删除其他App。详见 docs/ROLLBACK.md。
 
 已构建 APK 后可单独运行同一设备执行器（仅模拟器）：
 
@@ -44,13 +63,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\device-test.ps1
 
 ## 安装与运行
 
-通过最终检测的本版安装包留档于 outputs\releases\v0.1.1\xiuyin-v0.1.1-debug.apk，同目录 release-manifest.json 记录确定的 Git SHA、SHA256 和检测报告。日常构建的调试 APK 默认输出 app\build\outputs\apk\debug\app-debug.apk。安装后应用名称为“修音”，包名 com.xiuyin.app。正式 release 构建为未签名产物，不作为商店发布包。
+通过最终检测的本版安装包留档于 outputs\releases\v0.2.0\xiuyin-v0.2.0-debug.apk，同目录 release-manifest.json 记录确定的 Git SHA、SHA256 和检测报告。日常构建的调试 APK 默认输出 app\build\outputs\apk\debug\app-debug.apk。安装后应用名称为“修音”，包名 com.xiuyin.app。正式 release 构建为未签名产物，不作为商店发布包。
 
 模拟器测试通过只代表已列设备/条件。将 APK 安装到自己的 Android 手机可继续人工验收；首次安装可能需要允许该来源安装。没有发布到公网或应用商店。
 
 ## 存储、日志与停止
 
-数据保存在 Android 应用私有目录的 xiuyin.db，不上传、不保存录音。关闭 App 即停止前台监控。日志仅保留最新200条；监控里的清空日志需再次确认，不会删除曲目配置。卸载或系统“清除数据”会删除本地数据。
+数据保存在 Android 应用私有目录：xiuyin.db保存原练习设置和诊断日志，score_metadata.db保存导入谱名称等管理信息，files/digital-scores/保存原MusicXML及归档锁。不上传、不保存录音。关闭 App 即停止前台监控。日志仅保留最新200条；监控里的清空日志需再次确认，不会删除曲目配置。卸载或系统“清除数据”会删除本地数据。
 
 没有独立后端、付费接口或云同步。遇到数据库错误会保留数据、显示原因，并提供重试/诊断，不自动重建数据库。
 
@@ -58,4 +77,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\device-test.ps1
 
 开发分支 dev，测试通过后才允许进入 main 并打稳定标签。具体当前状态见 PROJECT_STATUS.md。未配置远程仓库，本地提交不等于远程备份。
 
-上一稳定版本v0.1.0的源码、APK与校验值继续保留。本版数据库schema仍为1；本地模拟器回退与恢复是check.cmd必需门禁，真实结果保存在reports/<run_id>/rollback/。代码回退使用新提交git revert；APK必须保持签名和数据兼容，不能卸载来冒充无损回退。物理手机、正式签名发布包的降级限制尚未验证。用户明确本轮暂不设置远程仓库，不执行Push。
+上一稳定版本v0.1.1以及v0.1.0的源码、APK与校验值继续保留。原xiuyin.db的schema仍为1，独立score_metadata.db亦为schema1；旧版不会使用或清理新增命名库；本地模拟器回退与恢复是check.cmd必需门禁，真实结果保存在reports/<run_id>/rollback/。代码回退使用新提交git revert；APK必须保持签名和数据兼容，不能卸载来冒充无损回退。物理手机、正式签名发布包的降级限制尚未验证。用户明确本轮暂不设置远程仓库，不执行Push。

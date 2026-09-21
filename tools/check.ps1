@@ -207,8 +207,8 @@ try {
                 $hasher = [Security.Cryptography.SHA256]::Create()
                 try { $candidateHash = [BitConverter]::ToString($hasher.ComputeHash($hashStream)).Replace('-', '') }
                 finally { $hasher.Dispose(); $hashStream.Dispose() }
-                if ($rollback.status -ne 'passed' -or -not $rollback.baselineDataPreserved -or -not $rollback.restoredDataPreserved -or $rollback.candidateSha256 -ne $candidateHash) { throw '回退结果或候选产物哈希不符合门禁' }
-                if (@($rollback.actions | Where-Object { $_.version -eq '0.1.0' -and $_.launch -eq 'passed' }).Count -lt 1 -or @($rollback.actions | Where-Object { $_.version -eq '0.1.1' -and $_.launch -eq 'passed' }).Count -lt 2) { throw '缺少真实旧版/候选启动证据' }
+                if ($rollback.status -ne 'passed' -or -not $rollback.baselineDataPreserved -or -not $rollback.restoredDataPreserved -or -not $rollback.baselineScoreSourcesPreserved -or -not $rollback.restoredScoreSourcesPreserved -or -not $rollback.baselineMetadataPreserved -or -not $rollback.restoredMetadataPreserved -or $rollback.candidateSha256 -ne $candidateHash) { throw '回退结果或候选产物哈希不符合门禁' }
+                if (@($rollback.actions | Where-Object { $_.version -eq '0.1.1' -and $_.launch -eq 'passed' }).Count -lt 1 -or @($rollback.actions | Where-Object { $_.version -eq '0.2.0' -and $_.launch -eq 'passed' }).Count -lt 2) { throw '缺少真实旧版/候选启动证据' }
             } catch { $taskFailure = "回退证据验证失败：$($_.Exception.Message)" }
         }
         if ($null -ne $group) {
@@ -249,7 +249,7 @@ try {
         if (!$failure) { $failure = '必需检查未全部成功；单元测试和设备测试必须分别存在本轮结果，且零失败、零跳过。' }
     }
     $report = [ordered]@{
-        run_id = $runId; version = '0.1.1'; sha = $sourceSha; dirty = $dirty; testSet = 'audio-foundation-1'
+        run_id = $runId; version = '0.2.0'; sha = $sourceSha; dirty = $dirty; testSet = 'digital-score-1 + metadata-1'
         startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
         status = $(if ($failure) {'failed'} else {'passed'}); failure = $failure; device = $device
         total = $total; passed = $counts.passed; failed = $failed; skipped = $skipped
@@ -261,7 +261,7 @@ try {
     }
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $reportDir 'report.json') -Encoding utf8
     @(
-        "# 修音 V0.1.1 检测结果"
+        "# 修音 V0.2.0 检测结果"
         ""
         "Run: $runId"
         "SHA: $sourceSha"

@@ -13,3 +13,6 @@ tools/local/
 *.hprof
 __pycache__/
 *.py[cod]
+
+# User supplied scores and recordings stay local, outside source control.
+谱子和视频/

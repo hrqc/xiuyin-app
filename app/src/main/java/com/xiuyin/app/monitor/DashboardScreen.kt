@@ -39,6 +39,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.xiuyin.app.AppState
 import com.xiuyin.app.BuildConfig
+import com.xiuyin.app.score.ScoreImportState
 import com.xiuyin.app.data.LogEntry
 import com.xiuyin.app.audio.AudioSnapshot
 import com.xiuyin.app.audio.AudioStatus
@@ -58,7 +59,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
 @Composable
-fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit, audio: AudioSnapshot) {
+fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> Unit, audio: AudioSnapshot, scores: ScoreImportState = ScoreImportState()) {
     var query by remember { mutableStateOf("") }
     var selectedLevel by remember { mutableStateOf<String?>(null) }
     var frozenLogs by remember { mutableStateOf<List<LogEntry>?>(null) }
@@ -152,11 +153,32 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                 )
                 MetricRow("Audio Engine", audioStatusLabel(audio))
                 MetricRow("Pitch Engine", "⚪ 未运行 · 音高与多音模型尚未接入")
-                MetricRow("OMR Engine", "⚪ 未运行 · V0.7")
-                MetricRow("Score Engine", "⚪ 未运行 · V0.2 数字乐谱")
+                MetricRow("OMR Engine", "⚪ 未运行 · 本地 OMR 模型尚未接入")
+                MetricRow("Score Engine", when {
+                    scores.importing -> "🟡 正在处理 · ${scores.progress.orEmpty()}"
+                    scores.error != null || scores.storageIssues.isNotEmpty() -> "🟡 警告 · 请查看数字乐谱页"
+                    scores.unreadableScoreCount > 0 -> "🟡 警告 · 部分本地乐谱无法读取"
+                    scores.selectedScore?.issues?.isNotEmpty() == true -> "🟡 待确认 · ${scores.selectedScore.issues.size} 处疑点"
+                    scores.selectedScore != null -> "🟢 已解析 · 基础结构检查通过"
+                    scores.totalScoreCount > 0 -> "🟢 本地来源已读取 · ${scores.totalScoreCount} 份"
+                    else -> "⚪ 未运行 · 尚未导入数字乐谱"
+                })
                 MetricRow("Tracking Engine", "⚪ 未运行 · V0.4")
                 MetricRow("Microphone", audio.deviceName ?: if (audio.status == AudioStatus.IDLE) "未监听 · 尚未选择输入设备" else audio.statusMessage)
                 MetricRow("Backend / API", "不适用 · 本版无后端服务")
+            }
+        }
+        item {
+            MonitorCard("数字乐谱与导入") {
+                MetricRow("输入类型", scores.selectedScore?.source?.format ?: "尚未选择")
+                MetricRow("本地来源数量", scores.totalScoreCount.toString())
+                MetricRow("当前标题", scores.selectedMetadata?.displayTitle ?: "尚未打开")
+                MetricRow("Score ID", scores.selectedMetadata?.scoreId ?: "尚无")
+                MetricRow("来源 SHA256", scores.selectedScore?.id ?: "尚无")
+                MetricRow("校验疑点", scores.selectedScore?.issues?.size?.toString() ?: "尚未解析")
+                MetricRow("OMR Confidence / sourceBox", "不适用 · MusicXML 直接解析，无图像识别")
+                MetricRow("图像分辨率 / System / Staff / 二次识别", "尚未实现 · 不能用数字谱表数量冒充图像检测")
+                Text("结构化导入尚未连接实时陪练。解析结果与原文件只保存在本机。", style = MaterialTheme.typography.bodySmall)
             }
         }
         item {
