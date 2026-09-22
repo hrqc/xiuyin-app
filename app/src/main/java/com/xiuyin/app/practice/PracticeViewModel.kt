@@ -182,7 +182,9 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             return
         }
         mutableState.value = mutableState.value.copy(busy = true, error = null)
-        viewModelScope.launch {
+        // Queue the save so finish() returns with busy=true even when IO completes immediately.
+        // Main.immediate could publish a fast success/failure inside the caller's current UI action.
+        viewModelScope.launch(Dispatchers.Main) {
             try {
                 val all = withContext(Dispatchers.IO) {
                     ScoreMetadataDatabase(getApplication()).use { database ->
