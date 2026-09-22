@@ -23,6 +23,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.xiuyin.app.pitch.RecognitionEngineSnapshot
+import com.xiuyin.app.pitch.RecognitionEngineStatus
+import com.xiuyin.app.ui.ModelReadyStatus
+import androidx.compose.ui.platform.testTag
 import com.xiuyin.app.score.ScoreEditing
 import com.xiuyin.app.ui.NotationMeasure
 import com.xiuyin.app.ui.ScoreDisplayMode
@@ -41,6 +45,12 @@ fun PracticeCompanionScreen(
     onDispute: () -> Unit = {},
     feedbackMessage: String? = null,
     onCalibration: () -> Unit = {},
+    recognition: RecognitionEngineSnapshot = RecognitionEngineSnapshot(),
+    onRetryModel: () -> Unit = {},
+    fieldMode: Boolean = false,
+    fieldInputBlocked: Boolean = false,
+    onFieldTest: () -> Unit = {},
+    onConfirmWrong: () -> Unit = {},
 ) {
     var modeName by rememberSaveable(state.scoreId) { mutableStateOf(CompanionMode.FREE.name) }
     var handName by rememberSaveable(state.scoreId) { mutableStateOf(PracticeHand.BOTH.name) }
@@ -57,6 +67,10 @@ fun PracticeCompanionScreen(
         Text(state.title, style = MaterialTheme.typography.headlineSmall)
         Text("本机实时陪练 · 修谱版本 ${state.revisionGeneration}", style = MaterialTheme.typography.labelLarge)
         Text("模型分数为激活证据，不是准确率。模型分批推理，有可感知等待；踏板、复杂多音及琴房误停率仍未验证。", style = MaterialTheme.typography.bodySmall)
+        ModelReadyStatus(recognition, onRetryModel)
+        if (fieldMode) Text(if (fieldInputBlocked) "FIELD TEST MODE · 记录故障，禁止继续收音" else "FIELD TEST MODE · 现场记录中", color = MaterialTheme.colorScheme.primary)
+        if (fieldInputBlocked) Text("请前往实地测试页面结束并导出已有记录，再新建会话。", color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = onFieldTest, enabled = !state.busy) { Text("实地测试与导出") }
         OutlinedButton(onClick = onCalibration, enabled = !state.busy) { Text("钢琴环境校准与误判案例") }
         feedbackMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -90,7 +104,7 @@ fun PracticeCompanionScreen(
                     inputError = null
                     onStart(PracticeConfig(CompanionMode.valueOf(modeName), first - 1, last - 1, repeats, reviewed, PracticeHand.valueOf(handName)))
                 }
-            }, enabled = state.timeline != null) { Text("开始实时陪练") }
+            }, enabled = state.timeline != null && recognition.status == RecognitionEngineStatus.READY && !fieldInputBlocked, modifier = Modifier.testTag("companion_start")) { Text("开始实时陪练") }
         }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -101,11 +115,18 @@ fun PracticeCompanionScreen(
                 Text("决策：${state.decision.name} · ${state.reason}")
                 Text("确认输入 ${state.confirmedInputs} · 正确 ${state.correct} · 错音证据 ${state.wrong} · 跳过 ${state.missed}")
                 Text("完成 ${state.completedPasses} 轮 · 整段连续正确 ${state.consecutivePasses}/${state.config.repeatTarget}")
-                if (state.phase == CompanionPhase.LOCKED) Text("LOCKED：请重弹目标音；正确的新击键可恢复。暂停和继续不会跳过错误。", color = MaterialTheme.colorScheme.error)
-                if (state.phase == CompanionPhase.LOCKED) OutlinedButton(onClick = onDispute, enabled = !state.busy) { Text("我弹对了") }
+                if (state.locked) Text("LOCKED：请重弹目标音；正确的新击键可恢复。暂停和继续不会跳过错误。", color = MaterialTheme.colorScheme.error)
+                if (fieldMode) {
+                    OutlinedButton(onClick = onDispute, enabled = !state.busy && !fieldInputBlocked, modifier = Modifier.testTag("companion_feedback_dispute")) { Text("我弹对了") }
+                    OutlinedButton(onClick = onConfirmWrong, enabled = !state.busy && !fieldInputBlocked, modifier = Modifier.testTag("companion_feedback_confirm")) { Text("这里确实弹错了") }
+                    Text("只保存人工标签，不解锁、不移动谱面；未反馈的事件保持 UNLABELED。", style = MaterialTheme.typography.bodySmall)
+                } else if (state.phase == CompanionPhase.LOCKED) {
+                    OutlinedButton(onClick = onDispute, enabled = !state.busy) { Text("我弹对了") }
+                    Text("需要保留完整现场标签时，请开启实地测试会话。", style = MaterialTheme.typography.bodySmall)
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (running) OutlinedButton(onClick = onPause, enabled = !state.busy) { Text("暂停陪练") }
-                    if (state.phase == CompanionPhase.PAUSED) Button(onClick = onResume, enabled = !state.busy) { Text("继续陪练") }
+                    if (state.phase == CompanionPhase.PAUSED) Button(onClick = onResume, enabled = !state.busy && recognition.status == RecognitionEngineStatus.READY && !fieldInputBlocked, modifier = Modifier.testTag("companion_resume")) { Text("继续陪练") }
                     if (hasSession) OutlinedButton(onClick = onFinish, enabled = !state.busy) { Text("结束并保存报告") }
                 }
             }
@@ -132,7 +153,7 @@ fun PracticeCompanionScreen(
             state.evidence.take(8).forEach { item ->
                 Text("第 ${item.measureIndex + 1} 小节 ${item.decision}：目标 ${noteNames(item.expectedMidi)} / 输入 ${noteNames(item.detectedMidi)}\n${item.reason}", style = MaterialTheme.typography.bodySmall)
                 if (!hasSession && (item.decision == PracticeDecision.WRONG || item.decision == PracticeDecision.MISSED)) {
-                    OutlinedButton(onClick = { onStart(PracticeConfig(CompanionMode.REINFORCE, item.measureIndex, item.measureIndex, 3, reviewed, state.config.hand)) }) { Text("强化第 ${item.measureIndex + 1} 小节") }
+                    OutlinedButton(onClick = { onStart(PracticeConfig(CompanionMode.REINFORCE, item.measureIndex, item.measureIndex, 3, reviewed, state.config.hand)) }, enabled = !state.busy && recognition.status == RecognitionEngineStatus.READY && !fieldInputBlocked) { Text("强化第 ${item.measureIndex + 1} 小节") }
                 }
             }
         }

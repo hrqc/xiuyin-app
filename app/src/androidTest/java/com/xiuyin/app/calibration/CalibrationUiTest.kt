@@ -9,6 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.xiuyin.app.AppViewModel
 import com.xiuyin.app.MainActivity
 import com.xiuyin.app.audio.AudioStatus
+import com.xiuyin.app.pitch.RecognitionEngineStatus
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -39,7 +40,10 @@ class CalibrationUiTest {
             compose.onNodeWithTag("nav_monitor").performClick()
             compose.onNode(hasScrollAction()).performScrollToNode(hasText("环境校准与误判案例"))
             compose.onNodeWithText("环境校准与误判案例").performClick()
-            compose.onNodeWithText("重新校准").performScrollTo().performClick()
+            compose.waitUntil(15_000) { app.recognition.value.status in setOf(RecognitionEngineStatus.READY, RecognitionEngineStatus.ERROR) }
+            assertEquals("真实本机模型准备失败：${app.recognition.value.message}", RecognitionEngineStatus.READY, app.recognition.value.status)
+            assertEquals("准备模型不得启动收音", AudioStatus.IDLE, app.audio.value.status)
+            compose.onNodeWithText("重新校准").performScrollTo().assertIsEnabled().performClick()
             compose.waitUntil(20_000) { calibration.state.value.measuredSeconds >= 5.1 || calibration.state.value.error != null }
             assertNull(calibration.state.value.error)
             assertTrue(calibration.state.value.audioObservations > 0)

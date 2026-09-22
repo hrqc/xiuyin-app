@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.audio.MicrophoneEngine
+import com.xiuyin.app.audio.AudioStatus
+import com.xiuyin.app.field.FieldDiagnostics
 import com.xiuyin.app.pitch.*
 import com.xiuyin.app.data.AppDatabase
 import com.xiuyin.app.data.LogEntry
@@ -30,10 +32,12 @@ data class AppState(
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase(application)
+    private val fieldDiagnostics = FieldDiagnostics.get(application)
     private val mutex = Mutex()
     private val mutableState = MutableStateFlow(AppState())
     val state = mutableState.asStateFlow()
     private val audioEngine = MicrophoneEngine(application) { level, message, detail ->
+        fieldDiagnostics.recordLog(level, "Audio", message, detail)
         operation("保存音频诊断") {
             val mode = mutableState.value.preparation?.mode?.name ?: "未设置"
             database.appendLog(level, "Audio", message,
@@ -51,10 +55,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var observePcm = false
     @Volatile private var pcmObserver: ((ShortArray, Int, Long) -> Unit)? = null
     @Volatile private var audioStopped: (() -> Unit)? = null
+    @Volatile private var inputFailureListener: ((String) -> Unit)? = null
+    @Volatile private var companionCaptureRequested = false
+    private var preparedConfig = PitchEvidenceConfig()
+
     private val pianoEngine: AudioRecognitionEngine = PianoRecognitionEngine(application, onFrame = { frame ->
-        mutablePianoFrame.value = frame
-        recognitionListener?.invoke(frame)
+        synchronized(pcmGuard) {
+            if (companionCaptureRequested) {
+                val bound = fieldDiagnostics.bindFrameContext(frame)
+                fieldDiagnostics.recordRecognition(bound)
+                mutablePianoFrame.value = bound
+                recognitionListener?.invoke(bound)
+            }
+        }
     }, onStatus = { snapshot ->
+        fieldDiagnostics.recordEngine(snapshot)
         val changed = mutableRecognition.value.status != snapshot.status
         mutableRecognition.value = snapshot
         if (changed) operation("保存识音诊断") {
@@ -63,26 +78,93 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             refresh()
         }
         if (snapshot.status == RecognitionEngineStatus.ERROR) {
-            audioEngine.stop("识音失败，收音已停止")
+            companionCaptureRequested = false
             synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
+            fieldDiagnostics.endAudioStream()
+            audioEngine.stop("识音失败，收音已停止")
+            viewModelScope.launch { inputFailureListener?.invoke(snapshot.message) }
         }
     })
     fun setRecognitionListener(listener: ((PianoRecognitionFrame) -> Unit)?) { recognitionListener = listener }
     fun setPcmObserver(listener: ((ShortArray, Int, Long) -> Unit)?, onStopped: (() -> Unit)?) { pcmObserver = listener; audioStopped = onStopped }
-    fun startCompanionAudio(config: PitchEvidenceConfig = PitchEvidenceConfig()) {
+    fun setInputFailureListener(listener: ((String) -> Unit)?) { inputFailureListener = listener }
+
+    /** Preparing the model never requests microphone permission or starts capture. */
+    fun prepareCompanionModel(config: PitchEvidenceConfig = PitchEvidenceConfig()) {
+        if (companionCaptureRequested) return
+        val status = pianoEngine.snapshot.status
+        if (status == RecognitionEngineStatus.LOADING ||
+            (status == RecognitionEngineStatus.READY && preparedConfig == config)) return
         pianoEngine.stop()
         pianoEngine.updateConfig(config)
+        preparedConfig = config
         mutablePianoFrame.value = null
-        synchronized(pcmGuard) { observePcm = true }
         pianoEngine.start()
-        audioEngine.start()
     }
 
-    fun startAudio() { pianoEngine.stop(); synchronized(pcmGuard) { observePcm = true }; audioEngine.start() }
-    fun stopAudio(reason: String = "用户已停止监听") { synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }; audioEngine.stop(reason); pianoEngine.stop() }
+    /** Hard READY gate, including direct/non-UI callers. Loading cannot enqueue a future start. */
+    fun startCompanionAudio(config: PitchEvidenceConfig = PitchEvidenceConfig()): Boolean {
+        val field = fieldDiagnostics.state.value
+        if (field.activeSession != null && field.error != null) return false
+        if (pianoEngine.snapshot.status != RecognitionEngineStatus.READY || preparedConfig != config ||
+            audioEngine.state.value.status in setOf(AudioStatus.STARTING, AudioStatus.LISTENING, AudioStatus.STOPPING)) return false
+        mutablePianoFrame.value = null
+        companionCaptureRequested = true
+        synchronized(pcmGuard) { observePcm = true }
+        audioEngine.start()
+        return audioEngine.state.value.status == AudioStatus.STARTING || audioEngine.state.value.status == AudioStatus.LISTENING
+    }
+
+    fun startAudio() {
+        val field = fieldDiagnostics.state.value
+        if (field.activeSession != null && field.error != null) {
+            mutableState.update { it.copy(error = "当前测试会话记录故障；请先结束并导出已有记录，再新建会话") }
+            return
+        }
+        companionCaptureRequested = false; pianoEngine.stop(); synchronized(pcmGuard) { observePcm = true }; audioEngine.start() }
+    fun stopAudio(reason: String = "用户已停止监听") {
+        companionCaptureRequested = false
+        synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
+        fieldDiagnostics.endAudioStream()
+        audioEngine.stop(reason)
+        pianoEngine.stop()
+    }
     fun audioPermissionDenied() = audioEngine.permissionDenied()
 
-    init { audioEngine.setPcmListener { samples, count, first -> synchronized(pcmGuard) { if (observePcm) pcmObserver?.invoke(samples, count, first) }; pianoEngine.submitPcm(samples, count, first) }; initialize() }
+    init {
+        audioEngine.setPcmListener { samples, count, first ->
+            synchronized(pcmGuard) {
+                if (observePcm) {
+                    fieldDiagnostics.appendPcm(samples, count, first)
+                    pcmObserver?.invoke(samples, count, first)
+                }
+            }
+            if (companionCaptureRequested) pianoEngine.submitPcm(samples, count, first)
+        }
+        fieldDiagnostics.setFailureListener { message ->
+            // Always dispatch: a failure can be raised while the PCM/clip lock is held.
+            viewModelScope.launch(Dispatchers.Main) {
+                stopAudio("诊断记录失败，实地测试已暂停")
+                inputFailureListener?.invoke(message)
+            }
+        }
+        fieldDiagnostics.recordLog("INFO", "App", "App Started", "version=${BuildConfig.VERSION_NAME}; commit=${BuildConfig.GIT_COMMIT}")
+        viewModelScope.launch {
+            audio.collect { snapshot ->
+                fieldDiagnostics.recordAudio(snapshot)
+                if (companionCaptureRequested && snapshot.status in setOf(AudioStatus.PERMISSION_DENIED,
+                        AudioStatus.UNAVAILABLE, AudioStatus.ERROR, AudioStatus.SILENCED, AudioStatus.STOPPING, AudioStatus.IDLE)) {
+                    companionCaptureRequested = false
+                    synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
+                    inputFailureListener?.invoke(snapshot.statusMessage)
+                    fieldDiagnostics.endAudioStream()
+                    audioEngine.stop("音频不可用，当前判分已暂停")
+                    pianoEngine.stop()
+                }
+            }
+        }
+        initialize()
+    }
 
     fun initialize() = operation("启动数据库") {
         check(database.healthCheck()) { "SQLite 健康检查失败" }
@@ -151,8 +233,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
+        fieldDiagnostics.setFailureListener(null)
+        companionCaptureRequested = false
+        synchronized(pcmGuard) {
+            observePcm = false; pcmObserver = null
+            audioStopped?.invoke(); audioStopped = null
+        }
+        fieldDiagnostics.endAudioStream()
+        inputFailureListener = null
         recognitionListener = null
-        pcmObserver = null; audioStopped?.invoke(); audioStopped = null
         audioEngine.setPcmListener(null)
         pianoEngine.close()
         audioEngine.close()

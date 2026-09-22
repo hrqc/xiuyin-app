@@ -35,6 +35,11 @@ data class AudioSnapshot(
     val decisionConfidence: Double? = null,
     val processingMs: Double? = null,
     val audioLatencyMs: Double? = null,
+    val actualAudioSource: Int? = null,
+    val actualAudioSourceName: String? = null,
+    val unprocessedSupported: Boolean? = null,
+    val actualInputRoute: String? = null,
+    val routedDeviceType: Int? = null,
 )
 
 /** onsetConfidence is a heuristic evidence score, never an accuracy percentage. */

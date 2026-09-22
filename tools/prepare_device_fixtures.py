@@ -23,6 +23,7 @@ def main():
     ]
     files.append(("reports/piano-model-room/room-48k.wav", "practice-evaluation-input/room.wav", "89d79abba6e39f7cbbc78759b4220bb2e1dfa31ce174ffa8846f361f7b78e2d1"))
     files.append(("reports/dotiam-piano-independent2-20260921/dotiam-session-0.wav", "practice-evaluation-input/octave-regression.wav", "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20"))
+    files.append(("reports/dotiam-piano-independent2-20260921/expected-timeline.json", "practice-evaluation-input/octave-regression-timeline.json", "cdfc2bccc23a8bfe0a23dbbfe8a6a4e76561a31cff383ff0a2930e359a1fd099"))
     prepared = []
     for relative, device, expected in files:
         source = ROOT / relative

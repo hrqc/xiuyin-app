@@ -36,7 +36,7 @@ class RoomPianoReplayTest {
         var failure: Throwable? = null
         try {
             engine.start()
-            awaitEngine(engine) { engine.snapshot.status != RecognitionEngineStatus.LOADING }
+            awaitEngine(engine) { engine.snapshot.status == RecognitionEngineStatus.READY }
             RandomAccessFile(wav, "r").use { input ->
                 input.seek(layout.dataOffset)
                 val bytes = ByteArray(4096 * 2)
@@ -55,12 +55,15 @@ class RoomPianoReplayTest {
                     val windows = if (safe16k < PianoModel.INPUT_SAMPLES) 0L else
                         1L + (safe16k - PianoModel.INPUT_SAMPLES) / PianoRecognitionProcessor.STEP_SAMPLES
                     val frames = if (windows == 0L) 0L else 32 + (windows - 1) * 16
-                    awaitEngine(engine) { engine.snapshot.frameCount >= frames }
+                    awaitEngine(engine) { engine.snapshot.frameCount >= frames && engine.snapshot.processedSamples == submitted }
                     target = minOf(submitted + 24_576, layout.samples)
                 }
                 assertEquals(layout.dataOffset + layout.samples * 2, input.filePointer)
             }
             assertEquals(EXPECTED_SAMPLES, submitted)
+            assertEquals(EXPECTED_SAMPLES, engine.snapshot.processedSamples)
+            assertEquals(0L, engine.snapshot.droppedFrames)
+            assertEquals(0L, engine.snapshot.overflowCount)
             assertEquals(EXPECTED_FRAMES, engine.snapshot.frameCount)
             val measured = stats.snapshot()
             assertEquals(EXPECTED_FRAMES, measured.getLong("frames"))
@@ -79,6 +82,8 @@ class RoomPianoReplayTest {
                     .put("inputSha256", inputSha).put("modelSha256", beforeStop.modelSha256)
                     .put("sampleRate", 48000).put("channels", 1).put("pcmBits", 16)
                     .put("inputSamples", layout.samples).put("submittedSamples", submitted)
+                    .put("processedSamples", beforeStop.processedSamples).put("droppedFrames", beforeStop.droppedFrames)
+                    .put("overflowCount", beforeStop.overflowCount).put("modelLoadMs", beforeStop.modelLoadMs ?: JSONObject.NULL)
                     .put("inputSeconds", layout.samples / 48000.0)
                     .put("engineFrames", beforeStop.frameCount).put("statusBeforeStop", beforeStop.status.name)
                     .put("statusAfterStop", afterStop.name).put("elapsedWallMs", SystemClock.elapsedRealtime() - started)

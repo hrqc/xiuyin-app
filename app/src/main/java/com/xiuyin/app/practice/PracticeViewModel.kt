@@ -1,6 +1,9 @@
 package com.xiuyin.app.practice
 
 import android.app.Application
+import android.os.SystemClock
+import com.xiuyin.app.field.FieldDiagnostics
+import com.xiuyin.app.field.FieldFollowingTrace
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.pitch.PianoRecognitionFrame
@@ -24,6 +27,7 @@ data class CompanionState(
     val busy: Boolean = false, val scoreId: String? = null, val title: String = "实时陪练",
     val score: DigitalScore? = null, val timeline: ScoreTimeline? = null, val revisionGeneration: Long = 0,
     val phase: CompanionPhase = CompanionPhase.READY, val config: PracticeConfig = PracticeConfig(),
+    val locked: Boolean = false,
     val cursor: Int = 0, val measureIndex: Int = 0, val expectedMidi: Set<Int> = emptySet(),
     val detectedMidi: Set<Int> = emptySet(), val activeEventIds: Set<String> = emptySet(),
     val decision: PracticeDecision = PracticeDecision.UNCERTAIN, val reason: String = "准备就绪后开始监听",
@@ -37,6 +41,7 @@ data class CompanionState(
 
 /** UI controller only. Root owns microphone permissions/lifecycle and supplies independent model frames. */
 class PracticeViewModel(application: Application) : AndroidViewModel(application) {
+    private val fieldDiagnostics = FieldDiagnostics.get(application)
     private val mutableState = MutableStateFlow(CompanionState())
     val state: StateFlow<CompanionState> = mutableState.asStateFlow()
     private val reports = PracticeReportStore(File(application.filesDir, "practice-reports"))
@@ -79,6 +84,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 timeline, config, System.currentTimeMillis(), modelDescription)
             invalidateInputFrames()
             publish()
+            fieldDiagnostics.recordLog("INFO", "Practice", "Practice Start", "scoreId=${current.scoreId}; revision=${current.revisionGeneration}; mode=${config.mode}")
         } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 mutableState.value = current.copy(error = error.message) }
@@ -95,9 +101,36 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 fun evidence(midi: Int): ObservedNote? = notes[midi]?.let { ObservedNote(midi, it.onsetScore.toDouble(), it.frameScore.toDouble()) }
                 frameHistory[frame.frameIndex] = frame
                 while (frameHistory.size > 64) frameHistory.remove(frameHistory.keys.first())
+                val previousPosition = active.follower.cursor
+                val previousLocked = active.follower.locked
+                val target = active.follower.targets.getOrNull(previousPosition)
+                val expectedBefore = active.follower.expectedMidi()
+                val measureBefore = active.follower.measureIndex()
+                val followingStart = SystemClock.elapsedRealtimeNanos()
                 val update = active.accept(RecognitionObservation(frame.frameIndex, frame.audioTimeSeconds,
                     frame.onsetMidi.mapNotNull(::evidence), frame.activeMidi.mapNotNull(::evidence),
-                    frame.state != RecognitionState.WARMING_UP, frame.clipped, frame.uncertainMidi))
+                    frame.state != RecognitionState.WARMING_UP, frame.clipped, frame.uncertainMidi, frame.ambiguousOctaveMidi))
+                val followingMs = (SystemClock.elapsedRealtimeNanos() - followingStart) / 1_000_000.0
+                fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
+                    expectedMeasure = (measureBefore + 1).toString(), expectedBeat = target?.startBeat?.toDouble(),
+                    expectedNotes = expectedBefore, detectedNotes = update.detectedMidi,
+                    previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
+                    decision = update.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
+                    reason = update.reason, recoveryEvent = if (previousLocked && !active.follower.locked) "UNLOCK_AFTER_RECOGNIZED_CORRECTION" else null,
+                    followingLatencyMs = followingMs, fieldSessionId = frame.fieldSessionId,
+                    audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
+                update.evidence.forEach { item ->
+                    fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
+                        expectedMeasure = (item.measureIndex + 1).toString(),
+                        expectedBeat = active.follower.targets.getOrNull(item.targetIndex)?.startBeat?.toDouble(),
+                        expectedNotes = item.expectedMidi, detectedNotes = item.detectedMidi,
+                        previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
+                        decision = item.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
+                        reason = item.reason, evidenceAudioTimeSeconds = item.audioTimeSeconds,
+                        decisionEventId = "${active.scoreId}:${active.revisionGeneration}:${frame.frameIndex}:${item.targetIndex}:${item.decision}:${item.audioTimeSeconds}",
+                        confirmedDecision = true, fieldSessionId = frame.fieldSessionId,
+                        audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
+                }
                 publish()
                 if (update.evidence.isNotEmpty()) {
                     val decisionTime = update.evidence.last().audioTimeSeconds
@@ -123,7 +156,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             mutableState.value = mutableState.value.copy(lastDecisionFrame = null, lastWrongFrame = null)
         }
     }
-    fun pause() { invalidateInputFrames(); session?.pause(); publish() }
+    fun pause() { invalidateInputFrames(); session?.pause(); publish(); fieldDiagnostics.recordLog("INFO", "Practice", "Practice Stop", "PAUSED") }
     fun resume() { if (!mutableState.value.busy && pendingReport == null) { invalidateInputFrames(); session?.resume(); publish() } }
     fun seekMeasure(index: Int) {
         try { session?.seekMeasure(index); publish() }
@@ -133,17 +166,19 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     }
     fun inputUnavailable(message: String) {
         invalidateInputFrames(); session?.pause(); publish(); mutableState.value = mutableState.value.copy(error = message, reason = "输入不可用，已暂停判分")
+        fieldDiagnostics.recordLog("ERROR", "Practice", "Practice Stop", message)
     }
     fun finish() {
         val active = session ?: return
         if (mutableState.value.busy) return
+        fieldDiagnostics.recordLog("INFO", "Practice", "Practice Stop", "USER_FINISHED")
         val report = pendingReport ?: active.report(System.currentTimeMillis().coerceAtLeast(active.startedAtMillis)).also { pendingReport = it }
         invalidateInputFrames()
         active.pause()
         publish()
         if (report.confirmedInputs == 0) {
             session = null; pendingReport = null
-            mutableState.value = mutableState.value.copy(phase = CompanionPhase.READY, error = null, message = "没有确认的实际击键，未更新最近练习，也未生成报告")
+            mutableState.value = mutableState.value.copy(phase = CompanionPhase.READY, locked = false, error = null, message = "没有确认的实际击键，未更新最近练习，也未生成报告")
             return
         }
         mutableState.value = mutableState.value.copy(busy = true, error = null)
@@ -158,7 +193,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     reports.load(report.scoreId)
                 }
                 session = null; pendingReport = null
-                mutableState.value = mutableState.value.copy(busy = false, phase = CompanionPhase.COMPLETED, latestReport = report,
+                mutableState.value = mutableState.value.copy(busy = false, phase = CompanionPhase.COMPLETED, locked = false, latestReport = report,
                     reports = all, message = "练习报告已保存到本机；准确率与误停率仍待有真值的琴房验证")
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -171,7 +206,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         val follower = active.follower
         val target = follower.targets.getOrNull(follower.cursor)
         val update = active.lastUpdate
-        mutableState.value = mutableState.value.copy(phase = active.phase, config = active.config, cursor = follower.cursor,
+        mutableState.value = mutableState.value.copy(phase = active.phase, locked = follower.locked, config = active.config, cursor = follower.cursor,
             measureIndex = follower.measureIndex(), expectedMidi = follower.expectedMidi(), detectedMidi = update.detectedMidi,
             activeEventIds = target?.notes?.flatMap { it.eventIds }?.toSet().orEmpty(), decision = update.decision, reason = update.reason,
             confirmedInputs = active.confirmedInputs, correct = active.correct, wrong = active.wrong, missed = active.missed,

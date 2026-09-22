@@ -1,3 +1,5 @@
+import java.time.Instant
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -29,9 +31,12 @@ android {
         applicationId = "com.xiuyin.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.3.0-octave.1"
+        versionCode = 6
+        versionName = "0.3.0-octave.2-fieldtest.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BUILD_TIME", "\"${Instant.now()}\"")
+        // Intended delivery tag. GIT_TAG separately records whether that tag existed at build time.
+        buildConfigField("String", "FIELD_TAG", "\"v0.3.0-octave.2-fieldtest.1\"")
         buildConfigField("String", "GIT_COMMIT", "\"${gitValue("rev-parse", "HEAD")}\"")
         buildConfigField("String", "GIT_WORKTREE_STATE", "\"${gitWorktreeState()}\"")
         buildConfigField("String", "GIT_TAG", "\"${gitValue("describe", "--tags", "--exact-match", "HEAD")}\"")

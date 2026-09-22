@@ -115,7 +115,7 @@ def main():
 
     def extended_snapshot(destination):
         # Additive archives are ignored by old APKs but must survive artifact rollback byte-for-byte.
-        folders = ("score-revisions", "omr-sources", "practice-reports", "midi-sources", "piano-calibration", "misjudgment-cases")
+        folders = ("score-revisions", "omr-sources", "practice-reports", "midi-sources", "piano-calibration", "misjudgment-cases", "field-sessions", "field-exports")
         existing = shell("run-as", PACKAGE, "ls", "-A", "files").split()
         entries = []
         for name in folders:

@@ -115,6 +115,22 @@ class MicrophoneEngineTest {
     }
 
     @Test
+    fun pcmConsumerFailureStopsCaptureAndPublishesError() {
+        val current = newEngine()
+        current.setPcmListener { _, _, _ -> throw IllegalStateException("TEST DATA controlled PCM consumer failure") }
+        current.start()
+        waitUntil("PCM consumer failure must propagate rather than leave diagnostic capture running") {
+            current.state.value.status == AudioStatus.ERROR
+        }
+        assertTrue(current.state.value.statusMessage.contains("PCM识音回调失败"))
+        assertEquals(FinalDecision.UNCERTAIN, current.state.value.decision)
+        val failedFrameCount = current.state.value.totalFrames
+        SystemClock.sleep(300)
+        assertEquals(failedFrameCount, current.state.value.totalFrames)
+        assertTrue(events.any { it.startsWith("ERROR") })
+    }
+
+    @Test
     fun repeatedStartAndRapidRestartRemainUsable() {
         val current = newEngine()
         current.start()

@@ -13,7 +13,11 @@ import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 
 /** PCM-only model: no target score, note list, timing hint, gain or remote request enters inference. */
-class PianoModel private constructor(modelBytes: ByteBuffer, threads: Int) : AutoCloseable {
+interface PianoInferenceModel : AutoCloseable {
+    fun infer(samples16k: FloatArray): PianoModel.Prediction
+}
+
+class PianoModel private constructor(modelBytes: ByteBuffer, threads: Int) : PianoInferenceModel {
     private val interpreter = Interpreter(modelBytes, Interpreter.Options().setNumThreads(threads.coerceIn(1, 4)).setUseXNNPACK(true))
     private val outputs = linkedMapOf<Int, ByteBuffer>()
     private val outputArguments = linkedMapOf<Int, Any>()
@@ -44,7 +48,7 @@ class PianoModel private constructor(modelBytes: ByteBuffer, threads: Int) : Aut
     }
 
     @Synchronized
-    fun infer(samples16k: FloatArray): Prediction {
+    override fun infer(samples16k: FloatArray): Prediction {
         check(!closed) { "识音模型已关闭" }
         require(samples16k.size == INPUT_SAMPLES)
         // Preserve finite FIR overshoot, report it separately; never clip or amplify to manufacture confidence.

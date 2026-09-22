@@ -1,5 +1,18 @@
 # 项目状态
 
+## 当前版本：0.3.0-octave.2-fieldtest.1（实地诊断测试候选）
+
+- 本轮保留现有App，完成READY收音门禁、错误及时暂停、前台常亮、八度歧义保护与Field Test诊断闭环；不是现场音乐准确率认证。手机操作见docs/FIELD_TEST_GUIDE.md。
+- 提交前回归 reports/field-preflight-20260922T021219Z/：343项342通过、1个原DotIAM2音乐失败、0跳过；210 JVM、131主设备和旧DotIAM通过，严格Lint/双构建通过。最终固定SHA工程门禁、进程恢复、真实APK回退及最终产物身份须查下述清单，不能用dirty工作区结果替代。
+- 原Autopiano25/25、旧DotIAM18/18、0多检保持。DotIAM2原始候选仍23真音/30接受/7多报，precision76.67%，recall100%；FREE现在5正确/0错误/5漏且未完成（原9/4/3），正确谱STOP无新锁但也未完成；受控错误谱锁定/纠正0/0。歧义保护降低这组误锁并损失部分可确认进度，完整音乐验收仍FAILED。
+- 已复测修复的工程问题：未READY提前收音；音频错误传播和校准等待；残留已拒绝八度候选阻挡旧跟谱；诊断写入队列溢出；日志FileProvider地址冲突；主库错误遮挡诊断导出。新增配额导出预留与来源关联校验。失败记录不删除。
+- writer真实修复对照 reports/field-writer-repair-comparison.json：旧144 raw/134跟谱并溢出，新736/736完整，队列峰41/256且无故障。该组无片段/八度重负载；真实网站Field回放另用816帧+授权片段ZIP验收，不能混为琴房准确率。
+- **最终交付权威清单：outputs/field-tests/v0.3.0-octave.2-fieldtest.1/fieldtest-manifest.json**。清单关联最终完整SHA、同一已测APK哈希、Field工程门禁、Tag/Push实核及回退；缺失或工程状态不是PASSED不得交付。生产音乐验收和physicalPhoneAcceptance独立记录，不能掩盖失败/未验证。
+- 工作分支dev，main不提升；上一稳定v0.2.0/dbe1a852d2609126f1688039110ec0187808af63、上一八度检查点v0.3.0-octave.1/c88afbc保留。旧业务库schema1不改，Field日志独立本地保存；原有3代稳定产物保留。
+- 未验证/限制：物理手机安装/麦克风/相机/单人琴房准确率、误停率与端到端延迟；新的独立验收数据；可靠踏板；OMR逐音准确率和旧复杂谱边界；跨进程独立Dashboard。远程CI与私有仓库服务端保护仍未启用，Push不等于CI通过。
+
+下面保留历史基线记录。
+
 更新时间：2026-09-21。当前为 v0.3.0-octave.1 / Phase 1 Baseline Freeze，**完整产品验收仍失败；不发布稳定版**。
 
 ## 当前阶段：Baseline Freeze

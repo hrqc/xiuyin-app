@@ -82,7 +82,7 @@ class PracticePcmIntegrationTest {
             if (!wasLocked && correction?.phase == CompanionPhase.LOCKED) lockCount.incrementAndGet()
             if (wasLocked && corrected?.decision == PracticeDecision.CORRECT && correction.phase != CompanionPhase.LOCKED) recoveryCount.incrementAndGet()
             if (update.confirmedInput || frame.onsetMidi.isNotEmpty()) events.put(JSONObject().put("frame", frame.frameIndex).put("audioSeconds", frame.audioTimeSeconds)
-                .put("rawOnsetMidi", JSONArray(frame.onsetMidi.toList())).put("uncertainMidi", JSONArray(frame.uncertainMidi.toList()))
+                .put("rawOnsetMidi", JSONArray(frame.onsetMidi.toList())).put("uncertainMidi", JSONArray(frame.uncertainMidi.toList())).put("ambiguousOctaveMidi", JSONArray(frame.ambiguousOctaveMidi.toList()))
                 .put("decision", update.decision.name).put("cursor", update.cursor).put("reason", update.reason)
                 .put("stopDecision", stopUpdate.decision.name).put("stopCursor", stopUpdate.cursor)
                 .put("stopPhase", correctStop.phase.name).put("stopReason", stopUpdate.reason))
@@ -156,7 +156,7 @@ class PracticePcmIntegrationTest {
         val notes = frame.notes.associateBy { it.midi }
         fun entry(midi: Int) = notes[midi]?.let { ObservedNote(midi, it.onsetScore.toDouble(), it.frameScore.toDouble()) }
         return RecognitionObservation(frame.frameIndex, frame.audioTimeSeconds, frame.onsetMidi.mapNotNull(::entry), frame.activeMidi.mapNotNull(::entry),
-            clipped = frame.clipped, uncertainMidi = frame.uncertainMidi)
+            clipped = frame.clipped, uncertainMidi = frame.uncertainMidi, ambiguousOctaveMidi = frame.ambiguousOctaveMidi)
     }
     private fun referenceScore(groups: List<Set<Int>>, source: String): DigitalScore {
         val measures = groups.mapIndexed { index, pitches ->

@@ -15,6 +15,7 @@ data class RecognitionObservation(
     val frameIndex: Long, val timeSeconds: Double, val onsetNotes: List<ObservedNote>,
     val activeNotes: List<ObservedNote>, val usable: Boolean = true, val clipped: Boolean = false,
     val uncertainMidi: Set<Int> = emptySet(),
+    val ambiguousOctaveMidi: Set<Int> = emptySet(),
 )
 data class PracticeEvidence(
     val decision: PracticeDecision, val targetIndex: Int, val measureIndex: Int,
@@ -70,6 +71,14 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
         if (lastFrame >= 0 && frame.frameIndex != lastFrame + 1) candidate?.support?.clear()
         lastFrame = frame.frameIndex; lastTime = frame.timeSeconds
         if (!frame.usable || frame.clipped) { candidate = null; alignment = null; return uncertain("输入低证据、预热或削波，暂不判错") }
+        require(frame.ambiguousOctaveMidi.all { it in 0..127 }) { "八度歧义音高范围无效" }
+        if (frame.ambiguousOctaveMidi.isNotEmpty()) {
+            candidate = null
+            alignment = null
+            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN,
+                (frame.onsetNotes + frame.activeNotes).map { it.midi }.toSet() + frame.ambiguousOctaveMidi,
+                reason = "AMBIGUOUS_OCTAVE：保留上下音候选，等待独立击键证据；不判对、不判错、不新增锁定")
+        }
         if (cursor >= targets.size) return uncertain("本段已结束")
         require(frame.uncertainMidi.all { it in 0..127 }) { "不确定音高范围无效" }
         if (frame.uncertainMidi.any { it in expectedMidi() }) alignment = null

@@ -1,0 +1,312 @@
+package com.xiuyin.app.field
+
+import android.Manifest
+import android.os.Build
+import android.net.Uri
+import android.view.WindowManager
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.test.platform.app.InstrumentationRegistry
+import com.xiuyin.app.AppViewModel
+import com.xiuyin.app.BuildConfig
+import com.xiuyin.app.MainActivity
+import com.xiuyin.app.audio.AudioStatus
+import com.xiuyin.app.pitch.RecognitionEngineStatus
+import com.xiuyin.app.practice.PracticeViewModel
+import com.xiuyin.app.score.*
+import java.io.File
+import java.util.UUID
+import java.util.zip.ZipFile
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.json.JSONObject
+
+/** Real local storage and emulator PCM. No host mic, no physical-piano accuracy claim. */
+class FieldLifecycleUiTest {
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val app get() = ViewModelProvider(compose.activity)[AppViewModel::class.java]
+    private val field get() = ViewModelProvider(compose.activity)[FieldTestViewModel::class.java]
+    private val practice get() = ViewModelProvider(compose.activity)[PracticeViewModel::class.java]
+    private fun emulatorOnly() {
+        assertTrue("此用例只运行于明确的模拟器", Build.MODEL.contains("sdk", true) || Build.FINGERPRINT.startsWith("generic"))
+    }
+    private fun openField() {
+        compose.waitUntil(10_000) { !app.state.value.loading && !field.operation.value.busy }
+        compose.onNodeWithTag("nav_settings").performClick()
+        compose.onNodeWithTag("open_field_test").performScrollTo().performClick()
+        compose.waitForIdle()
+    }
+    private fun ready() {
+        compose.waitUntil(15_000) { app.recognition.value.status in setOf(RecognitionEngineStatus.READY, RecognitionEngineStatus.ERROR) }
+        assertEquals("实际模型：${app.recognition.value.message}", RecognitionEngineStatus.READY, app.recognition.value.status)
+    }
+    private fun awake(): Boolean = compose.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+    private fun scroll(tag: String) { compose.onNodeWithTag("field_content").performScrollToNode(hasTestTag(tag)) }
+
+    private fun diagnosticSnapshot(point: String, sessionId: String?): JSONObject {
+        val audio = app.audio.value
+        val recognition = app.recognition.value
+        val data = field.state.value
+        val practiceState = practice.state.value
+        return JSONObject().put("point", point).put("timestampMillis", System.currentTimeMillis())
+            .put("version", BuildConfig.VERSION_NAME).put("gitCommit", BuildConfig.GIT_COMMIT)
+            .put("testSessionId", sessionId ?: JSONObject.NULL)
+            .put("audio", JSONObject().put("status", audio.status.name).put("message", audio.statusMessage)
+                .put("totalFrames", audio.totalFrames).put("capturedAtNanos", audio.capturedAtNanos ?: JSONObject.NULL)
+                .put("device", audio.deviceName ?: JSONObject.NULL).put("route", audio.actualInputRoute ?: JSONObject.NULL))
+            .put("recognition", JSONObject().put("status", recognition.status.name).put("message", recognition.message)
+                .put("sessionId", recognition.sessionId).put("frames", recognition.frameCount)
+                .put("queueOccupancy", recognition.queueOccupancy).put("queueCapacity", recognition.queueCapacity)
+                .put("droppedFrames", recognition.droppedFrames).put("overflowCount", recognition.overflowCount))
+            .put("field", JSONObject().put("activeSessionId", data.activeSession?.id ?: JSONObject.NULL)
+                .put("error", data.error ?: JSONObject.NULL).put("message", data.message ?: JSONObject.NULL)
+                .put("operationError", field.operation.value.error ?: JSONObject.NULL).put("writerQueue", data.writerQueueOccupancy)
+                .put("writerQueueCapacity", data.writerQueueCapacity).put("storageWritable", data.storageWritable)
+                .put("freeSpaceBytes", data.freeSpaceBytes).put("totalBytes", data.totalBytes).put("clipConsent", data.clipConsent))
+            .put("practice", JSONObject().put("phase", practiceState.phase.name).put("locked", practiceState.locked)
+                .put("cursor", practiceState.cursor).put("decision", practiceState.decision.name)
+                .put("error", practiceState.error ?: JSONObject.NULL).put("reason", practiceState.reason)
+                .put("confirmedInputs", practiceState.confirmedInputs))
+            .put("appError", app.state.value.error ?: JSONObject.NULL)
+    }
+    private fun assertStillListening(point: String, sessionId: String) {
+        compose.waitForIdle()
+        val snapshot = diagnosticSnapshot(point, sessionId).toString(2)
+        assertNull("Field 不应在反馈时故障：$snapshot", field.state.value.error)
+        assertNull("App 不应在反馈时故障：$snapshot", app.state.value.error)
+        assertNull("反馈操作不应失败：$snapshot", field.operation.value.error)
+        assertNotEquals("识别引擎不应在反馈时故障：$snapshot", RecognitionEngineStatus.ERROR, app.recognition.value.status)
+        assertEquals("反馈不应停止当前收音：$snapshot", AudioStatus.LISTENING, app.audio.value.status)
+        assertEquals("反馈不能切换现场会话：$snapshot", sessionId, field.state.value.activeSession?.id)
+    }
+    private fun awaitAnother256RealModelFrames(sessionId: String) {
+        val activeApp = app
+        val activeField = field
+        val baseline = activeApp.recognition.value
+        val targetFrames = baseline.frameCount + 256L
+        try {
+            // Observe real inference progress; elapsed time alone never satisfies this regression.
+            compose.waitUntil(25_000) {
+                val audio = activeApp.audio.value
+                val recognition = activeApp.recognition.value
+                val data = activeField.state.value
+                val operation = activeField.operation.value
+                val fault = when {
+                    audio.status != AudioStatus.LISTENING -> "真实收音已停止：${audio.status} / ${audio.statusMessage}"
+                    data.error != null -> "现场诊断写入错误：${data.error}"
+                    operation.error != null -> "现场操作错误：${operation.error}"
+                    activeApp.state.value.error != null -> "应用数据错误：${activeApp.state.value.error}"
+                    recognition.status !in setOf(RecognitionEngineStatus.WARMING_UP, RecognitionEngineStatus.RUNNING) -> "模型停止处理：${recognition.status} / ${recognition.message}"
+                    recognition.sessionId != baseline.sessionId -> "持续收音期间模型会话被替换"
+                    data.activeSession?.id != sessionId -> "持续收音期间现场会话被替换或结束"
+                    recognition.frameCount < baseline.frameCount -> "真实模型帧计数倒退"
+                    else -> null
+                }
+                if (fault != null) fail(fault)
+                recognition.frameCount >= targetFrames
+            }
+        } catch (failure: Throwable) {
+            throw AssertionError("两次反馈后必须持续新增至少 256 个真实模型帧；起点=${baseline.frameCount}，目标=$targetFrames，当前=${activeApp.recognition.value.frameCount}\n" +
+                diagnosticSnapshot("sustained-256-model-frames", sessionId).toString(2), failure)
+        }
+        assertTrue("必须按真实模型帧增长完成吞吐回归", activeApp.recognition.value.frameCount - baseline.frameCount >= 256L)
+        assertStillListening("after-256-additional-real-model-frames", sessionId)
+    }
+    private fun preserveFailure(failure: Throwable, sessionId: String?, diagnostics: FieldDiagnostics) {
+        try {
+            val folder = File(context.getExternalFilesDir(null) ?: context.filesDir, "field-ui-failures")
+            check(folder.isDirectory || folder.mkdirs())
+            val base = "field-lifecycle-${sessionId ?: "before-session"}-${System.currentTimeMillis()}"
+            val snapshot = diagnosticSnapshot("test-failure-before-cleanup", sessionId)
+                .put("failure", failure.stackTraceToString())
+            val json = File(folder, "$base.json")
+            json.writeText(snapshot.toString(2))
+            // Freeze capture only after preserving the original statuses, then checkpoint actual evidence.
+            try { compose.runOnUiThread { app.stopAudio("UI 测试失败，冻结诊断证据"); practice.pause() } }
+            catch (stopError: Throwable) { snapshot.put("freezeError", stopError.stackTraceToString()); failure.addSuppressed(stopError) }
+            if (sessionId != null) {
+                try {
+                    val zip = runBlocking { withTimeout(15_000) { diagnostics.exportSession(sessionId) } }
+                    val retained = File(folder, "$base.zip")
+                    zip.copyTo(retained, overwrite = false)
+                    snapshot.put("retainedZip", retained.absolutePath).put("zipBytes", retained.length())
+                } catch (exportError: Throwable) {
+                    snapshot.put("exportError", exportError.stackTraceToString()); failure.addSuppressed(exportError)
+                }
+            }
+            json.writeText(snapshot.toString(2))
+        } catch (retentionError: Throwable) { failure.addSuppressed(retentionError) }
+    }
+    private fun openPracticeThroughWorkbench() {
+        val imports = ViewModelProvider(compose.activity)[ScoreImportViewModel::class.java]
+        val workbench = ViewModelProvider(compose.activity)[ScoreWorkbenchViewModel::class.java]
+        // A parsed score.id is its source SHA256. Practice uses the durable library UUID.
+        // Keep a distinct original fixture so an existing user's revisions are never overwritten.
+        val bytes = InstrumentationRegistry.getInstrumentation().context.assets.open("scores/import-reference.musicxml").use { it.readBytes() }
+            .toString(Charsets.UTF_8).replace("晨间和弦 · 原创导入测试", "实地链路 TEST DATA " + UUID.randomUUID()).toByteArray(Charsets.UTF_8)
+        val document = MusicXmlParser().parseDocument(bytes)
+        val timeline = ScoreTimelineCompiler.compile(document.score)
+        assertTrue("XML fixture 存在结构错误：${timeline.issues}", timeline.issues.none { it.severity == ScoreIssueSeverity.ERROR })
+        val stored = ScoreSourceStore(File(context.filesDir, "digital-scores")).save(bytes)
+        assertEquals(document.score.id, stored.id)
+        val metadata = ScoreMetadataDatabase(context).use { it.ensureImported(document.score.id, ScoreImportMetadata.from(document)) }
+        compose.runOnUiThread { imports.reload(); imports.openScore(metadata.scoreId) }
+        compose.waitUntil(10_000) { !imports.state.value.importing && (imports.state.value.selectedMetadata?.scoreId == metadata.scoreId || imports.state.value.error != null) }
+        assertNull("正式曲库打开失败：${imports.state.value.error}", imports.state.value.error)
+        assertEquals(metadata.scoreId, imports.state.value.selectedMetadata?.scoreId)
+        compose.onNodeWithTag("nav_library").performClick()
+        compose.onNodeWithText("导入与数字乐谱").performScrollTo().performClick()
+        compose.onNodeWithTag("score_content").performScrollToNode(hasTestTag("open_score_workbench"))
+        compose.onNodeWithTag("open_score_workbench").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && (workbench.state.value.revision != null || workbench.state.value.error != null) }
+        assertNull("工作台打开失败：${workbench.state.value.error}", workbench.state.value.error)
+        assertNotNull(workbench.state.value.revision)
+        compose.onNodeWithTag("workbench").performScrollToNode(hasTestTag("score_start_practice"))
+        compose.onNodeWithTag("score_start_practice").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { !practice.state.value.busy && (practice.state.value.timeline != null || practice.state.value.error != null) }
+        assertNull("陪练打开失败：${practice.state.value.error}", practice.state.value.error)
+        assertNotNull("正式曲库谱面必须生成时间线", practice.state.value.timeline)
+        assertEquals(metadata.scoreId, practice.state.value.scoreId)
+    }
+    @Test fun fieldEntryShowsBuildIdentityAndKeepsAwakeOnlyWhileForeground() {
+        emulatorOnly()
+        openField(); ready()
+        val provider = requireNotNull(context.packageManager.resolveContentProvider("${context.packageName}.field-files", 0))
+        assertFalse(provider.exported); assertTrue(provider.grantUriPermissions)
+        try {
+            FileProvider.getUriForFile(context, "${context.packageName}.field-files", File(context.filesDir, "outside-field-export.zip"))
+            fail("FileProvider 不应暴露导出目录之外的文件")
+        } catch (_: IllegalArgumentException) { /* Expected: outside the single configured root. */ }
+        compose.onNodeWithTag("field_build_identity").performScrollTo().assertTextContains(BuildConfig.GIT_COMMIT, substring = true)
+        compose.onNodeWithTag("field_build_identity").assertTextContains(BuildConfig.BUILD_TIME, substring = true)
+        scroll("field_start"); compose.onNodeWithTag("field_start").assertIsNotEnabled()
+        assertNull(field.state.value.activeSession)
+        assertEquals(AudioStatus.IDLE, app.audio.value.status)
+        compose.runOnIdle { assertTrue(awake()) }
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.onActivity {
+            assertEquals(0, it.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitForIdle(); ready()
+        assertEquals("回到前台不能自动开始收音", AudioStatus.IDLE, app.audio.value.status)
+        compose.runOnIdle { assertTrue(awake()) }
+        compose.onNodeWithTag("nav_home").performClick(); compose.waitForIdle()
+        compose.runOnIdle { assertFalse(awake()) }
+    }
+
+    @Test fun realSessionFeedbackExportReadbackAndConfirmedCleanup() {
+        emulatorOnly()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECORD_AUDIO)
+        val diagnostics = FieldDiagnostics.get(context)
+        compose.waitUntil(10_000) { !app.state.value.loading && !field.operation.value.busy }
+        assertNull("不能覆盖其他活动会话", diagnostics.state.value.activeSession)
+        openPracticeThroughWorkbench()
+        var sessionId: String? = null
+        var saved: File? = null
+        var testFailure: Throwable? = null
+        try {
+            openField(); ready()
+            assertFalse(field.state.value.clipConsent)
+            if (practice.state.value.timeline!!.issues.isNotEmpty()) {
+                compose.onNodeWithText("我已校对当前谱面的来源和结构警告").performScrollTo()
+                compose.onNode(SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.ToggleableState) and hasAnySibling(hasText("我已校对当前谱面的来源和结构警告"))).performClick()
+            }
+            scroll("field_start"); compose.onNodeWithTag("field_start").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { field.state.value.activeSession != null || field.operation.value.error != null }
+            assertNull(field.operation.value.error)
+            sessionId = requireNotNull(field.state.value.activeSession).id
+            compose.waitUntil(10_000) { app.audio.value.totalFrames > 0 || app.audio.value.status == AudioStatus.ERROR }
+            assertEquals(AudioStatus.LISTENING, app.audio.value.status)
+            assertTrue(app.audio.value.totalFrames > 0)
+            val activeApp = app
+            val capturedBeforeBackground = activeApp.audio.value.capturedAtNanos
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            runBlocking { withTimeout(5_000) { activeApp.audio.first { it.status == AudioStatus.IDLE } } }
+            val stoppedFrames = activeApp.audio.value.totalFrames
+            assertNull("后台不应继续产生 PCM 帧", runBlocking { withTimeoutOrNull(500) { activeApp.audio.first { it.totalFrames != stoppedFrames } } })
+            compose.activityRule.scenario.onActivity { assertEquals(0, it.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.waitForIdle(); ready()
+            assertEquals("恢复前台不得自动开麦", AudioStatus.IDLE, activeApp.audio.value.status)
+            assertEquals(sessionId, field.state.value.activeSession?.id)
+            scroll("field_start"); compose.onNodeWithTag("field_start").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { activeApp.audio.value.status == AudioStatus.LISTENING && activeApp.audio.value.totalFrames > 0 && activeApp.audio.value.capturedAtNanos != capturedBeforeBackground }
+            assertStillListening("before-feedback", sessionId)
+            val before = practice.state.value
+            scroll("field_feedback_dispute"); compose.onNodeWithTag("field_feedback_dispute").assertIsEnabled().performClick()
+            assertStillListening("after-dispute-feedback", sessionId)
+            scroll("field_feedback_confirm"); compose.onNodeWithTag("field_feedback_confirm").assertIsEnabled().performClick()
+            assertStillListening("after-confirm-feedback", sessionId)
+            assertEquals(before.locked, practice.state.value.locked)
+            assertEquals(before.cursor, practice.state.value.cursor)
+            assertFalse(field.state.value.clipConsent)
+            awaitAnother256RealModelFrames(sessionId)
+            assertStillListening("before-stop-control-scroll", sessionId)
+            scroll("field_stop_audio")
+            assertStillListening("after-stop-control-scroll", sessionId)
+            compose.onNodeWithTag("field_stop_audio").assertIsEnabled().performClick()
+            compose.waitUntil(5_000) { app.audio.value.status == AudioStatus.IDLE }
+            scroll("field_end"); compose.onNodeWithTag("field_end").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { field.state.value.activeSession == null && !field.operation.value.busy }
+            scroll("field_export_$sessionId"); compose.onNodeWithTag("field_export_$sessionId").performClick()
+            compose.waitUntil(10_000) { !field.operation.value.busy && (field.operation.value.exportedFile != null || field.operation.value.error != null) }
+            assertNull(field.operation.value.error)
+            val zip = requireNotNull(field.operation.value.exportedFile)
+            ZipFile(zip).use { archive ->
+                listOf("manifest.json", "device.json", "app.log", "audio-events.jsonl", "octave-diagnostics.jsonl", "score-following.jsonl", "performance.json", "session-summary.json").forEach { assertNotNull(it, archive.getEntry(it)) }
+                val logs = archive.getInputStream(archive.getEntry("app.log")).reader().readText()
+                assertTrue(logs.contains("USER_SAYS_SYSTEM_WRONG")); assertTrue(logs.contains("USER_CONFIRMS_WRONG_NOTE"))
+                assertEquals(0, archive.entries().asSequence().count { it.name.endsWith(".wav") })
+            }
+            assertNull(field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
+            compose.runOnUiThread { field.saveTo(Uri.parse("content://com.xiuyin.app.unavailable-test-destination/target"), sessionId, zip.absolutePath) }
+            compose.waitUntil(10_000) { !field.operation.value.busy }
+            assertNotNull("实际保存失败必须可见", field.operation.value.error)
+            assertNull("保存失败不能标记为已导出", field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
+            assertTrue("失败后保留源 ZIP 以便重试", zip.isFile)
+            saved = File(context.filesDir, "field-exports/test-ui-save-${UUID.randomUUID()}.zip")
+            val destination = FileProvider.getUriForFile(context, "${context.packageName}.field-files", saved)
+            compose.runOnUiThread { field.saveTo(destination, sessionId, zip.absolutePath) }
+            compose.waitUntil(10_000) { !field.operation.value.busy }
+            assertNull(field.operation.value.error)
+            assertArrayEquals(zip.readBytes(), saved.readBytes())
+            assertNotNull(field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
+            scroll("field_clear_$sessionId"); compose.onNodeWithTag("field_clear_$sessionId").performClick()
+            compose.onNodeWithTag("field_clear_cancel").performClick()
+            assertTrue(field.state.value.sessions.any { it.id == sessionId })
+            compose.onNodeWithTag("field_clear_$sessionId").performClick()
+            compose.onNodeWithTag("field_clear_confirm").performClick()
+            compose.waitUntil(10_000) { !field.operation.value.busy && field.state.value.sessions.none { it.id == sessionId } }
+            assertNull(field.operation.value.error)
+        } catch (failure: Throwable) {
+            testFailure = failure
+            preserveFailure(failure, sessionId, diagnostics)
+            throw failure
+        } finally {
+            try {
+                compose.runOnUiThread { app.stopAudio("现场链路 UI 测试结束"); practice.pause() }
+                compose.waitUntil(10_000) { !field.operation.value.busy }
+                runBlocking {
+                    withTimeout(15_000) {
+                        if (sessionId != null && diagnostics.state.value.activeSession?.id == sessionId) diagnostics.endSession("TEST_FINALLY")
+                        if (sessionId != null && diagnostics.state.value.sessions.any { it.id == sessionId }) diagnostics.clearSessions(setOf(sessionId))
+                    }
+                }
+                saved?.let { require(it.canonicalFile.parentFile == File(context.filesDir, "field-exports").canonicalFile); if (it.exists()) check(it.delete()) }
+            } catch (cleanupError: Throwable) {
+                val original = testFailure
+                if (original != null) original.addSuppressed(cleanupError) else throw cleanupError
+            }
+        }
+    }
+}

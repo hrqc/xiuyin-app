@@ -15,7 +15,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.UUID
 
-/** Phase 1 observes the unchanged production engine. It does not decide which MIDI notes are correct. */
+/** Observes the current production engine against the frozen Phase 1 input; not musical acceptance. */
 class OctaveBaselineTraceTest {
     @Test fun frozenInputTraversesProductionEngineWithCompleteFrameTrace() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -25,10 +25,10 @@ class OctaveBaselineTraceTest {
         val startedAtMillis = System.currentTimeMillis()
         val started = SystemClock.elapsedRealtime()
         val metadata = JSONObject()
-            .put("schemaVersion", 1).put("runId", UUID.randomUUID().toString())
+            .put("schemaVersion", 2).put("runId", UUID.randomUUID().toString())
             .put("startedAtMillis", startedAtMillis).put("stage", "INPUT_VALIDATION")
             .put("chainPassed", false).put("traceComplete", false).put("accuracyValidated", false)
-            .put("scope", "frozen real WAV -> unchanged production asynchronous PianoRecognitionEngine; passive file replay, not microphone or music acceptance")
+            .put("scope", "frozen real WAV -> current production asynchronous PianoRecognitionEngine; passive file replay, not microphone or music acceptance")
             .put("expectedInputSha256", EXPECTED_SHA256).put("expectedSamples", EXPECTED_SAMPLES)
             .put("expectedFrames", EXPECTED_FRAMES).put("expectedWindows", EXPECTED_WINDOWS)
             .put("framesFile", framesFile.name)
@@ -38,7 +38,6 @@ class OctaveBaselineTraceTest {
         var engine: PianoRecognitionEngine? = null
         var submitted = 0L
         var submittedBlocks = 0L
-        var expectedRunningPublications = 0L
         var failure: Throwable? = null
         try {
             framesFile.writeText("", Charsets.UTF_8)
@@ -67,10 +66,8 @@ class OctaveBaselineTraceTest {
             val runningEngine = PianoRecognitionEngine(context, trace::acceptFrame, trace::acceptStatus)
             engine = runningEngine
             runningEngine.start()
-            awaitEngine(runningEngine) { runningEngine.snapshot.status == RecognitionEngineStatus.WARMING_UP }
-            // The first FIR output uses TAP_COUNT inputs, with one output per FACTOR thereafter.
-            val firstInferenceInputSamples = Streaming48kTo16k.TAP_COUNT.toLong() +
-                (PianoModel.INPUT_SAMPLES - 1L) * Streaming48kTo16k.FACTOR
+            awaitEngine(runningEngine) { runningEngine.snapshot.status == RecognitionEngineStatus.READY }
+
             RandomAccessFile(wav, "r").use { input ->
                 input.seek(layout.dataOffset)
                 val bytes = ByteArray(4096 * 2)
@@ -85,7 +82,6 @@ class OctaveBaselineTraceTest {
                         runningEngine.submitPcm(samples, count, submitted)
                         submitted += count
                         submittedBlocks++
-                        if (submitted >= firstInferenceInputSamples) expectedRunningPublications++
                     }
                     val converted = if (submitted < Streaming48kTo16k.TAP_COUNT) 0L else
                         1L + (submitted - Streaming48kTo16k.TAP_COUNT) / Streaming48kTo16k.FACTOR
@@ -95,7 +91,8 @@ class OctaveBaselineTraceTest {
                         (windows - 1) * (PianoRecognitionProcessor.STEP_SAMPLES / PianoModel.HOP_SAMPLES)
                     awaitEngine(runningEngine) {
                         runningEngine.snapshot.frameCount >= expectedFrames &&
-                            trace.runningPublications() >= expectedRunningPublications
+                            runningEngine.snapshot.processedBlocks >= submittedBlocks &&
+                            runningEngine.snapshot.processedSamples >= submitted
                     }
                     target = minOf(submitted + 24_576, layout.samples)
                 }
@@ -103,7 +100,11 @@ class OctaveBaselineTraceTest {
             }
             assertEquals(EXPECTED_SAMPLES, submitted)
             assertEquals(EXPECTED_FRAMES, runningEngine.snapshot.frameCount)
-            assertEquals(expectedRunningPublications, trace.runningPublications())
+            assertEquals(submittedBlocks, runningEngine.snapshot.processedBlocks)
+            assertEquals(submitted, runningEngine.snapshot.processedSamples)
+            assertEquals(0L, runningEngine.snapshot.droppedFrames)
+            assertEquals(0L, runningEngine.snapshot.overflowCount)
+            assertEquals(0, runningEngine.snapshot.queueOccupancy)
             assertEquals(RecognitionEngineStatus.RUNNING, runningEngine.snapshot.status)
             val captured = trace.frames()
             assertEquals(EXPECTED_FRAMES, captured.size.toLong())
@@ -120,6 +121,16 @@ class OctaveBaselineTraceTest {
                     .put("statusAfterStop", engine?.snapshot?.status?.name ?: "NOT_STARTED")
                     .put("engineFrames", beforeStop?.frameCount ?: 0L)
                     .put("engineModelSha256", beforeStop?.modelSha256 ?: JSONObject.NULL)
+                    .put("processedSamples", beforeStop?.processedSamples ?: 0L)
+                    .put("processedBlocks", beforeStop?.processedBlocks ?: 0L)
+                    .put("queueOccupancy", beforeStop?.queueOccupancy ?: 0)
+                    .put("maxQueueOccupancy", beforeStop?.maxQueueOccupancy ?: 0)
+                    .put("queueCapacity", beforeStop?.queueCapacity ?: PianoRecognitionEngine.QUEUE_CAPACITY)
+                    .put("droppedFrames", beforeStop?.droppedFrames ?: 0L)
+                    .put("droppedSamples", beforeStop?.droppedSamples ?: 0L)
+                    .put("overflowCount", beforeStop?.overflowCount ?: 0L)
+                    .put("rejectedBeforeReadyFrames", beforeStop?.rejectedBeforeReadyFrames ?: 0L)
+                    .put("modelLoadMs", beforeStop?.modelLoadMs ?: JSONObject.NULL)
             } catch (error: Throwable) {
                 if (failure == null) failure = error else failure.addSuppressed(error)
             } finally {
@@ -135,14 +146,14 @@ class OctaveBaselineTraceTest {
                 val complete = failure == null && metadata.optBoolean("replayAssertionsPassed") &&
                     metadata.optString("statusAfterStop") == RecognitionEngineStatus.IDLE.name &&
                     submitted == EXPECTED_SAMPLES && captured.size.toLong() == EXPECTED_FRAMES &&
-                    trace.runningPublications() == expectedRunningPublications
+                    beforeStop != null && beforeStop.processedBlocks == submittedBlocks && beforeStop.processedSamples == submitted &&
+                    beforeStop.droppedFrames == 0L && beforeStop.overflowCount == 0L
                 metadata.put("stage", if (complete) "TRACE_COMPLETE" else "FAILED")
                     .put("chainPassed", complete).put("traceComplete", complete)
                     .put("submittedSamples", submitted).put("submittedBlocks", submittedBlocks)
-                    .put("expectedRunningPublications", expectedRunningPublications)
                     .put("runningPublications", trace.runningPublications())
                     .put("allSubmittedBlocksProcessed", complete)
-                    .put("drainEvidence", "After first inference, production engine publishes RUNNING once per consumed PCM block; wait for all expected publications, including incomplete-window tail blocks")
+                    .put("drainEvidence", "Engine processedBlocks and processedSamples account for every consumed PCM block including the incomplete-window tail; status callbacks are not processing counters")
                     .put("statusPublicationCounts", JSONObject(statuses))
                     .put("statusAfterClose", engine?.snapshot?.status?.name ?: "NOT_STARTED")
                     .put("frames", captured.size).put("windows", captured.map { it.availableAudioTimeSeconds }.distinct().size)
@@ -199,6 +210,7 @@ class OctaveBaselineTraceTest {
                 onsetMidi = frame.onsetMidi.toSet(), activeMidi = frame.activeMidi.toSet(), notes = frame.notes.toList(),
                 rawOnsetScores = frame.rawOnsetScores.copyOf(), rawFrameScores = frame.rawFrameScores.copyOf(),
                 uncertainMidi = frame.uncertainMidi.toSet(), candidateRejections = frame.candidateRejections.toMap(),
+                octaveDiagnostics = frame.octaveDiagnostics.toList(), ambiguousOctaveMidi = frame.ambiguousOctaveMidi.toSet(),
             ))
         }
 
@@ -244,6 +256,22 @@ class OctaveBaselineTraceTest {
             .put("rawOnsetScores", JSONArray(frame.rawOnsetScores.toList()))
             .put("rawFrameScores", JSONArray(frame.rawFrameScores.toList()))
             .put("uncertainMidi", JSONArray(frame.uncertainMidi.sorted())).put("candidateRejections", rejections)
+            .put("ambiguousOctaveMidi", JSONArray(frame.ambiguousOctaveMidi.sorted()))
+            .put("octaveDiagnostics", JSONArray(frame.octaveDiagnostics.map { d ->
+                JSONObject().put("lowerMidi", d.lowerMidi).put("upperMidi", d.upperMidi)
+                    .put("lowerOnsetScore", d.lowerOnsetScore).put("upperOnsetScore", d.upperOnsetScore)
+                    .put("lowerFrameScore", d.lowerFrameScore).put("upperFrameScore", d.upperFrameScore)
+                    .put("temporalOffsetSeconds", d.temporalOffsetSeconds ?: JSONObject.NULL)
+                    .put("lowerFundamentalAmplitude", d.lowerFundamentalAmplitude ?: JSONObject.NULL)
+                    .put("upperFundamentalAmplitude", d.upperFundamentalAmplitude ?: JSONObject.NULL)
+                    .put("upperAttackEnergyRise", d.upperAttackEnergyRise ?: JSONObject.NULL)
+                    .put("lowerAttackEnergyRise", d.lowerAttackEnergyRise ?: JSONObject.NULL)
+                    .put("harmonicPrior", d.harmonicPrior ?: JSONObject.NULL)
+                    .put("independentOnsetScore", d.independentOnsetScore ?: JSONObject.NULL)
+                    .put("scoreContextWeight", d.scoreContextWeight ?: JSONObject.NULL)
+                    .put("finalConfidence", d.finalConfidence ?: JSONObject.NULL)
+                    .put("finalState", d.finalState.name).put("reason", d.reason)
+            }))
             .put("pedal", frame.pedalState).put("offset", JSONObject.NULL).put("offsetSupported", frame.offsetSupported)
             .put("modelWindowMs", frame.modelWindowMs)
             .put("notes", JSONArray(frame.notes.sortedBy { it.midi }.map { note ->

@@ -1,6 +1,7 @@
 package com.xiuyin.app.calibration
 
 import android.app.Application
+import com.xiuyin.app.field.FieldDiagnostics
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.audio.AudioSnapshot
@@ -26,6 +27,7 @@ data class CalibrationState(
 
 /** Root forwards real PCM and model frames. No microphone is opened and no input is synthesized here. */
 class CalibrationViewModel(application: Application) : AndroidViewModel(application) {
+    private val fieldDiagnostics = FieldDiagnostics.get(application)
     private val mutable = MutableStateFlow(CalibrationState(busy = true))
     val state: StateFlow<CalibrationState> = mutable.asStateFlow()
     private val ring = PcmRingBuffer()
@@ -42,17 +44,27 @@ class CalibrationViewModel(application: Application) : AndroidViewModel(applicat
     fun setCaseConsent(consent: Boolean) { mutable.value = mutable.value.copy(caseConsent = consent, message = if (consent) "仅异常事件或主动反馈允许保存最多 5 秒音频；不会保存整次演奏" else "已关闭后续音频案例保存；已有案例可单独清理", error = null) }
     fun startCalibration() {
         if (mutable.value.busy) return
+        fieldDiagnostics.recordLog("INFO", "Calibration", "Calibration Start")
         measurement = Measurement(); warningFrames = 0
         mutable.value = mutable.value.copy(calibrating = true, audioObservations = 0, recognitionObservations = 0, measuredSeconds = 0.0, error = null, message = "请先安静数秒，再按引导演奏；保存需要至少 5 秒真实输入")
     }
     fun cancelCalibration() {
         if (mutable.value.calibrating) mutable.value = mutable.value.copy(calibrating = false, message = "校准已中断，原 Profile 保留；可重新校准")
     }
+    /** Called on the main dispatcher as soon as an input/model failure reaches the application. */
+    fun inputUnavailable(message: String) {
+        if (mutable.value.calibrating) {
+            ring.clear()
+            fieldDiagnostics.recordLog("ERROR", "Calibration", "Calibration Failed", message)
+            mutable.value = mutable.value.copy(calibrating = false,
+                error = "校准已暂停：$message；原 Profile 保留，可重试", message = null)
+        }
+    }
     fun acceptAudio(snapshot: AudioSnapshot) {
         viewModelScope.launch {
             if (snapshot.status != AudioStatus.LISTENING) {
-                if (mutable.value.calibrating && (snapshot.status in setOf(AudioStatus.PERMISSION_DENIED, AudioStatus.UNAVAILABLE, AudioStatus.ERROR, AudioStatus.SILENCED) || (snapshot.status == AudioStatus.STARTING && measurement.inputCount > 0))) {
-                    cancelCalibration(); mutable.value = mutable.value.copy(error = "校准输入中断：${snapshot.statusMessage}；原 Profile 保留")
+                if (mutable.value.calibrating && (snapshot.status in setOf(AudioStatus.PERMISSION_DENIED, AudioStatus.UNAVAILABLE, AudioStatus.ERROR, AudioStatus.SILENCED, AudioStatus.STOPPING, AudioStatus.IDLE) || (snapshot.status == AudioStatus.STARTING && measurement.inputCount > 0))) {
+                    inputUnavailable(snapshot.statusMessage)
                 }
                 return@launch
             }
@@ -98,7 +110,10 @@ class CalibrationViewModel(application: Application) : AndroidViewModel(applicat
             if (measurement.onsetCount > 0) measurement.onsetSum / measurement.onsetCount else null,
             measurement.recognitionFrames, mutable.value.profile?.parameters ?: PitchEvidenceConfig())
         mutable.value = mutable.value.copy(calibrating = false)
-        operation({ profiles.save(value) }) { mutable.value = mutable.value.copy(profile = value, message = "真实环境指标已保存；延迟、混响和踏板残响尚未测得") }
+        operation({ profiles.save(value) }) {
+            fieldDiagnostics.recordLog("INFO", "Calibration", "Calibration Success", "observedSeconds=${value.observedSeconds}; physicalAccuracy=UNVERIFIED")
+            mutable.value = mutable.value.copy(profile = value, message = "真实环境指标已保存；延迟、混响和踏板残响尚未测得")
+        }
     }
     fun applyParameters(parameters: PitchEvidenceConfig) {
         val profile = mutable.value.profile

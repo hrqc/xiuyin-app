@@ -3,11 +3,12 @@ package com.xiuyin.app.pitch
 import kotlin.math.abs
 
 /** Single-worker continuous PCM processing. Ending audio is never zero padded into invented evidence. */
-class PianoRecognitionProcessor(private val model: PianoModel, config: PitchEvidenceConfig = PitchEvidenceConfig(), private val onFrame: (PianoRecognitionFrame) -> Unit) {
+class PianoRecognitionProcessor(private val model: PianoInferenceModel, config: PitchEvidenceConfig = PitchEvidenceConfig(), private val onFrame: (PianoRecognitionFrame) -> Unit) {
     private val resampler = Streaming48kTo16k()
     private val tracker = PianoEvidenceTracker(config)
     private val acoustic = PianoAcousticEvidence()
     private val residual = ResidualHarmonicEvidence()
+    private val octaveSafety = OctaveSafetyLayer()
     private val ring = FloatArray(PianoModel.INPUT_SAMPLES)
     private val clipRing = BooleanArray(PianoModel.INPUT_SAMPLES)
     private var nextWrite = 0
@@ -61,7 +62,7 @@ class PianoRecognitionProcessor(private val model: PianoModel, config: PitchEvid
             val independentSupport = residual.analyze(input, index * PianoModel.HOP_SAMPLES, onsetScores, frameScores)
             val frame = tracker.accept(absoluteFrame, originSeconds + (firstSample16k + index * 512) / 16_000.0,
                 available, onsetScores, frameScores, overloaded, result.computeMs, support.rejected + independentSupport.rejected)
-            onFrame(frame)
+            onFrame(octaveSafety.observe(frame, support.fundamentalAmplitude))
             lastPublishedFrame = absoluteFrame
             frameCount++
         }

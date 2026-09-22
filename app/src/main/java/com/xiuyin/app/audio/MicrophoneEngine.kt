@@ -73,18 +73,8 @@ class MicrophoneEngine(
                         if (!isCurrent(session)) return@withLock
                         releaseFailure.get()?.let { throw IllegalStateException("上次音频资源释放失败，请重新打开 App", it) }
                         val counters = CaptureCounters()
-                        var rebuilds = 0
-                        while (isCurrent(session)) {
-                            try {
-                                capture(session, counters)
-                                break
-                            } catch (dead: DeadAudioService) {
-                                if (rebuilds++ >= 1) throw dead
-                                publish(session) { it.copy(status = AudioStatus.STARTING, statusMessage = "音频服务中断，正在重新连接") }
-                                event("WARNING", "音频服务失效，释放后重建一次", dead.stackTraceToString())
-                                delay(100)
-                            }
-                        }
+                        // A broken stream requires an explicit user retry; do not resume judging across lost PCM.
+                        capture(session, counters)
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -245,8 +235,7 @@ class MicrophoneEngine(
                 if (!silenced) {
                     try { pcmListener.get()?.invoke(samples, FRAME_SAMPLES, (counters.frames - 1) * FRAME_SAMPLES) }
                     catch (error: Exception) {
-                        pcmListener.set(null)
-                        event("ERROR", "PCM识音回调失败，已断开识音消费；音频诊断继续", error.stackTraceToString())
+                        throw IllegalStateException("PCM识音回调失败，采集与判分已暂停", error)
                     }
                 }
                 val processingStart = SystemClock.elapsedRealtimeNanos()
@@ -288,6 +277,12 @@ class MicrophoneEngine(
                             clipped = analysis?.clipped ?: false, processingMs = processingMs,
                             // No hardware/end-to-end latency measurement is available in this version.
                             audioLatencyMs = null,
+                            sampleRate = record.sampleRate,
+                            actualAudioSource = record.audioSource,
+                            actualAudioSourceName = if (record.audioSource == MediaRecorder.AudioSource.UNPROCESSED) "UNPROCESSED" else "VOICE_RECOGNITION",
+                            unprocessedSupported = unprocessed,
+                            actualInputRoute = "TYPE_BUILTIN_MIC",
+                            routedDeviceType = currentRoute.type,
                         )
                     }
                 }
