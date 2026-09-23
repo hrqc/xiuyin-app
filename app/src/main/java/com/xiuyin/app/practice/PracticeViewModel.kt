@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.pitch.PianoRecognitionFrame
 import com.xiuyin.app.pitch.RecognitionState
 import com.xiuyin.app.score.DigitalScore
+import com.xiuyin.app.score.ScoreEditing
+import com.xiuyin.app.score.ScoreIssue
 import com.xiuyin.app.score.ScoreIssueSeverity
 import com.xiuyin.app.score.ScoreMetadataDatabase
 import com.xiuyin.app.score.ScoreTimeline
@@ -37,6 +39,7 @@ data class CompanionState(
     val latestReport: PracticeReport? = null,
     val lastDecisionFrame: PianoRecognitionFrame? = null, val lastWrongFrame: PianoRecognitionFrame? = null,
     val error: String? = null, val message: String? = null,
+    val preparationIssues: List<ScoreIssue> = emptyList(),
 )
 
 /** UI controller only. Root owns microphone permissions/lifecycle and supplies independent model frames. */
@@ -60,16 +63,31 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         this.modelDescription = modelDescription
         mutableState.value = CompanionState(busy = true, scoreId = scoreId, title = title, score = score, revisionGeneration = revisionGeneration)
         viewModelScope.launch {
+            var preparationIssues = score.issues
             try {
                 val loaded = withContext(Dispatchers.IO) {
+                    // Keep locatable validation results even if timeline compilation itself throws.
+                    preparationIssues = ScoreEditing.validate(score)
                     val timeline = ScoreTimelineCompiler.compile(score)
-                    require(timeline.issues.none { it.severity == ScoreIssueSeverity.ERROR }) { "谱面仍有结构错误，请返回修谱后再练习" }
-                    timeline to reports.load(scoreId)
+                    preparationIssues = timeline.issues
+                    if (timeline.issues.any { it.severity == ScoreIssueSeverity.ERROR }) null to emptyList()
+                    else timeline to reports.load(scoreId)
                 }
-                if (token == openGeneration) mutableState.value = mutableState.value.copy(busy = false, timeline = loaded.first, reports = loaded.second)
+                if (token == openGeneration) {
+                    val blockers = preparationIssues.filter { it.severity == ScoreIssueSeverity.ERROR }
+                    mutableState.value = mutableState.value.copy(busy = false, timeline = loaded.first,
+                        reports = loaded.second, preparationIssues = preparationIssues,
+                        error = if (blockers.isEmpty()) null else "练习准备失败：谱面有 ${blockers.size} 处结构错误，请按下方位置返回修谱")
+                    if (blockers.isNotEmpty()) logPreparationFailure(scoreId, preparationIssues)
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                if (token == openGeneration) mutableState.value = mutableState.value.copy(busy = false, error = "练习准备失败：${error.message}")
+                if (token == openGeneration) {
+                    val reason = error.message ?: error.javaClass.simpleName
+                    mutableState.value = mutableState.value.copy(busy = false, timeline = null,
+                        preparationIssues = preparationIssues, error = "练习准备失败：$reason")
+                    logPreparationFailure(scoreId, preparationIssues, error)
+                }
             }
         }
         return true
@@ -78,7 +96,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         val current = mutableState.value
         if (current.busy || session != null) return
         try {
-            val timeline = requireNotNull(current.timeline) { "没有可靠的练习时间线" }
+            val timeline = requireNotNull(current.timeline) { "谱面尚未准备成功，请先处理准备错误" }
+            require(timeline.issues.none { it.severity == ScoreIssueSeverity.ERROR }) { "谱面仍有结构错误，不能开始陪练" }
             require(timeline.issues.isEmpty() || config.reviewAcknowledged) { "该谱仍有来源警告，请先校对并确认当前谱面" }
             session = PracticeSession(requireNotNull(current.scoreId), current.title, current.revisionGeneration,
                 timeline, config, System.currentTimeMillis(), modelDescription)
@@ -202,6 +221,16 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 mutableState.value = mutableState.value.copy(busy = false, error = "报告保存失败，可重试结束保存：${error.message}")
             }
         }
+    }
+    private fun logPreparationFailure(scoreId: String, issues: List<ScoreIssue>, error: Exception? = null) {
+        val detail = buildString {
+            append("scoreId=$scoreId; revision=${mutableState.value.revisionGeneration}")
+            issues.forEach { issue ->
+                append("\n${issue.severity}; issueId=${issue.id}; measureId=${issue.measureId}; eventId=${issue.eventId}; ${issue.message}")
+            }
+            if (error != null) append("\n${error.stackTraceToString()}")
+        }
+        fieldDiagnostics.recordLog("ERROR", "Practice", "PracticePreparationFailed", detail)
     }
     private fun publish() {
         val active = session ?: return

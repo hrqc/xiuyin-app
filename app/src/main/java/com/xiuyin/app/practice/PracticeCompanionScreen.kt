@@ -28,6 +28,8 @@ import com.xiuyin.app.pitch.RecognitionEngineStatus
 import com.xiuyin.app.ui.ModelReadyStatus
 import androidx.compose.ui.platform.testTag
 import com.xiuyin.app.score.ScoreEditing
+import com.xiuyin.app.score.ScoreIssue
+import com.xiuyin.app.score.ScoreIssueSeverity
 import com.xiuyin.app.ui.NotationMeasure
 import com.xiuyin.app.ui.ScoreDisplayMode
 import java.text.DateFormat
@@ -51,6 +53,7 @@ fun PracticeCompanionScreen(
     fieldInputBlocked: Boolean = false,
     onFieldTest: () -> Unit = {},
     onConfirmWrong: () -> Unit = {},
+    onRepairScore: (ScoreIssue?) -> Unit = { onBack() },
 ) {
     var modeName by rememberSaveable(state.scoreId) { mutableStateOf(CompanionMode.FREE.name) }
     var handName by rememberSaveable(state.scoreId) { mutableStateOf(PracticeHand.BOTH.name) }
@@ -74,6 +77,20 @@ fun PracticeCompanionScreen(
         OutlinedButton(onClick = onCalibration, enabled = !state.busy) { Text("钢琴环境校准与误判案例") }
         feedbackMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        val preparationErrors = state.preparationIssues.filter { it.severity == ScoreIssueSeverity.ERROR }
+        if (!hasSession && !state.busy && state.timeline == null && state.score != null) {
+            preparationErrors.take(8).forEach { issue ->
+                val measure = state.score.parts.asSequence().flatMap { it.measures.asSequence() }
+                    .firstOrNull { it.id == issue.measureId || it.events.any { event -> event.id == issue.eventId } }
+                val location = measure?.let { "第 ${it.number} 小节" } ?: "谱面整体"
+                Text("$location：${issue.message}" + (issue.eventId?.let { "\n音符/休止符 ID：$it" } ?: ""),
+                    color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            if (preparationErrors.size > 8) Text("另有 ${preparationErrors.size - 8} 处结构错误，请在修谱页查看。", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { onRepairScore(preparationErrors.firstOrNull()) }, modifier = Modifier.testTag("companion_repair")) {
+                Text(if (preparationErrors.firstOrNull()?.let { it.measureId != null || it.eventId != null } == true) "返回修谱并定位首个错误" else "返回修谱")
+            }
+        }
         state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         inputError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (!hasSession && !state.busy) {
@@ -82,9 +99,13 @@ fun PracticeCompanionScreen(
             }
             val supportsHands = state.timeline?.let(::supportsHandSelection) == true
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { PracticeHand.entries.forEach { hand ->
-                FilterChip(handName == hand.name, { handName = hand.name }, enabled = hand == PracticeHand.BOTH || supportsHands, label = { Text(hand.label) })
+                FilterChip(handName == hand.name, { handName = hand.name }, enabled = hand == PracticeHand.BOTH || supportsHands, label = { Text(hand.label) }, modifier = Modifier.testTag("companion_hand_${hand.name}"))
             } }
-            if (!supportsHands) Text("当前谱面缺少明确双谱表音符，不能猜测左右手；使用双手模式。", style = MaterialTheme.typography.bodySmall)
+            if (!supportsHands) Text(when {
+                preparationErrors.isNotEmpty() -> "谱面结构尚未通过，暂时无法判定分手；请先修正列出的错误。"
+                state.timeline == null -> "谱面尚未准备成功，暂时无法判定左右手。"
+                else -> "当前谱面缺少明确双谱表音符，不能猜测左右手；使用双手模式。"
+            }, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("companion_hand_status"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(startText, { startText = it }, label = { Text("起始小节") }, singleLine = true, modifier = Modifier.weight(1f))
                 OutlinedTextField(endText, { endText = it }, label = { Text("结束小节（空为全曲）") }, singleLine = true, modifier = Modifier.weight(1f))
@@ -111,7 +132,7 @@ fun PracticeCompanionScreen(
                 Text("状态：${phaseLabel(state.phase)} · ${state.config.mode.label} · ${state.config.hand.label}")
                 Text("当前位置：第 ${state.measureIndex + 1} 小节 · 起音位置 ${state.cursor + 1}")
                 Text("目标：${noteNames(state.expectedMidi)}")
-                Text("本次新起音：${noteNames(state.detectedMidi)}")
+                Text("当前识别候选（不等于已确认起音）：${noteNames(state.detectedMidi)}")
                 Text("决策：${state.decision.name} · ${state.reason}")
                 Text("确认输入 ${state.confirmedInputs} · 正确 ${state.correct} · 错音证据 ${state.wrong} · 跳过 ${state.missed}")
                 Text("完成 ${state.completedPasses} 轮 · 整段连续正确 ${state.consecutivePasses}/${state.config.repeatTarget}")

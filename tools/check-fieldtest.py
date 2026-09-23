@@ -10,10 +10,12 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import io
+import math
 import json
 import os
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -24,13 +26,14 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.xiuyin.app"
-VERSION = "0.3.0-octave.2-fieldtest.1"
+VERSION = "0.3.0-octave.2-fieldtest.2"
 KNOWN_SUITE = "TEST-dotiam-independent2.xml"
 KNOWN_CLASS = PACKAGE + ".practice.PracticePcmIntegrationTest"
 KNOWN_METHOD = "productionPcmToFollowerAndDurableReport"
 RECOVERY = PACKAGE + ".field.FieldSessionRecoveryTest#incompleteSessionSurvivesProcessRestartAndExports"
 FIELD_REPLAY = PACKAGE + ".field.FieldSessionReplayTest#productionPianoFramesAreExportedWithFeedbackAndClips"
 WAV_SHA = "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20"
+PHONE_VIDEO_WAV_SHA = "777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858"
 EXTERNAL = "/sdcard/Android/data/" + PACKAGE + "/files/"
 RUNNER = PACKAGE + ".test/androidx.test.runner.AndroidJUnitRunner"
 
@@ -193,6 +196,132 @@ def validate_recovery_phase(recovery, phase, started_ms, prepared=None):
                 recovery["logEvidenceCount"] > 0 and recovery["recoveredStatus"] == "INCOMPLETE" and
                 recovery["testEndTime"] is None and recovery["exported"] is True,
                 "Recovery did not preserve incomplete session across processes")
+def validate_phone_video_trace(metadata_path, frames_path, status_path, device_started_ms):
+    """Complete diagnostic evidence only; never infer music or physical phone accuracy."""
+    meta = read(metadata_path)
+    started = meta.get("startedAtMillis")
+    require(type(started) is int and started >= device_started_ms, "Stale phone video diagnostic trace")
+    require(meta.get("schemaVersion") == 3 and meta.get("stage") == "TRACE_COMPLETE" and
+            all(meta.get(key) is True for key in ("chainPassed", "traceComplete", "replayAssertionsPassed",
+                "allSubmittedBlocksProcessed", "readyObservedBeforeFirstPcm")) and meta.get("failure") is None,
+            "Phone video diagnostic chain is incomplete")
+    require(meta.get("accuracyValidated") is False and meta.get("microphoneCaptureTested") is False and
+            meta.get("scoreFollowingTested") is False and meta.get("pitchAccuracy") is None and
+            meta.get("falseStopRate") is None and
+            meta.get("inputProvenance") == "USER_VIDEO_AAC_DECODED_PCM_NOT_NATIVE_MICROPHONE_PCM",
+            "Phone video replay cannot certify physical microphone or music accuracy")
+    require(meta.get("inputSha256") == meta.get("expectedInputSha256") == PHONE_VIDEO_WAV_SHA and
+            meta.get("inputBytes") == 1501262 and meta.get("sampleRate") == 48000 and
+            meta.get("channels") == 1 and meta.get("pcmBits") == 16, "Phone video input identity or PCM format differs")
+    require(all(meta.get(key) == 750592 for key in ("inputSamples", "submittedSamples", "processedSamples")) and
+            all(meta.get(key) == 480 for key in ("frames", "engineFrames")) and meta.get("windows") == 29 and
+            meta.get("convertedSamples16k") == 250156 and meta.get("incompleteTailSamples16k") == 2860,
+            "Phone video PCM/frame/window processing is incomplete")
+    zeros = ("droppedFrames", "droppedSamples", "overflowCount", "rejectedBeforeReadyFrames")
+    require(all(meta.get(key) == 0 for key in zeros) and meta.get("queueOccupancy") == 0 and
+            meta.get("submittedBlocks", 0) > 0 and meta.get("processedBlocks") == meta["submittedBlocks"] and
+            meta.get("statusBeforeStop") == "RUNNING" and meta.get("statusAfterStop") == "IDLE" and
+            meta.get("statusAfterClose") == "CLOSED", "Phone video queue/drain/lifecycle failed")
+    model_sha = meta.get("modelSha256")
+    require(isinstance(model_sha, str) and re.fullmatch(r"[0-9a-f]{64}", model_sha) and
+            meta.get("engineModelSha256") == meta.get("expectedModelSha256") == model_sha,
+            "Phone video model identity differs")
+
+    def jsonl(path, name_key, hash_key):
+        path = Path(path)
+        require(meta.get(name_key) == path.name and sha(path) == meta.get(hash_key),
+                "Phone video file hash/name mismatch: " + path.name)
+        def invalid_constant(value):
+            raise ValueError("Non-finite phone video JSON value: " + value)
+        lines = path.read_text(encoding="utf8").splitlines()
+        require(lines and all(line.strip() for line in lines), "Empty/missing phone video JSONL record")
+        rows = [json.loads(line, parse_constant=invalid_constant) for line in lines]
+        require(all(isinstance(row, dict) for row in rows), "Invalid phone video JSONL object")
+        return rows
+
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value)
+
+    frames = jsonl(frames_path, "framesFile", "framesFileSha256")
+    require(len(frames) == 480 and all(type(row.get("frameIndex")) is int for row in frames) and
+            [row.get("frameIndex") for row in frames] == list(range(480)) and
+            meta.get("firstFrameIndex") == 0 and meta.get("lastFrameIndex") == 479,
+            "Phone video frame count/index continuity mismatch")
+    accepted = Counter(); d4_events = []; raw_digest = hashlib.sha256()
+    previous_time = previous_available = -1.0
+    for row in frames:
+        at, available = row.get("audioTimeSeconds"), row.get("availableAudioTimeSeconds")
+        require(finite(at) and finite(available) and 0 <= at <= available and at > previous_time and
+                available >= previous_available, "Phone video frame time continuity mismatch")
+        previous_time, previous_available = at, available
+        raw = []
+        for key in ("rawOnsetScores", "rawFrameScores"):
+            scores = row.get(key)
+            require(isinstance(scores, list) and len(scores) == 88 and
+                    all(finite(value) and 0 <= value <= 1 for value in scores), "Invalid phone video raw88: " + key)
+            raw.extend(scores)
+        raw_digest.update(struct.pack(">q176f", row["frameIndex"], *raw))
+        for key in ("onsetMidi", "ambiguousOctaveMidi"):
+            notes = row.get(key)
+            require(isinstance(notes, list) and all(type(midi) is int and 21 <= midi <= 108 for midi in notes) and
+                    len(notes) == len(set(notes)), "Invalid phone video MIDI list: " + key)
+        accepted.update(row["onsetMidi"])
+        notes = row.get("notes")
+        require(isinstance(notes, list) and all(isinstance(note, dict) for note in notes), "Phone video note evidence missing")
+        if any(note.get("midi") == 62 and note.get("onset") is True for note in notes):
+            d4_events.append(dict(frameIndex=row["frameIndex"], audioTimeSeconds=at,
+                availableAudioTimeSeconds=available, acceptedOnsetMidi=row["onsetMidi"],
+                ambiguousOctaveMidi=row["ambiguousOctaveMidi"], d4Ambiguous=62 in row["ambiguousOctaveMidi"]))
+    require(len({row["availableAudioTimeSeconds"] for row in frames}) == 29, "Phone video inference window count differs")
+    require(raw_digest.hexdigest() == meta.get("rawSequenceSha256"), "Phone video raw sequence hash differs")
+    require(sum(accepted.values()) == meta.get("acceptedOnsets") and
+            sum(bool(row["onsetMidi"]) for row in frames) == meta.get("onsetFrames"), "Phone video onset observation counts differ")
+    statuses = jsonl(status_path, "statusFile", "statusFileSha256")
+    require(len(statuses) == meta.get("statusEventCount") and
+            all(type(row.get("publicationIndex")) is int for row in statuses) and
+            [row.get("publicationIndex") for row in statuses] == list(range(len(statuses))),
+            "Phone video status count/index continuity mismatch")
+    counts = Counter(row.get("status") for row in statuses)
+    require(set(counts) <= {"LOADING", "READY", "WARMING_UP", "RUNNING", "IDLE", "CLOSED"} and
+            dict(counts) == meta.get("statusPublicationCounts") and counts["RUNNING"] == meta.get("runningPublications") and
+            statuses[0].get("status") == "LOADING" and statuses[-1].get("status") == "CLOSED" and counts["IDLE"] > 0,
+            "Phone video status lifecycle/counts differ")
+    require(all(type(row.get("sessionId")) is int for row in statuses) and
+            len({row["sessionId"] for row in statuses}) == 1, "Phone video mixed/missing engine session identity")
+    ready = False; previous_clock = -1
+    for row in statuses:
+        clock = row.get("callbackElapsedRealtimeMs")
+        require(type(clock) is int and clock >= previous_clock and row.get("modelSha256") == model_sha and
+                row.get("accuracyValidated") is False, "Phone video status clock/model/accuracy differs")
+        previous_clock = clock
+        require(all(type(row.get(key)) is int and row[key] == 0 for key in zeros), "Phone video status reports dropped/rejected/overflow PCM")
+        require(all(type(row.get(key)) is int and row[key] >= 0 for key in
+                    ("submittedSamples", "processedSamples", "submittedBlocks", "processedBlocks", "frameCount")) and
+                row["processedSamples"] <= row["submittedSamples"] <= 750592 and
+                row["processedBlocks"] <= row["submittedBlocks"] <= meta["submittedBlocks"] and row["frameCount"] <= 480,
+                "Phone video status processing counters invalid")
+        if row.get("status") == "READY":
+            require(row["submittedSamples"] == 0, "Phone video READY appeared after PCM submission")
+            ready = True
+        if row["submittedSamples"] > 0:
+            require(ready, "Phone video PCM submitted before a real READY publication")
+    last = statuses[-1]
+    require(ready and last["submittedSamples"] == last["processedSamples"] == 750592 and
+            last["submittedBlocks"] == last["processedBlocks"] == meta["submittedBlocks"] and
+            last["frameCount"] == 480 and last.get("queueOccupancy") == 0,
+            "Phone video final status does not prove complete PCM drain")
+    return dict(diagnosticAcceptance="PASSED", musicAcceptance="FAILED", physicalCurrentApkAccuracyPassed=False,
+        musicFailureBasis="Observed real phone video D4 octave ambiguity/LOCK failure remains unresolved; passive trace completeness does not rejudge musical acceptance.",
+        runId=meta.get("runId"), startedAtMillis=started, inputSha256=PHONE_VIDEO_WAV_SHA,
+        inputSamples=750592, frames=480, windows=29, statusEvents=len(statuses), modelSha256=model_sha,
+        droppedFrames=0, droppedSamples=0, overflowCount=0, readyBeforePcm=True,
+        evidenceFiles={Path(path).name:dict(sha256=sha(path), bytes=Path(path).stat().st_size)
+                       for path in (metadata_path, frames_path, status_path)},
+        observations=dict(acceptedOnsetsByMidi={str(midi):count for midi,count in sorted(accepted.items())},
+            acceptedOnsetMidi62=accepted[62], acceptedOnsetMidi74=accepted[74], d4OnsetFrames=len(d4_events),
+            d4OnsetFramesAmbiguous=sum(event["d4Ambiguous"] for event in d4_events), d4OnsetEvents=d4_events,
+            definition="Observations, not accuracy or required preservation of known errors; D4 onset = notes[midi=62].onset=true, ambiguity = 62 in ambiguousOctaveMidi."))
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
@@ -204,7 +333,8 @@ def main():
     result = dict(run_id=run_id, startedAt=datetime.now(timezone.utc).isoformat(), device=args.serial,
                   engineeringAcceptance="FAILED", musicAcceptance="UNVERIFIED", productAcceptance="UNVERIFIED",
                   status="PAUSE", apkDeliveryAllowed=False, stableRelease=False, eligibleForMain=False,
-                  phoneAcceptance="UNVERIFIED", steps=[], scope="Field Test candidate engineering evidence; not stable or phone musical acceptance")
+                  phoneAcceptance="UNVERIFIED", phoneVideoMusicAcceptance="FAILED",
+                  phoneVideoDiagnosticAcceptance="UNVERIFIED", physicalCurrentApkAccuracyPassed=False, steps=[], scope="Field Test candidate engineering evidence; not stable or phone musical acceptance")
     lock = ROOT / "tools/local/fieldtest.lock"
     handle = None
     initial = None
@@ -291,6 +421,16 @@ def main():
             run([adb,"-s",args.serial,"pull",remote,target], "pull-" + local_name.replace(".", "-"))
             require(sha(target) == remote_sha == device("shell", "sha256sum", remote).split()[0], "Device pull integrity failed")
             return target
+        result["phoneVideoDiagnosticAcceptance"] = "FAILED"
+        phone_paths = [pull(name, name) for name in
+                       ("phone-video-metadata.json", "phone-video-frames.jsonl", "phone-video-status.jsonl")]
+        phone_trace = validate_phone_video_trace(*phone_paths, device_start)
+        phone_trace["gateBinding"] = dict(gateRunId=run_id, device=args.serial, gitCommit=result["sha"],
+            version=VERSION, installedApkSha256=tested_identity,
+            bindingEvidence="Fresh trace from inventoried full check.cmd instrumentation; installed APK hashes verified after that run. Trace metadata does not itself embed APK identity.")
+        write(out / "phone-video-validation.json", phone_trace)
+        result["phoneVideoDiagnosticAcceptance"] = "PASSED"
+        result["phoneVideoDiagnosticEvidence"] = "phone-video-validation.json"
         replay = read(pull("field-replay-result.json", "field-replay-result.json"))
         exported = pull("field-replay-export.zip", "field-replay-export.zip")
         require(replay["startedAtMillis"] >= device_start - 1000 and replay["chainPassed"] is True, "Field replay stale or failed")
@@ -328,7 +468,7 @@ def main():
         require(Counter((a["version"],a["launch"]) for a in rollback["actions"]) ==
                 Counter([("0.2.0","passed"),(VERSION,"passed"),(VERSION,"passed")]), "Missing actual rollback launches")
         business = rollback["businessDataBefore"]["extendedFiles"]
-        for prefix in ("files/field-sessions/", "files/field-exports/"):
+        for prefix in ("files/field-sessions/", "files/field-exports/", "files/omr-reanalyses/"):
             require(any(e["file"].startswith(prefix) and e["bytes"] > 0 for e in business),
                     "Rollback omitted actual Field data: " + prefix)
         result["rollbackAcceptance"] = "PASSED"
@@ -365,7 +505,9 @@ def main():
         write(out / "field-report.json", result)
         (out / "SUMMARY.md").write_text("# Field Test gate\n\nEngineering: " + result["engineeringAcceptance"] +
             "\n\nMusic: " + result["musicAcceptance"] + "\n\nStatus: " + result["status"] +
-            "\n\nPhone: UNVERIFIED; stableRelease: false.\n\n" +
+            "\n\nPhone: UNVERIFIED; stableRelease: false." +
+            "\n\nPhone video diagnostics: " + result["phoneVideoDiagnosticAcceptance"] +
+            "; phone video music: FAILED; physical current APK accuracy passed: false.\n\n" +
             result.get("failure", "Known music failure retained. Candidate is restricted to Field Test.") + "\n", encoding="utf8")
         if handle is not None:
             handle.close(); lock.unlink()

@@ -166,8 +166,9 @@ class MainActivity : ComponentActivity() {
             calibrationModel.inputUnavailable("麦克风权限未授权，请允许后重试")
             if (fieldPageVisible) fieldModel.reportError("麦克风权限未授权，未建立正式测试会话。可再次尝试，或手动前往系统设置。")
         } else if (requestRoute == currentRoute && audioPageVisible && appDataAvailable() && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-            if (!requiresReady || modelIsReady()) action?.invoke()
-            else if (fieldPageVisible) fieldModel.reportError("权限已授权，但模型不再 READY；准备完成后请重新手动开始")
+            if (requiresReady && !modelIsReady()) {
+                if (fieldPageVisible) fieldModel.reportError("权限已授权，但模型不再 READY；准备完成后请重新手动开始")
+            } else if (allowFieldBoundInput()) action?.invoke()
         }
     }
     private fun appDataAvailable() = !appModel.state.value.loading && appModel.state.value.error == null
@@ -177,9 +178,21 @@ class MainActivity : ComponentActivity() {
         ?.getDevices(AudioManager.GET_DEVICES_INPUTS)?.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC } == true
     private fun prepareModel() = appModel.prepareCompanionModel(calibrationModel.state.value.profile?.parameters ?: PitchEvidenceConfig())
 
+    private fun allowFieldBoundInput(): Boolean {
+        val practice = companionModel.state.value
+        val problem = FieldScoreBinding.problem(fieldModel.state.value.activeSession, practice.scoreId, practice.revisionGeneration)
+            ?: return true
+        appModel.stopAudio("实地测试谱面绑定不符，收音已停止")
+        companionModel.inputUnavailable(problem)
+        calibrationModel.inputUnavailable(problem)
+        fieldModel.reportError(problem)
+        return false
+    }
+
     private fun requestMicrophone(requiresReady: Boolean, action: () -> Unit) {
         if (!appDataAvailable() || !audioPageVisible || permissionPending || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         if (requiresReady && !modelIsReady()) return
+        if (!allowFieldBoundInput()) return
         workbenchModel.stopPlayback("开始收音，试听已停止")
         if (hasMicrophonePermission()) action()
         else {
@@ -197,6 +210,7 @@ class MainActivity : ComponentActivity() {
         requestMicrophone(true, action)
     }
     private fun beginFormalInput(): Boolean {
+        if (!allowFieldBoundInput()) return false
         if (!appDataAvailable()) {
             companionModel.inputUnavailable("本地数据未就绪，禁止开始收音；可导出已有实地测试日志")
             calibrationModel.inputUnavailable("本地数据未就绪，禁止开始收音；可导出已有实地测试日志")
@@ -262,6 +276,9 @@ class MainActivity : ComponentActivity() {
                 var returnAfterPractice by rememberSaveable { mutableStateOf(false) }
                 var showPracticeSwitch by rememberSaveable { mutableStateOf(false) }
                 var switchAfterPractice by rememberSaveable { mutableStateOf(false) }
+                var repairNavigationError by rememberSaveable { mutableStateOf<String?>(null) }
+                var fieldNavigationError by rememberSaveable { mutableStateOf<String?>(null) }
+                val fieldBindingProblem = FieldScoreBinding.problem(field.activeSession, companion.scoreId, companion.revisionGeneration)
                 val currentPiece = SampleLibrary.find(selectedId ?: state.preparation?.pieceId ?: state.recentPieceId.orEmpty())
                 val navigate: (String) -> Unit = { destination ->
                     if ((route == "companion" || route == "field") && destination != route) {
@@ -284,12 +301,14 @@ class MainActivity : ComponentActivity() {
                 }
                 KeepScreenOnWhileVisible(this@MainActivity, !state.loading &&
                     (route in setOf("practice", "companion", "calibration", "field", "monitor") || fieldOperation.busy))
-                val recordFieldFeedback: (FieldFeedbackLabel) -> Unit = { label ->
+                val recordFieldFeedback: (FieldFeedbackLabel) -> Unit = feedback@{ label ->
+                    if (!allowFieldBoundInput()) return@feedback
                     val context = buildFieldFeedbackContext(companionModel.state.value, model.pianoFrame.value,
                         fieldModel.state.value.activeSession?.id)
                     fieldModel.feedback(label, context.values, context.audioTimeSeconds)
                 }
-                val startField: (String, Boolean) -> Unit = { label, reviewed ->
+                val startField: (String, PracticeConfig) -> Unit = { label, requestedConfig ->
+                    val reviewed = requestedConfig.reviewAcknowledged
                     requestReadyAudio {
                         val practice = companionModel.state.value
                         if (practice.timeline == null || practice.score == null || practice.busy) fieldModel.reportError("数字乐谱尚未准备，请从工作台打开有效乐谱")
@@ -298,10 +317,16 @@ class MainActivity : ComponentActivity() {
                             fieldModel.reportError("请先校对并确认谱面的来源或结构警告")
                         else {
                             val begin: () -> Boolean = {
-                                if (!appDataAvailable() || currentRoute != "field" || !fieldPageVisible || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || !modelIsReady() || !hasMicrophonePermission()) false
+                                val currentPractice = companionModel.state.value
+                                if (!FieldScoreBinding.samePreparedScore(practice.scoreId, practice.revisionGeneration,
+                                        currentPractice.scoreId, currentPractice.revisionGeneration)) {
+                                    fieldModel.reportError("会话准备期间谱面或修订已变化，未启动收音，请重新打开目标谱面并新建会话。")
+                                    false
+                                } else if (!allowFieldBoundInput()) false
+                                else if (!appDataAvailable() || currentRoute != "field" || !fieldPageVisible || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || !modelIsReady() || !hasMicrophonePermission()) false
                                 else {
                                     if (companionModel.state.value.phase == CompanionPhase.PAUSED) companionModel.resume()
-                                    else companionModel.start(PracticeConfig(reviewAcknowledged = reviewed))
+                                    else companionModel.start(requestedConfig)
                                     val phase = companionModel.state.value.phase
                                     if (phase !in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED)) {
                                         fieldModel.reportError(companionModel.state.value.error ?: "练习未开始，请检查谱面")
@@ -320,10 +345,15 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 val openSelectedPractice: () -> Unit = {
-                    val revision = workbench.revision
-                    val id = workbench.scoreId
-                    if (revision != null && id != null && companionModel.open(id, workbench.title, revision.current,
-                            revision.generation, "Magenta O&F " + recognition.modelSha256)) navigate("companion")
+                    val problem = FieldScoreBinding.openingProblem(fieldModel.state.value.activeSession, fieldModel.operation.value.busy)
+                    if (problem != null) fieldNavigationError = problem
+                    else {
+                        val currentWorkbench = workbenchModel.state.value
+                        val revision = currentWorkbench.revision
+                        val id = currentWorkbench.scoreId
+                        if (revision != null && id != null && companionModel.open(id, currentWorkbench.title, revision.current,
+                                revision.generation, "Magenta O&F " + recognition.modelSha256)) navigate("companion")
+                    }
                 }
                 LaunchedEffect(switchAfterPractice, companion.busy, companion.phase, companion.error) {
                     if (switchAfterPractice && !companion.busy) {
@@ -342,6 +372,16 @@ class MainActivity : ComponentActivity() {
                         dismissButton = { TextButton(modifier = Modifier.testTag("practice_switch_return"), enabled = !companion.busy,
                             onClick = { showPracticeSwitch = false; navigate("companion") }) { Text("返回当前陪练") } })
                 }
+                fieldNavigationError?.let { message ->
+                    AlertDialog(onDismissRequest = { fieldNavigationError = null }, title = { Text("请先处理当前实地测试") },
+                        text = { Text(message) }, confirmButton = { TextButton(modifier = Modifier.testTag("field_binding_go_to_session"),
+                            onClick = { fieldNavigationError = null; navigate("field") }) { Text("前往实地测试结束并导出") } },
+                        dismissButton = { TextButton(onClick = { fieldNavigationError = null }) { Text("暂不切换") } })
+                }
+                repairNavigationError?.let { message ->
+                    AlertDialog(onDismissRequest = { repairNavigationError = null }, title = { Text("暂时无法打开修谱") },
+                        text = { Text(message) }, confirmButton = { TextButton(onClick = { repairNavigationError = null }) { Text("知道了") } })
+                }
                 val saveRecognitionCase: (CaseTrigger) -> Unit = { trigger ->
                     val practice = companionModel.state.value
                     val evidence = practice.evidence.firstOrNull { it.decision == PracticeDecision.WRONG }
@@ -353,6 +393,9 @@ class MainActivity : ComponentActivity() {
                         pedalState = frame?.pedalState ?: "UNKNOWN", finalDecision = evidence?.decision?.name ?: "UNCERTAIN",
                         practiceMode = practice.config.mode.name, userDisagrees = trigger == CaseTrigger.USER_DISPUTE,
                         modelDescription = "Magenta O&F " + model.recognition.value.modelSha256), frame?.audioTimeSeconds)
+                }
+                LaunchedEffect(field.activeSession?.id, companion.scoreId, companion.revisionGeneration, fieldBindingProblem) {
+                    if (fieldBindingProblem != null) allowFieldBoundInput()
                 }
                 LaunchedEffect(audio) { calibrationModel.acceptAudio(audio) }
                 LaunchedEffect(companion.wrong) {
@@ -427,7 +470,8 @@ class MainActivity : ComponentActivity() {
                                 "field" -> FieldTestScreen(field, fieldOperation, audio, recognition, pianoFrame, companion,
                                     microphonePermission = hasMicrophonePermission(), builtInMicrophoneAvailable = builtInMicrophoneAvailable(),
                                     appDataAvailable = !state.loading && state.error == null, appDataError = state.error,
-                                    onStart = startField, onStopAudio = { companionModel.pause(); model.stopAudio("用户暂停现场收音") },
+                                    onStart = { label, reviewed -> startField(label, PracticeConfig(reviewAcknowledged = reviewed)) },
+                                    onConfiguredStart = startField, onStopAudio = { companionModel.pause(); model.stopAudio("用户暂停现场收音") },
                                     onEndSession = { companionModel.pause(); model.stopAudio("用户结束实地测试"); fieldModel.finish() },
                                     onRetryModel = ::prepareModel, onConsent = fieldModel::setClipConsent,
                                     onFeedback = recordFieldFeedback, onExport = fieldModel::export,
@@ -440,7 +484,7 @@ class MainActivity : ComponentActivity() {
                                     onFinishCalibration = { calibrationModel.finishCalibration(); if (!calibrationModel.state.value.calibrating) model.stopAudio("校准已结束") },
                                     onConsentChange = calibrationModel::setCaseConsent, onApplyParameters = calibrationModel::applyParameters,
                                     onResetDefaults = calibrationModel::resetDefaults, onClearCases = calibrationModel::clearCases,
-                                    onBack = { navigate(if (companion.scoreId != null) "companion" else "monitor") }, recognition = recognition, onRetryModel = ::prepareModel, fieldInputBlocked = field.activeSession != null && field.error != null)
+                                    onBack = { navigate(if (companion.scoreId != null) "companion" else "monitor") }, recognition = recognition, onRetryModel = ::prepareModel, fieldInputBlocked = field.activeSession != null && (field.error != null || fieldBindingProblem != null))
                                 "library" -> LibraryScreen(SampleLibrary.pieces, openPiece, onDigitalScores = { navigate("digital") })
                                 "score" -> currentPiece?.let {
                                     ScoreScreen(it, onBack = { navigate("library") }, onPrepare = { navigate("practice") }, onWorkbench = { scoreModel.openBuiltIn(it.id); navigate("digital") })
@@ -468,6 +512,12 @@ class MainActivity : ComponentActivity() {
                                 "workbench" -> ScoreWorkbenchScreen(workbench, playback,
                                     onBack = { scoreModel.reload(); navigate("digital") },
                                     onExportMidi = { bpm -> exportBpm = bpm; midiExport.launch("xiuyin-score.mid") },
+                                    onRecognizeOmrAgain = workbenchModel::recognizeOmrAgain,
+                                    onPreviewOmrStructure = workbenchModel::previewOmrStructure,
+                                    onApplyOmrStructure = workbenchModel::applyOmrStructure,
+                                    onDismissStructurePreview = workbenchModel::dismissStructurePreview,
+                                    onSetWholeScoreTime = workbenchModel::setWholeScoreTime,
+                                    onConfirmLinearRepeat = workbenchModel::confirmLinearRepeat,
                                     onSelect = workbenchModel::select, onEdit = workbenchModel::edit,
                                     onTranspose = workbenchModel::transpose, onUndo = workbenchModel::undo,
                                     onRedo = workbenchModel::redo, onVerify = workbenchModel::verifySelected,
@@ -477,14 +527,23 @@ class MainActivity : ComponentActivity() {
                                         workbenchModel.startPlayback(bpm, volume, measure, loop, metronome)
                                     }, onStop = { workbenchModel.stopPlayback() },
                                     onPractice = {
-                                        if (companionModel.hasActiveSession() || companion.busy) showPracticeSwitch = true
+                                        val problem = FieldScoreBinding.openingProblem(fieldModel.state.value.activeSession, fieldModel.operation.value.busy)
+                                        if (problem != null) fieldNavigationError = problem
+                                        else if (companionModel.hasActiveSession() || companion.busy) showPracticeSwitch = true
                                         else openSelectedPractice()
                                     },
                                 )
                                 "companion" -> PracticeCompanionScreen(companion,
+                                    onRepairScore = { issue ->
+                                        model.stopAudio("返回修谱定位结构错误")
+                                        val targetScoreId = companionModel.state.value.scoreId
+                                        if (targetScoreId == null) repairNavigationError = "当前练习没有乐谱记录，请先选择需要修正的乐谱。"
+                                        else if (workbenchModel.openForRepair(targetScoreId, issue)) navigate("workbench")
+                                        else repairNavigationError = "修谱工作台正在处理另一项操作，请完成后重试。不会打开或修改其他乐谱。"
+                                    },
                                     onCalibration = { navigate("calibration") },
                                     recognition = recognition, onRetryModel = ::prepareModel,
-                                    fieldMode = field.activeSession != null, fieldInputBlocked = field.activeSession != null && field.error != null, onFieldTest = { navigate("field") },
+                                    fieldMode = field.activeSession != null, fieldInputBlocked = field.activeSession != null && (field.error != null || fieldBindingProblem != null), onFieldTest = { navigate("field") },
                                     onDispute = { if (field.activeSession != null) recordFieldFeedback(FieldFeedbackLabel.USER_SAYS_SYSTEM_WRONG) else saveRecognitionCase(CaseTrigger.USER_DISPUTE) },
                                     onConfirmWrong = { recordFieldFeedback(FieldFeedbackLabel.USER_CONFIRMS_WRONG_NOTE) },
                                     feedbackMessage = if (field.activeSession != null) fieldOperation.error ?: field.error ?: field.message else calibration.error ?: calibration.message,

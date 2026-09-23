@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.ln
@@ -28,7 +27,8 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
         regions.forEachIndexed { index, region ->
             NativeOmrModels.checkCancelled()
             progress("第 ${page + 1} 页：识别谱表 ${index + 1}/${regions.size}")
-            val first = models.recognizeStaff(canvas(gray, width, region.box))
+            val dewarp = OmrStaffDewarp.planFor(region)
+            val first = models.recognizeStaff(canvasForRegion(gray, width, region, dewarp))
             val firstScore = sequenceScore(first)
             val needsSecond = !first.getBoolean("eos") || lowConfidence(first)
             var selected = first
@@ -36,7 +36,7 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
             if (needsSecond) {
                 progress("第 ${page + 1} 页：复核低置信谱表 ${index + 1}/${regions.size}")
                 // Independent inference with local contrast enhancement, not a copy of first tokens.
-                second = models.recognizeStaff(canvas(enhanced, width, region.box))
+                second = models.recognizeStaff(canvasForRegion(enhanced, width, region, dewarp))
                 if (second.getBoolean("eos") && (!first.getBoolean("eos") || sequenceScore(second) > firstScore)) selected = second
             }
             val disagreement = second != null && tokenSignature(first) != tokenSignature(second)
@@ -46,6 +46,8 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
                 .put("sourceBoxPrecision", "STAFF_REGION_NOT_SYMBOL")
                 .put("lines", JSONArray(region.lines.toList()))
                 .put("spacing", region.spacing)
+                .put("staffDetectionMethod", region.detectionMethod)
+                .put("geometryTransform", geometryDiagnostics(region, dewarp))
                 .put("tokens", selected.getJSONArray("tokens"))
                 .put("eos", selected.getBoolean("eos"))
                 .put("sequenceTruncated", selected.getBoolean("sequenceTruncated"))
@@ -96,49 +98,37 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
         }
     }
 
-    private data class StaffRegion(val lines: DoubleArray, val spacing: Double, val lineBox: IntArray, var box: IntArray)
+    private fun detectStaffs(labels: ByteArray, width: Int, height: Int): List<OmrStaffDetector.Region> =
+        OmrStaffDetector.detect(labels, width, height)
 
-    private fun detectStaffs(labels: ByteArray, width: Int, height: Int): List<StaffRegion> {
-        val histogram = IntArray(height)
-        for (y in 0 until height) for (x in 0 until width) if (labels[y * width + x].toInt() == 4) histogram[y]++
-        val threshold = max(30.0, width * 0.16)
-        val centers = mutableListOf<Double>()
-        var y = 0
-        while (y < height) {
-            if (histogram[y] < threshold) { y++; continue }
-            var total = 0L; var weighted = 0L
-            while (y < height && histogram[y] >= threshold) { total += histogram[y]; weighted += histogram[y].toLong() * y; y++ }
-            centers += weighted.toDouble() / total
-        }
-        val result = mutableListOf<StaffRegion>()
-        var i = 0
-        while (i + 4 < centers.size) {
-            val lines = centers.subList(i, i + 5).toDoubleArray()
-            val gaps = (0..3).map { lines[it + 1] - lines[it] }
-            val sorted = gaps.sorted(); val space = (sorted[1] + sorted[2]) / 2
-            if (space < 3 || space > height / 30.0 || gaps.any { abs(it - space) > max(2.0, space * .28) }) { i++; continue }
-            val columns = mutableListOf<Int>()
-            for (x in 0 until width) {
-                var support = 0
-                for (row in max(0, (lines[0] - 2).toInt()) until min(height, (lines[4] + 3).toInt()))
-                    if (labels[row * width + x].toInt() == 4) support++
-                if (support >= 2) columns += x
-            }
-            if (columns.size < width * .35) { i++; continue }
-            val box = intArrayOf(columns.first(), lines[0].toInt(), columns.last() + 1, (lines[4] + 1).toInt())
-            result += StaffRegion(lines, space, box, box.copyOf()); i += 5
-        }
-        require(result.isNotEmpty()) { "未找到可信五线谱区域；请使用清晰、近水平谱页，不能生成假音符" }
-        require(result.size <= 64) { "单页谱表过多，请按区域分开导入" }
-        result.forEachIndexed { index, staff ->
-            val box = staff.lineBox; val s = staff.spacing
-            val upper = if (index == 0) 0 else (result[index - 1].lineBox[3] + box[1]) / 2
-            val lower = if (index == result.lastIndex) height else (box[3] + result[index + 1].lineBox[1]) / 2
-            staff.box = intArrayOf(max(0, (box[0] - 2 * s).toInt()), max(upper, (box[1] - 4 * s).toInt()),
-                min(width, (box[2] + 2 * s).toInt()), min(lower, (box[3] + 4 * s).toInt()))
-        }
-        return result
-    }
+    private fun canvasForRegion(gray: IntArray, width: Int, region: OmrStaffDetector.Region,
+        dewarp: OmrStaffDewarp.Plan?): FloatArray =
+        OmrStaffDewarp.canvasOrLegacy(gray, width, region.box, dewarp) { canvas(gray, width, region.box) }
+
+    private fun geometryDiagnostics(region: OmrStaffDetector.Region, dewarp: OmrStaffDewarp.Plan?): JSONObject =
+        JSONObject().put("method", when {
+            dewarp == null -> "LEGACY_CROP_RESIZE_UNCHANGED"
+            dewarp.isIdentity -> "IDENTITY_TRAJECTORY_NO_RESAMPLE"
+            else -> "MEASURED_STAFF_VERTICAL_DEWARP_V1"
+        }).put("coordinateSystem", "ORIGINAL_PAGE_PIXEL_CENTERS")
+            .put("sourceImageModified", false)
+            .put("sourceBox", JSONArray(region.box.toList()))
+            .put("sourceBoxPrecision", "ORIGINAL_STAFF_REGION_NOT_SYMBOL")
+            .put("sameGeometryForBothPasses", true)
+            .put("targetCenterY", dewarp?.targetCenterY ?: JSONObject.NULL)
+            .put("inverseMap", if (dewarp != null) "sourceX=outputX;sourceY=outputY+interpolateMeasuredCenter(outputX)-targetCenterY" else JSONObject.NULL)
+            .put("interpolation", if (dewarp != null) "LINEAR_TRAJECTORY_BILINEAR_PIXEL" else JSONObject.NULL)
+            .put("trajectoryEnds", if (dewarp != null) "NEAREST_MEASURED_ENDPOINT" else JSONObject.NULL)
+            .put("outsideSourceBox", if (dewarp != null && !dewarp.isIdentity) "WHITE_255" else "LEGACY_CLAMP")
+            .put("trajectorySource", if (dewarp != null) "SEGMENTATION_CLASS_4_FIVE_LINE_TRACKS" else JSONObject.NULL)
+            .put("observations", JSONArray(region.trajectory.map { point ->
+                JSONObject().put("bandLeft", point.bandLeft).put("bandWidth", point.bandWidth)
+                    .put("x", point.x).put("centerY", point.centerY)
+                    .put("matchedLines", JSONArray(point.matchedLines.map { it ?: JSONObject.NULL }))
+                    .put("usedForInterpolation", point.matchedLines.count { it != null } >= 3)
+            })).put("interpolationPoints", JSONArray(dewarp?.points?.map { point ->
+                JSONObject().put("x", point.x).put("centerY", point.centerY)
+            } ?: emptyList<JSONObject>()))
 
     private fun canvas(gray: IntArray, width: Int, box: IntArray): FloatArray {
         val cropWidth = box[2] - box[0]; val cropHeight = box[3] - box[1]

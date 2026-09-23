@@ -13,10 +13,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.xiuyin.app.omr.OmrPreviewMethod
 import com.xiuyin.app.playback.PlaybackSnapshot
 import com.xiuyin.app.score.*
 import java.util.UUID
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 @Composable
 fun ScoreWorkbenchScreen(
@@ -36,6 +38,12 @@ fun ScoreWorkbenchScreen(
     onPractice: () -> Unit,
     modifier: Modifier = Modifier,
     onExportMidi: (Int) -> Unit = {},
+    onPreviewOmrStructure: () -> Unit = {},
+    onApplyOmrStructure: () -> Unit = {},
+    onDismissStructurePreview: () -> Unit = {},
+    onSetWholeScoreTime: (Int, Int) -> Unit = { _, _ -> },
+    onConfirmLinearRepeat: () -> Unit = {},
+    onRecognizeOmrAgain: () -> Unit = {},
 ) {
     val revision = state.revision
     val score = revision?.current
@@ -44,6 +52,8 @@ fun ScoreWorkbenchScreen(
     var insertingIn by remember { mutableStateOf<ScoreMeasure?>(null) }
     var editingMeasure by remember { mutableStateOf<ScoreMeasure?>(null) }
     var transposeOpen by remember { mutableStateOf(false) }
+    var wholeScoreTimeOpen by remember { mutableStateOf(false) }
+    var linearRepeatOpen by remember { mutableStateOf(false) }
     var restoreTarget by remember { mutableStateOf<String?>(null) }
     var reviewIndex by rememberSaveable { mutableStateOf(0) }
     var bpm by rememberSaveable { mutableStateOf(80) }
@@ -55,6 +65,18 @@ fun ScoreWorkbenchScreen(
     val selected = measures.flatMap { it.second.events }.firstOrNull { it.id == state.selectedEventId }
     val active = state.timeline?.events?.filter { playback.playing && playback.positionBeat >= it.startBeat.toDouble() && playback.positionBeat < it.endBeat.toDouble() }?.map { it.eventId }?.toSet().orEmpty()
     val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    fun locateIssue(issue: ScoreIssue) {
+        val targetIndex = measures.indexOfFirst { (_, measure) ->
+            measure.id == issue.measureId || measure.events.any { it.id == issue.eventId }
+        }
+        if (targetIndex >= 0) {
+            val target = measures[targetIndex].second
+            val eventId = issue.eventId ?: target.events.firstOrNull()?.id
+            if (eventId != null) onSelect(eventId) else editingMeasure = target
+            scope.launch { list.animateScrollToItem(targetIndex + 4) }
+        }
+    }
     LaunchedEffect(playback.playing, active.firstOrNull()) {
         if (playback.playing) {
             val index = measures.indexOfFirst { (_, m) -> m.events.any { it.id in active } }
@@ -85,6 +107,26 @@ fun ScoreWorkbenchScreen(
                     OutlinedButton(onClick = onRedo, enabled = revision?.canRedo == true && !state.busy, modifier = Modifier.testTag("score_redo")) { Text("重做") }
                     OutlinedButton(onClick = { transposeOpen = true }, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_transpose")) { Text("移调") }
                     Button(onClick = onPractice, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_start_practice")) { Text("开始陪练") }
+                }
+                OutlinedButton(onClick = { wholeScoreTimeOpen = true }, enabled = score != null && !state.busy,
+                    modifier = Modifier.testTag("score_set_whole_time")) { Text("设置全谱拍号") }
+                Text("续页没有拍号时，请对照原谱首页填写；有变拍号的谱请逐小节修改。", style = MaterialTheme.typography.bodySmall)
+                if (state.original?.source?.format == "OMR_IMAGE") {
+                    OutlinedButton(onClick = onRecognizeOmrAgain, enabled = !state.busy,
+                        modifier = Modifier.testTag("score_recognize_again")) { Text("重新识别原图（补查漏谱）") }
+                    Text("使用本机模型重新读取保存的原图，可能需要数分钟；只生成预览，不覆盖原始结果或人工修订。新识别记录本机保留，最多 20 次、合计 64 MiB。", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = onPreviewOmrStructure, enabled = !state.busy,
+                        modifier = Modifier.testTag("score_preview_structure")) { Text("重新整理识谱结构") }
+                    Text("建议先整理识谱结构，再设置实际拍号、选择顺序一次。整理仅重新解释已存记录；再次整理会重新提示反复记号，需重新选择。原件保留、可撤销；已有人工修改受保护。", style = MaterialTheme.typography.bodySmall)
+                }
+                if (score != null && ScoreStructureTools.pendingRepeatChoices(score).isNotEmpty()) {
+                    OutlinedButton(onClick = { linearRepeatOpen = true }, enabled = !state.busy,
+                        modifier = Modifier.testTag("score_choose_linear_repeat")) { Text("本页顺序练一次，不执行反复") }
+                    Text("识别到反复记号，尚未支持按记号跳转。可以明确选择当前导入乐谱按页面、小节顺序各演奏一次；其他结构错误仍需修正。", style = MaterialTheme.typography.bodySmall)
+                }
+                if (score != null && ScoreStructureTools.hasConfirmedLinearRepeat(score)) {
+                    Text("已选择顺序一次：当前导入乐谱不执行反复跳转；可撤销此选择。", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("score_linear_repeat_selected"))
                 }
                 OutlinedButton(onClick = { onExportMidi(bpm) }, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_export_midi")) { Text("导出当前修订 MIDI") }
                 Text("简谱使用首调：大调以 1 为主音，小调以 6 为主音。原文件与命名信息独立保留。", style = MaterialTheme.typography.bodySmall, color = XiuyinMuted)
@@ -130,18 +172,29 @@ fun ScoreWorkbenchScreen(
                     if (selected != null) TextButton(onClick = { restoreTarget = "event" }, enabled = !state.busy,
                         modifier = Modifier.testTag("restore_original_note")) { Text("恢复此音符原始结果") }
                     if (state.sourceImages.isNotEmpty()) SourceReference(state.sourceImages, selected?.sourceBox)
-                    val issues = (score?.issues.orEmpty() + state.timeline?.issues.orEmpty()).distinctBy { it.id }
+                    val issues = score?.let { ScoreStructureTools.reviewIssues(it, state.timeline) }.orEmpty()
                     if (issues.isNotEmpty()) {
-                        Text("${issues.size} 处结构或来源提示", color = MaterialTheme.colorScheme.error)
-                        val targets = issues.mapNotNull { issue -> issue.eventId ?: measures.firstOrNull { it.second.id == issue.measureId }?.second?.events?.firstOrNull()?.id }.distinct()
+                        val errors = issues.count { it.severity == ScoreIssueSeverity.ERROR }
+                        Text("$errors 处阻塞错误 · ${issues.size - errors} 处复核提示（错误优先）",
+                            color = if (errors > 0) MaterialTheme.colorScheme.error else XiuyinMuted,
+                            modifier = Modifier.testTag("score_review_summary"))
+                        val targets = issues.filter { issue -> measures.any { (_, measure) ->
+                            measure.id == issue.measureId || measure.events.any { it.id == issue.eventId }
+                        } }
                         if (targets.isNotEmpty()) Row {
-                            TextButton(onClick = { reviewIndex = Math.floorMod(reviewIndex - 1, targets.size); onSelect(targets[reviewIndex]) }, modifier = Modifier.testTag("previous_review_issue")) { Text("上一个疑点") }
-                            TextButton(onClick = { reviewIndex = (reviewIndex + 1) % targets.size; onSelect(targets[reviewIndex]) }, modifier = Modifier.testTag("next_review_issue")) { Text("下一个疑点") }
+                            TextButton(onClick = { reviewIndex = Math.floorMod(reviewIndex - 1, targets.size); locateIssue(targets[reviewIndex]) }, modifier = Modifier.testTag("previous_review_issue")) { Text("上一个疑点") }
+                            TextButton(onClick = { reviewIndex = (reviewIndex + 1) % targets.size; locateIssue(targets[reviewIndex]) }, modifier = Modifier.testTag("next_review_issue")) { Text("下一个疑点") }
                         }
-                        issues.take(8).forEach { issue ->
-                            TextButton(onClick = { issue.eventId?.let(onSelect) }, enabled = issue.eventId != null) { Text(issue.message, style = MaterialTheme.typography.bodySmall) }
+                        issues.take(8).forEachIndexed { index, issue ->
+                            val target = measures.firstOrNull { (_, measure) -> measure.id == issue.measureId || measure.events.any { it.id == issue.eventId } }
+                            val location = target?.let { "${it.first} · 第 ${it.second.number} 小节：" }.orEmpty()
+                            val label = if (issue.severity == ScoreIssueSeverity.ERROR) "需修正" else "请复核"
+                            TextButton(onClick = { locateIssue(issue) }, enabled = target != null,
+                                modifier = Modifier.testTag("score_review_issue_$index")) {
+                                Text("$label · $location${issue.message}", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
-                        if (issues.size > 8) Text("其余提示可在数字乐谱数据页查看。", style = MaterialTheme.typography.bodySmall)
+                        if (issues.size > 8) Text("已优先显示阻塞错误；可用上/下一个疑点定位其余提示，或在数字乐谱数据页查看。", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -161,6 +214,42 @@ fun ScoreWorkbenchScreen(
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
+    if (wholeScoreTimeOpen) WholeScoreTimeEditor(onDismiss = { wholeScoreTimeOpen = false }) { beats, beatType ->
+        onSetWholeScoreTime(beats, beatType); wholeScoreTimeOpen = false
+    }
+    if (linearRepeatOpen) AlertDialog(onDismissRequest = { linearRepeatOpen = false },
+        title = { Text("按顺序只演奏一次？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("目前不支持根据反复记号跳回、展开重复段或跳房子。此选择用于当前整份导入乐谱：按页面和小节顺序各演奏一次，不执行反复。")
+                Text("只记录反复记号的演奏策略，不能确认音符识别正确，也不会解除拍号、时值重叠等其他错误。原始记录保留，保存后可撤销。")
+                Text("如需整理识谱结构，请先取消并整理，随后再设置实际拍号、选择顺序一次。")
+            }
+        },
+        confirmButton = { Button(onClick = { onConfirmLinearRepeat(); linearRepeatOpen = false }, enabled = !state.busy,
+            modifier = Modifier.testTag("score_confirm_linear_repeat")) { Text("确认顺序一次，不执行反复") } },
+        dismissButton = { TextButton(onClick = { linearRepeatOpen = false }, modifier = Modifier.testTag("score_cancel_linear_repeat")) { Text("取消") } })
+    state.structurePreview?.let { preview ->
+        AlertDialog(onDismissRequest = { if (!state.busy) onDismissStructurePreview() },
+            title = { Text(if (preview.method == OmrPreviewMethod.REAL_IMAGE_RECOGNITION) "原图真实重识别预览" else "识谱结构整理预览") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (preview.method == OmrPreviewMethod.REAL_IMAGE_RECOGNITION)
+                        "已使用本机模型重新识别归档原图；新模型输出与候选结果独立保存在本机。请对照原图复核，结构错误减少不代表识谱准确率已验证。"
+                    else "仅重新解释已存模型记录，没有进行新模型识别，不能补回旧识别中漏掉的谱表。请对照原图复核；结构错误减少不代表识谱准确率已验证。")
+                    preview.evidenceId?.let { Text("本机证据编号：$it", style = MaterialTheme.typography.bodySmall) }
+                    Text("整理前：${structureSummaryText(preview.before)}", modifier = Modifier.testTag("score_structure_before"))
+                    Text("整理后：${structureSummaryText(preview.after)}", modifier = Modifier.testTag("score_structure_after"))
+                    preview.after.timelineProblem?.let { Text("时间线仍需修正：$it", color = MaterialTheme.colorScheme.error) }
+                    Text(if (preview.method == OmrPreviewMethod.REAL_IMAGE_RECOGNITION)
+                        "新推理的音符需要重新确认，不会沿用旧确认或指法。应用将保存新修订；原图、原始结果及旧确认和指法保留在撤销历史，可用撤销恢复。"
+                    else "应用会另存为当前修订，原图和原始识别不变。可用撤销恢复整理前状态；有效音符 ID 的确认和指法保留。")
+                }
+            },
+            confirmButton = { Button(onClick = onApplyOmrStructure, enabled = !state.busy,
+                modifier = Modifier.testTag("score_apply_structure")) { Text("应用为可撤销修订") } },
+            dismissButton = { TextButton(onClick = onDismissStructurePreview, enabled = !state.busy) { Text("保留原样") } })
+    }
     restoreTarget?.let { target -> AlertDialog(onDismissRequest = { restoreTarget = null }, title = { Text("恢复${if (target == "event") "音符" else "小节"}原始结果？") },
         text = { Text("将移除该范围的用户确认和指法，其他内容保留；可以撤销。") },
         confirmButton = { TextButton(onClick = { if (target == "event") onRestoreEvent() else onRestoreMeasure(target); restoreTarget = null }, modifier = Modifier.testTag("restore_original_confirm")) { Text("恢复") } },
@@ -174,6 +263,34 @@ fun ScoreWorkbenchScreen(
     }
     editingMeasure?.let { measure -> MeasureEditor(measure, { editingMeasure = null }) { patch -> onEdit(patch, null); editingMeasure = null } }
     if (transposeOpen && score != null) TransposeEditor(score, { transposeOpen = false }) { semitones, key -> onTranspose(semitones, key); transposeOpen = false }
+}
+
+private fun structureSummaryText(value: ScoreStructureSummary): String =
+    "${value.partCount} 声部 · ${value.staffCount} 谱表 · ${value.measureCount} 小节记录 · ${value.eventCount} 音符/休止符（休止 ${value.restCount}）· ${value.errorCount} 处阻塞错误"
+
+@Composable
+private fun WholeScoreTimeEditor(onDismiss: () -> Unit, onApply: (Int, Int) -> Unit) {
+    var beats by remember { mutableStateOf("") }
+    var beatType by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("设置全谱拍号") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("请对照原谱首页填写。此操作会覆盖当前所有小节拍号，适用于全谱同拍号；有变拍号请取消并逐小节修改。")
+                Text("音符、休止符和实际时值保持不变，不会自动补休止符；保存后可撤销。")
+                OutlinedTextField(beats, { beats = it }, label = { Text("拍号分子（上方数字）") }, singleLine = true, modifier = Modifier.testTag("whole_time_beats"))
+                OutlinedTextField(beatType, { beatType = it }, label = { Text("拍号分母（下方数字）") }, singleLine = true, modifier = Modifier.testTag("whole_time_beat_type"))
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { Button(onClick = {
+            val numerator = beats.trim().toIntOrNull()
+            val denominator = beatType.trim().toIntOrNull()
+            if (numerator == null || denominator == null || numerator !in 1..128 || denominator !in 1..1024 ||
+                (denominator and (denominator - 1)) != 0) error = "请填写原谱拍号；分子为 1–128，分母为 1、2、4、8 等。"
+            else onApply(numerator, denominator)
+        }, modifier = Modifier.testTag("whole_time_apply")) { Text("确认覆盖全谱拍号") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
 }
 
 @Composable

@@ -13,6 +13,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +33,11 @@ import com.xiuyin.app.audio.AudioStatus
 import com.xiuyin.app.pitch.PianoRecognitionFrame
 import com.xiuyin.app.pitch.RecognitionEngineSnapshot
 import com.xiuyin.app.pitch.RecognitionEngineStatus
+import com.xiuyin.app.practice.CompanionMode
+import com.xiuyin.app.practice.PracticeConfig
+import com.xiuyin.app.practice.PracticeHand
+import com.xiuyin.app.practice.supportsHandSelection
+import com.xiuyin.app.score.ScoreIssueSeverity
 import com.xiuyin.app.practice.CompanionPhase
 import com.xiuyin.app.practice.CompanionState
 import com.xiuyin.app.ui.ModelReadyStatus
@@ -78,15 +84,22 @@ fun FieldTestScreen(
     onBack: () -> Unit,
     appDataAvailable: Boolean = true,
     appDataError: String? = null,
+    onConfiguredStart: ((String, PracticeConfig) -> Unit)? = null,
 ) {
     var label by rememberSaveable { mutableStateOf("") }
     var reviewed by rememberSaveable(companion.scoreId, companion.revisionGeneration) { mutableStateOf(false) }
+    var modeName by rememberSaveable(companion.scoreId, companion.revisionGeneration) { mutableStateOf(CompanionMode.FREE.name) }
+    var handName by rememberSaveable(companion.scoreId, companion.revisionGeneration) { mutableStateOf(PracticeHand.BOTH.name) }
     var clearId by rememberSaveable { mutableStateOf<String?>(null) }
     val busy = state.busy || operation.busy
     val session = state.activeSession
+    val bindingProblem = FieldScoreBinding.problem(session, companion.scoreId, companion.revisionGeneration)
     val listening = audio.status in setOf(AudioStatus.STARTING, AudioStatus.LISTENING)
-    val validScore = companion.timeline != null && companion.timeline.measures.isNotEmpty() && companion.score != null && !companion.busy
-    val canStart = appDataAvailable && !busy && (session == null || state.error == null) && validScore && recognition.status == RecognitionEngineStatus.READY &&
+    val scoreErrors = (companion.preparationIssues + companion.timeline?.issues.orEmpty()).filter { it.severity == ScoreIssueSeverity.ERROR }.distinctBy { it.id }
+    val validScore = companion.timeline != null && companion.timeline.measures.isNotEmpty() && companion.score != null && !companion.busy && scoreErrors.isEmpty()
+    val hasPracticeSession = companion.phase in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED, CompanionPhase.PAUSED)
+    val supportsHands = companion.timeline?.let(::supportsHandSelection) == true
+    val canStart = bindingProblem == null && appDataAvailable && !busy && (session == null || state.error == null) && validScore && recognition.status == RecognitionEngineStatus.READY &&
         builtInMicrophoneAvailable && state.storageWritable && state.freeSpaceBytes >= 10L * 1024 * 1024
     Column(Modifier.fillMaxWidth().testTag("field_content").verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("实地测试", style = MaterialTheme.typography.headlineMedium)
@@ -106,22 +119,64 @@ fun FieldTestScreen(
                 Text("麦克风权限：${if (microphonePermission) "已授权" else "未授权，点击开始时请求"}")
                 Text("内置麦克风：${if (builtInMicrophoneAvailable) "系统报告可用" else "系统未报告可用设备"}")
                 Text("测试目录：${if (state.storageWritable) "可写" else "尚未通过可写检查"} · 剩余 ${bytes(state.freeSpaceBytes)}")
+                if (!validScore && companion.score != null && !companion.busy) {
+                    val firstError = scoreErrors.firstOrNull()
+                    val measure = companion.score.parts.asSequence().flatMap { it.measures.asSequence() }
+                        .firstOrNull { it.id == firstError?.measureId || it.events.any { event -> event.id == firstError?.eventId } }
+                    Text(buildString {
+                        append(companion.error ?: "当前谱面未通过准备，请返回陪练查看具体问题并修谱")
+                        if (firstError != null) append("\n${measure?.let { "第 ${it.number} 小节" } ?: "谱面整体"}：${firstError.message}")
+                    }, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("field_score_problem"))
+                    OutlinedButton(onPractice, modifier = Modifier.testTag("field_repair_score")) { Text("查看问题并返回修谱") }
+                }
                 if (!validScore) OutlinedButton(onChooseScore) { Text("选择数字乐谱") }
                 if (audio.status == AudioStatus.PERMISSION_DENIED) OutlinedButton(onPermissionSettings) { Text("打开麦克风权限设置") }
                 OutlinedButton(onRefresh, enabled = !busy) { Text("重新检查存储") }
             }
         }
+        if (bindingProblem != null) {
+            Text(bindingProblem, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("field_binding_problem"))
+            OutlinedButton(onEndSession, enabled = !busy, modifier = Modifier.testTag("field_binding_end_session")) { Text("结束旧实地测试会话") }
+            OutlinedButton(onPractice, enabled = !busy, modifier = Modifier.testTag("field_binding_practice")) { Text("查看或结束当前陪练") }
+        }
         if (session == null) OutlinedTextField(label, { label = it.take(80) }, label = { Text("现场备注（可选）") }, modifier = Modifier.fillMaxWidth())
+        if (validScore && session == null && !hasPracticeSession && onConfiguredStart != null) {
+            Text("现场练习方式", style = MaterialTheme.typography.titleMedium)
+            CompanionMode.entries.forEach { mode ->
+                FilterChip(selected = modeName == mode.name, onClick = { modeName = mode.name }, enabled = !busy,
+                    label = { Text(mode.label) }, modifier = Modifier.testTag("field_mode_${mode.name}"))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PracticeHand.entries.forEach { hand ->
+                    FilterChip(selected = handName == hand.name, onClick = { handName = hand.name },
+                        enabled = !busy && (hand == PracticeHand.BOTH || supportsHands),
+                        label = { Text(hand.label) }, modifier = Modifier.testTag("field_hand_${hand.name}"))
+                }
+            }
+            if (!supportsHands) Text("当前谱面缺少明确双谱表音符；现场练习使用双手模式。", style = MaterialTheme.typography.bodySmall)
+            Text("本页新建练习使用全曲；强化目标为连续正确 3 次。需要选择小节时，请先在陪练页设置并开始练习。", style = MaterialTheme.typography.bodySmall)
+        } else if (hasPracticeSession || session != null) {
+            Text("沿用当前练习：${companion.config.mode.label} · ${companion.config.hand.label}\n当前会话中不能改练习方式或左右手，请先结束练习。",
+                modifier = Modifier.testTag("field_existing_config"), style = MaterialTheme.typography.bodySmall)
+        }
         Row {
             Checkbox(state.clipConsent, onConsent, enabled = !busy, modifier = Modifier.testTag("field_clip_consent"))
             Text("我同意异常或反馈时保存前 3 秒、后 1.5 秒的短音频到本机", modifier = Modifier.padding(top = 10.dp))
         }
         Text("默认只保留内存环形缓冲，不保存整段录音。不勾选也能保存文字标签和识别证据；短片段不足时如实记录。", style = MaterialTheme.typography.bodySmall)
-        if (companion.timeline?.issues?.isNotEmpty() == true && companion.phase !in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED, CompanionPhase.PAUSED)) {
-            Row { Checkbox(reviewed, { reviewed = it }); Text("我已校对当前谱面的来源和结构警告", Modifier.padding(top = 10.dp)) }
+        if (validScore && companion.timeline.issues.isNotEmpty() && !hasPracticeSession && session == null) {
+            Row { Checkbox(reviewed, { reviewed = it }, modifier = Modifier.testTag("field_review_ack")); Text("我已校对当前谱面的来源和结构警告", Modifier.padding(top = 10.dp)) }
         }
         if (session != null && state.error != null) Text("当前会话记录故障，已禁止继续收音。请结束并导出已有记录，再开启新会话。", color = MaterialTheme.colorScheme.error)
-        if (!listening) Button(onClick = { onStart(label, reviewed) }, enabled = canStart,
+        if (!listening) Button(onClick = {
+            if (onConfiguredStart == null) onStart(label, reviewed)
+            else {
+                val config = if (hasPracticeSession || session != null) companion.config else PracticeConfig(
+                    mode = CompanionMode.valueOf(modeName), reviewAcknowledged = reviewed,
+                    hand = if (supportsHands) PracticeHand.valueOf(handName) else PracticeHand.BOTH)
+                onConfiguredStart(label, config)
+            }
+        }, enabled = canStart,
             modifier = Modifier.fillMaxWidth().testTag("field_start")) { Text(if (session == null) "开启实地测试" else "继续现场收音") }
         else OutlinedButton(onStopAudio, modifier = Modifier.fillMaxWidth().testTag("field_stop_audio")) { Text("暂停现场收音") }
         if (session != null) OutlinedButton(onEndSession, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("field_end")) { Text("结束实地测试会话") }
@@ -145,9 +200,9 @@ fun FieldTestScreen(
             }
         }
         Text("给这次判断留下反馈", style = MaterialTheme.typography.titleMedium)
-        OutlinedButton({ onFeedback(FieldFeedbackLabel.USER_SAYS_SYSTEM_WRONG) }, enabled = session != null && state.error == null && !busy,
+        OutlinedButton({ onFeedback(FieldFeedbackLabel.USER_SAYS_SYSTEM_WRONG) }, enabled = session != null && bindingProblem == null && state.error == null && !busy,
             modifier = Modifier.fillMaxWidth().testTag("field_feedback_dispute")) { Text("我弹对了") }
-        OutlinedButton({ onFeedback(FieldFeedbackLabel.USER_CONFIRMS_WRONG_NOTE) }, enabled = session != null && state.error == null && !busy,
+        OutlinedButton({ onFeedback(FieldFeedbackLabel.USER_CONFIRMS_WRONG_NOTE) }, enabled = session != null && bindingProblem == null && state.error == null && !busy,
             modifier = Modifier.fillMaxWidth().testTag("field_feedback_confirm")) { Text("这里确实弹错了") }
         Text("反馈是待复核的人工标签，不代表准确率，也不会解锁或移动谱面。未标注的事件保持 UNLABELED。", style = MaterialTheme.typography.bodySmall)
         if (validScore) OutlinedButton(onPractice, enabled = !busy) { Text("查看实时陪练谱面") }

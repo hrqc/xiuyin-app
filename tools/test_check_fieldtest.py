@@ -122,5 +122,96 @@ class RecoveryClockProtectionTest(unittest.TestCase):
                 bad = dict(self.verified, **changes)
                 with self.assertRaisesRegex(ValueError, "preserve incomplete"):
                     gate.validate_recovery_phase(bad, "verify", 6900, self.prepared)
+class PhoneVideoEvidenceProtectionTest(unittest.TestCase):
+    """TEST DATA files exercise validation; these are never production recognition evidence."""
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix="xiuyin-phone-gate-TEST-DATA-")
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        self.paths = [root / name for name in ("phone-video-metadata.json", "phone-video-frames.jsonl", "phone-video-status.jsonl")]
+        self.frames = [dict(frameIndex=i, audioTimeSeconds=0.0013125 + i * .032,
+            availableAudioTimeSeconds=1.122625 + (0 if i < 32 else 1 + (i - 32) // 16) * .512,
+            rawOnsetScores=[0.0] * 88, rawFrameScores=[0.0] * 88, onsetMidi=[], ambiguousOctaveMidi=[], notes=[])
+            for i in range(480)]
+        self.statuses = [dict(publicationIndex=i, callbackElapsedRealtimeMs=100 + i, status=status, sessionId=1,
+            modelSha256="a" * 64, accuracyValidated=False, droppedFrames=0, droppedSamples=0,
+            overflowCount=0, rejectedBeforeReadyFrames=0, submittedSamples=0 if i < 2 else 750592,
+            processedSamples=0 if i < 2 else 750592, submittedBlocks=0 if i < 2 else 184,
+            processedBlocks=0 if i < 2 else 184, frameCount=0 if i < 2 else 480, queueOccupancy=0)
+            for i,status in enumerate(("LOADING", "READY", "RUNNING", "IDLE", "CLOSED"))]
+        self.meta = dict(schemaVersion=3, runId="TEST-DATA", startedAtMillis=1000, stage="TRACE_COMPLETE",
+            chainPassed=True, traceComplete=True, replayAssertionsPassed=True, allSubmittedBlocksProcessed=True,
+            readyObservedBeforeFirstPcm=True, accuracyValidated=False, microphoneCaptureTested=False,
+            scoreFollowingTested=False, pitchAccuracy=None, falseStopRate=None, failure=None,
+            inputProvenance="USER_VIDEO_AAC_DECODED_PCM_NOT_NATIVE_MICROPHONE_PCM",
+            inputSha256=gate.PHONE_VIDEO_WAV_SHA, expectedInputSha256=gate.PHONE_VIDEO_WAV_SHA, inputBytes=1501262,
+            sampleRate=48000, channels=1, pcmBits=16, inputSamples=750592, submittedSamples=750592, processedSamples=750592,
+            frames=480, engineFrames=480, windows=29, convertedSamples16k=250156, incompleteTailSamples16k=2860,
+            droppedFrames=0, droppedSamples=0, overflowCount=0, rejectedBeforeReadyFrames=0, queueOccupancy=0,
+            submittedBlocks=184, processedBlocks=184, statusBeforeStop="RUNNING", statusAfterStop="IDLE", statusAfterClose="CLOSED",
+            modelSha256="a" * 64, engineModelSha256="a" * 64, expectedModelSha256="a" * 64,
+            framesFile=self.paths[1].name, statusFile=self.paths[2].name, firstFrameIndex=0, lastFrameIndex=479,
+            acceptedOnsets=0, onsetFrames=0, statusEventCount=5,
+            statusPublicationCounts={row["status"]:1 for row in self.statuses}, runningPublications=1)
+        digest = gate.hashlib.sha256()
+        for row in self.frames:
+            digest.update(gate.struct.pack(">q176f", row["frameIndex"], *(row["rawOnsetScores"] + row["rawFrameScores"])))
+        self.meta["rawSequenceSha256"] = digest.hexdigest()
+        self.save()
+
+    def save(self):
+        for path, rows, key in ((self.paths[1], self.frames, "framesFileSha256"),
+                                (self.paths[2], self.statuses, "statusFileSha256")):
+            path.write_text("".join(gate.json.dumps(row) + "\n" for row in rows), encoding="utf8")
+            self.meta[key] = gate.sha(path)
+        gate.write(self.paths[0], self.meta)
+
+    def validate(self, started=900):
+        return gate.validate_phone_video_trace(*self.paths, started)
+
+    def test_complete_trace_can_pass_without_preserving_known_wrong_octaves(self):
+        result = self.validate()
+        self.assertEqual(result["diagnosticAcceptance"], "PASSED")
+        self.assertEqual(result["musicAcceptance"], "FAILED")
+        self.assertFalse(result["physicalCurrentApkAccuracyPassed"])
+        self.assertEqual(result["observations"]["acceptedOnsetMidi74"], 0)
+        self.assertEqual(result["observations"]["d4OnsetFramesAmbiguous"], 0)
+        self.frames[3].update(onsetMidi=[62,74], ambiguousOctaveMidi=[62,74], notes=[dict(midi=62,onset=True)])
+        self.meta.update(acceptedOnsets=2, onsetFrames=1); self.save()
+        observed = self.validate()["observations"]
+        self.assertEqual((observed["acceptedOnsetMidi62"], observed["acceptedOnsetMidi74"], observed["d4OnsetFramesAmbiguous"]), (1,1,1))
+
+    def test_replaced_jsonl_hash_and_replaced_input_are_rejected(self):
+        for path in self.paths[1:]:
+            with self.subTest(file=path.name):
+                self.save(); path.write_bytes(path.read_bytes() + b" ")
+                with self.assertRaisesRegex(ValueError, "file hash"): self.validate()
+        self.save(); self.meta["inputSha256"] = "0" * 64; gate.write(self.paths[0], self.meta)
+        with self.assertRaisesRegex(ValueError, "input identity"): self.validate()
+
+    def test_missing_frame_and_short_or_nonfinite_raw88_are_rejected_even_with_fresh_file_hash(self):
+        original = copy.deepcopy(self.frames)
+        for change, message in (("missing", "frame count"), ("short", "raw88"), ("nonfinite", "Non-finite")):
+            with self.subTest(change=change):
+                self.frames = copy.deepcopy(original)
+                if change == "missing": self.frames.pop(100)
+                elif change == "short": self.frames[100]["rawOnsetScores"].pop()
+                else: self.frames[100]["rawFrameScores"][0] = float("nan")
+                self.save()
+                with self.assertRaisesRegex(ValueError, message): self.validate()
+
+    def test_ready_flag_cannot_replace_actual_ready_before_pcm_and_overflow_cannot_hide(self):
+        self.statuses[0]["submittedSamples"] = 1; self.save()
+        with self.assertRaisesRegex(ValueError, "before a real READY"): self.validate()
+        self.statuses[0]["submittedSamples"] = 0; self.statuses[2]["overflowCount"] = 1; self.save()
+        with self.assertRaisesRegex(ValueError, "overflow PCM"): self.validate()
+
+    def test_stale_trace_incomplete_status_and_accuracy_claim_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "Stale"): self.validate(started=1001)
+        self.statuses[2]["publicationIndex"] = 3; self.save()
+        with self.assertRaisesRegex(ValueError, "status count/index"): self.validate()
+        self.statuses[2]["publicationIndex"] = 2; self.meta["accuracyValidated"] = True; self.save()
+        with self.assertRaisesRegex(ValueError, "cannot certify"): self.validate()
+
 if __name__=="__main__":
     unittest.main(verbosity=2)

@@ -10,6 +10,7 @@ data class FieldSessionInfo(
     val id: String, val label: String, val startedAtMillis: Long,
     val endedAtMillis: Long? = null, val status: FieldSessionStatus = FieldSessionStatus.ACTIVE,
     val exportedAtMillis: Long? = null, val bytes: Long = 0, val clipCount: Int = 0,
+    val scoreId: String? = null, val revisionGeneration: Long? = null, val scoreTitle: String? = null,
 )
 data class FieldDiagnosticsState(
     val activeSession: FieldSessionInfo? = null, val sessions: List<FieldSessionInfo> = emptyList(),

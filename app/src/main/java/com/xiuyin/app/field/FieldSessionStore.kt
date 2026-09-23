@@ -368,10 +368,17 @@ class FieldSessionStore(
         if (!File(folder, "performance.json").exists()) atomicJson(File(folder, "performance.json"), emptyPerformance())
         if (!File(folder, "session-summary.json").exists()) atomicJson(File(folder, "session-summary.json"), mapOf("status" to "INCOMPLETE"))
     }
-    private fun info(id: String, manifest: Map<String, Any?>) = infoCache.getOrPut(id) { FieldSessionInfo(id, manifest["label"] as String,
-        (manifest["startedAtMillis"] as Number).toLong(), (manifest["endedAtMillis"] as? Number)?.toLong(),
-        FieldSessionStatus.valueOf(manifest["status"] as String), (manifest["exportedAtMillis"] as? Number)?.toLong(),
-        size(directory(id)) + File(exports, "field-$id.zip").length(), clips(directory(id))) }
+    private fun info(id: String, manifest: Map<String, Any?>) = infoCache.getOrPut(id) {
+        // Read existing manifest metadata only. Legacy records stay intact and unbound.
+        val metadata = manifest["metadata"] as? Map<*, *>
+        FieldSessionInfo(id, manifest["label"] as String,
+            (manifest["startedAtMillis"] as Number).toLong(), (manifest["endedAtMillis"] as? Number)?.toLong(),
+            FieldSessionStatus.valueOf(manifest["status"] as String), (manifest["exportedAtMillis"] as? Number)?.toLong(),
+            size(directory(id)) + File(exports, "field-$id.zip").length(), clips(directory(id)),
+            scoreId = (metadata?.get("scoreId") as? String)?.takeIf { it.isNotBlank() },
+            revisionGeneration = (metadata?.get("revisionGeneration") as? String)?.toLongOrNull()?.takeIf { it >= 0 },
+            scoreTitle = (metadata?.get("scoreTitle") as? String)?.take(160))
+    }
     private fun requireKnown(id: String) { require(id in manifests) { "未知实地测试会话" } }
     private fun directory(id: String): File { require(id.matches(Regex("[a-zA-Z0-9-]+"))); return File(root, id) }
     private fun atomicJsonQuota(file: File, value: Map<String, Any?>) { ensureCapacity(FieldJson.encode(value).toByteArray().size.toLong() + 4096, protectedId = file.parentFile?.name?.takeIf { it in manifests }, projectedGrowth = FieldJson.encode(value).toByteArray().size.toLong(), projectedSessionId = file.parentFile?.name?.takeIf { it in manifests }); atomicJson(file, value) }

@@ -21,9 +21,18 @@ def main():
         ("reports/autopiano-input-worklet/autopiano-session-0.wav", "practice-evaluation-input/website.wav", "7788b1af50d53349aa5a2874d830d45854cb7e2fd2a467a48f609d7fae39ce14"),
         ("reports/autopiano-input-worklet/expected-timeline.json", "practice-evaluation-input/expected-timeline.json", None),
     ]
+    files.append(("reports/fieldtest2-development/problem-score.jpg", "problem-score.jpg", "95109578924d0cad768a3ef0be871ed747a730a28fc01fc00f81f7aedfcfedaf"))
     files.append(("reports/piano-model-room/room-48k.wav", "practice-evaluation-input/room.wav", "89d79abba6e39f7cbbc78759b4220bb2e1dfa31ce174ffa8846f361f7b78e2d1"))
     files.append(("reports/dotiam-piano-independent2-20260921/dotiam-session-0.wav", "practice-evaluation-input/octave-regression.wav", "a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20"))
     files.append(("reports/dotiam-piano-independent2-20260921/expected-timeline.json", "practice-evaluation-input/octave-regression-timeline.json", "cdfc2bccc23a8bfe0a23dbbfe8a6a4e76561a31cff383ff0a2930e359a1fd099"))
+    files.extend([
+        ("reports/fieldtest2-development/legacy-problem-archive/original.json", "omr-legacy-problem/original.json", "74f217992dfadc4d28bb5896881a901a3689bde58ba4145341d500b322c5aac5"),
+        ("reports/fieldtest2-development/legacy-problem-archive/raw-result.json", "omr-legacy-problem/raw-result.json", "b5c389f9d8ae9b67bf96498ef97676ad8286110fb4ccfeeeac382bbc328a561c"),
+        ("reports/fieldtest2-development/legacy-problem-archive/page-000.image", "omr-legacy-problem/page-000.image", "95109578924d0cad768a3ef0be871ed747a730a28fc01fc00f81f7aedfcfedaf"),
+        ("reports/fieldtest2-development/legacy-problem-archive/original-000.document", "omr-legacy-problem/original-000.document", "95109578924d0cad768a3ef0be871ed747a730a28fc01fc00f81f7aedfcfedaf"),
+    ])
+    files.append(("reports/fieldtest2-development/czerny-op849-no8-bars18-26-manual-review.musicxml", "czerny-manual-review.musicxml", "1a264ba2356e995b61e32f1fdce8d4a412c07dd50650597b14b82222694b5ed8"))
+    files.append(("reports/fieldtest2-development/phone-video-20260923/phone-source-audio-48k-mono.wav", "phone-video-20260923.wav", "777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858"))
     prepared = []
     for relative, device, expected in files:
         source = ROOT / relative

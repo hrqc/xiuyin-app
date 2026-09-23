@@ -25,7 +25,7 @@ object OmrScoreAssembler {
         fun issue(id: String, message: String, event: String? = null, error: Boolean = false) {
             issues += ScoreIssue("omr:$id", message, if (error) ScoreIssueSeverity.ERROR else ScoreIssueSeverity.WARNING, eventId = event)
         }
-        issue("review", "图像识谱结果须对照原图复核；模型分数未经准确率校准，定位框为谱表范围")
+        issue("review", "图像识谱结果须对照原图复核，尤其是连音时值与 8va/8vb 八度线；目前不能可靠自动还原八度线范围。模型分数未经准确率校准，定位框为谱表范围")
         val pageObjects = (0 until pages.length()).map(pages::getJSONObject)
         val paired = pageObjects.all { page ->
             val staffs = page.getJSONArray("staffs")
@@ -42,10 +42,15 @@ object OmrScoreAssembler {
             issue("layout-unpaired", "多谱表未能可靠配对，当前按页面/谱表顺序排列；请对照原图确认系统、左右手和声部，不能假定配对正确")
         val observedDenominators = linkedSetOf<Int>()
         val state = Array(laneCount) { PartState(it) }
+        var systemsAligned = true
         for (page in pageObjects) {
             val pageIndex = page.getInt("page")
             val staffs = page.getJSONArray("staffs")
+            val systemStarts = IntArray(laneCount)
             for (staffIndex in 0 until staffs.length()) {
+                if (paired && staffIndex % 2 == 0) {
+                    state.forEachIndexed { index, part -> systemStarts[index] = part.measures.size }
+                }
                 val staff = staffs.getJSONObject(staffIndex)
                 val lane = if (paired) staffIndex % 2 else 0
                 val part = state[lane]
@@ -113,6 +118,15 @@ object OmrScoreAssembler {
                 }
                 // A page/staff break is not allowed to silently join an unfinished measure.
                 if (part.events.isNotEmpty()) { issue("openbar:$pageIndex:$staffIndex", "谱表结尾没有小节线，已保留未闭合小节待复核"); part.finishMeasure() }
+                if (paired && staffIndex % 2 == 1) {
+                    val upperCount = state[0].measures.size - systemStarts[0]
+                    val lowerCount = state[1].measures.size - systemStarts[1]
+                    if (upperCount != lowerCount) {
+                        systemsAligned = false
+                        issue("system-alignment:$pageIndex:${staffIndex / 2}",
+                            "第 ${pageIndex + 1} 页第 ${staffIndex / 2 + 1} 组上下谱表小节数不同（$upperCount / $lowerCount）；请对照原图修正小节线，未强行配对或补休止符", error = true)
+                    }
+                }
             }
         }
         require(state.all { it.measures.isNotEmpty() }) { "模型未生成可读取的小节；未创建空乐谱" }
@@ -131,8 +145,28 @@ object OmrScoreAssembler {
         issue("time", if (time != null) "拍号 $time 的分子依据识别小节时值众数推断，未由图像直接识别；请对照原图确认"
             else "模型未可靠识别完整拍号，请手动设置拍号后校验")
         if (paired && state[0].measures.size != state[1].measures.size) issue("alignment", "上下谱表小节数不同，禁止直接按当前顺序严格陪练", error = true)
-        val parts = state.map { part -> ScorePart("P${part.index + 1}", if (paired) "谱表 ${part.index + 1}" else "识别谱表",
+        state.forEach { part -> part.measures.forEach { measure ->
+            if (measure.events.map { it.voice }.distinct().size > 1) issue("voices:${measure.id}",
+                "同起音的不同音长或休止符已保留为独立声部；各音时值和起点未改动，请对照原图复核复声部", measure.events.firstOrNull()?.id)
+        } }
+        val lanes = state.map { part -> ScorePart("P${part.index + 1}", if (paired) "谱表 ${part.index + 1}" else "识别谱表",
             part.measures.map { it.copy(time = time) }) }
+        // Pair within every detected system, not by the page-wide totals: opposite barline
+        // omissions in two systems must never silently shift the lower staff onto other music.
+        val aligned = paired && systemsAligned && lanes[0].measures.size == lanes[1].measures.size
+        val compatibleKeys = !aligned || lanes[0].measures.indices.all { index ->
+            lanes[0].measures[index].fifths == lanes[1].measures[index].fifths
+        }
+        if (!compatibleKeys) issue("staff-keys", "上下谱表调号不一致，当前数字乐谱不能在同一小节保存不同谱表调号；保留分谱结果，本版不能自动合并；可保留原件另导入校对后的 MusicXML，或在撤销手动结构修改后重新识别原图，不能仅确认警告解除此错误", error = true)
+        val parts = if (aligned && compatibleKeys) listOf(ScorePart("P1", "钢琴双谱表", lanes[0].measures.indices.map { index ->
+            val upper = lanes[0].measures[index]
+            val lower = lanes[1].measures[index]
+            upper.copy(
+                clefs = upper.clefs.map { it.copy(staff = 1) } + lower.clefs.map { it.copy(staff = 2) },
+                events = upper.events.map { it.copy(staff = 1) } + lower.events.map { it.copy(staff = 2) },
+                declaredStaves = 2,
+            )
+        })) else lanes
         val score = DigitalScore(sourceId, "", parts, issues, ScoreSource("OMR_IMAGE", sourceId, byteCount))
         return score.copy(issues = ScoreEditing.validate(score))
     }
@@ -150,10 +184,35 @@ object OmrScoreAssembler {
             if (events.isNotEmpty()) {
                 val number = measures.size + 1
                 measures += ScoreMeasure("omr:P${index + 1}:M$number", number.toString(), null, fifths,
-                    listOfNotNull(clef), events.toList(), false)
+                    listOfNotNull(clef), assignVoices(events), false)
             }
             events = mutableListOf(); cursor = BeatFraction.ZERO; previousOffset = BeatFraction.ZERO; accidentals.clear()
         }
+    }
+
+    /**
+     * The archived upstream music_xml_generator.py groups a chord by duration and backs
+     * up to its shortest duration before the next onset. Preserve those exact onsets:
+     * a long note must not push the following short voice later or become an overlap
+     * in that voice. Rest tokens have no print/spacer flag, so every rest is retained
+     * as a real event in its own concurrent voice, never guessed away as a blank.
+     */
+    private fun assignVoices(events: List<ScoreEvent>): List<ScoreEvent> {
+        val voiceEnds = mutableListOf<BeatFraction>()
+        val assigned = mutableMapOf<String, ScoreEvent>()
+        events.filterNot { it.grace }.groupBy { it.offset }.toSortedMap().forEach { (offset, onset) ->
+            val groups = onset.filterNot { it.isRest }.groupBy { it.duration }.values.toMutableList()
+            groups += onset.filter { it.isRest }.map { listOf(it) }
+            groups.sortedWith(compareBy<List<ScoreEvent>> { it.first().duration }.thenBy { it.first().sourceIndex }).forEach { group ->
+                val available = voiceEnds.indexOfFirst { it <= offset }
+                val voice = if (available >= 0) available else voiceEnds.size.also { voiceEnds += BeatFraction.ZERO }
+                voiceEnds[voice] = offset + group.first().duration
+                group.forEachIndexed { index, event ->
+                    assigned[event.id] = event.copy(voice = (voice + 1).toString(), chord = index > 0)
+                }
+            }
+        }
+        return events.map { assigned[it.id] ?: it }
     }
 
     private fun parsePitch(text: String, lift: String, state: PartState): ScorePitch {
