@@ -44,16 +44,18 @@ fun ScoreWorkbenchScreen(
     onSetWholeScoreTime: (Int, Int) -> Unit = { _, _ -> },
     onConfirmLinearRepeat: () -> Unit = {},
     onRecognizeOmrAgain: () -> Unit = {},
+    onFillMissingScoreTime: (String, Long, Int, Int) -> Unit = { _, _, _, _ -> },
 ) {
     val revision = state.revision
     val score = revision?.current
     var mode by rememberSaveable { mutableStateOf(ScoreDisplayMode.BOTH) }
     var editing by remember { mutableStateOf<ScoreEvent?>(null) }
     var insertingIn by remember { mutableStateOf<ScoreMeasure?>(null) }
-    var editingMeasure by remember { mutableStateOf<ScoreMeasure?>(null) }
+    var editingMeasure by remember(state.scoreId, revision?.generation) { mutableStateOf<ScoreMeasure?>(null) }
     var transposeOpen by remember { mutableStateOf(false) }
-    var wholeScoreTimeOpen by remember { mutableStateOf(false) }
-    var linearRepeatOpen by remember { mutableStateOf(false) }
+    var wholeScoreTimeOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
+    var linearRepeatOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
+    var missingTimeTarget by remember(state.scoreId, revision?.generation) { mutableStateOf<MissingTimeTarget?>(null) }
     var restoreTarget by remember { mutableStateOf<String?>(null) }
     var reviewIndex by rememberSaveable { mutableStateOf(0) }
     var bpm by rememberSaveable { mutableStateOf(80) }
@@ -66,17 +68,27 @@ fun ScoreWorkbenchScreen(
     val active = state.timeline?.events?.filter { playback.playing && playback.positionBeat >= it.startBeat.toDouble() && playback.positionBeat < it.endBeat.toDouble() }?.map { it.eventId }?.toSet().orEmpty()
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val reviewIssues = score?.let { ScoreStructureTools.reviewIssues(it, state.timeline) }.orEmpty()
+    val preparation = score?.let { ScoreStructureTools.preparationNeeds(it, reviewIssues) }
+    fun openMissingTime() {
+        val id = state.scoreId ?: return
+        val current = revision ?: return
+        missingTimeTarget = MissingTimeTarget(id, current.generation, ScoreStructureTools.missingTimeMeasures(current.current).size)
+    }
     fun locateIssue(issue: ScoreIssue) {
+        if (preparation?.repeatIssues?.any { it.id == issue.id } == true) { linearRepeatOpen = true; return }
         val targetIndex = measures.indexOfFirst { (_, measure) ->
             measure.id == issue.measureId || measure.events.any { it.id == issue.eventId }
         }
         if (targetIndex >= 0) {
             val target = measures[targetIndex].second
             val eventId = issue.eventId ?: target.events.firstOrNull()?.id
-            if (eventId != null) onSelect(eventId) else editingMeasure = target
+            if (ScoreStructureTools.isMissingTimeIssue(issue)) editingMeasure = target
+            else if (eventId != null) onSelect(eventId) else editingMeasure = target
             scope.launch { list.animateScrollToItem(targetIndex + 4) }
         }
     }
+    LaunchedEffect(state.scoreId, state.repairIssue?.id) { state.repairIssue?.let { locateIssue(it) } }
     LaunchedEffect(playback.playing, active.firstOrNull()) {
         if (playback.playing) {
             val index = measures.indexOfFirst { (_, m) -> m.events.any { it.id in active } }
@@ -90,6 +102,35 @@ fun ScoreWorkbenchScreen(
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 TextButton(onClick = onBack) { Text("返回我的乐谱") }
                 Text(state.title, style = MaterialTheme.typography.headlineMedium)
+                if (preparation != null && preparation.errors.isNotEmpty()) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth().testTag("score_preparation_guide")) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("练习前补全谱面信息", style = MaterialTheme.typography.titleMedium)
+                            Text("当前有 ${preparation.errors.size} 项谱面准备问题。尚未开始监听，这些不是弹奏时的节拍错误。",
+                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("score_preparation_count"))
+                            if (preparation.missingTimeIssues.isNotEmpty()) {
+                                val count = preparation.missingTimeIssues.mapNotNull { it.measureId }.distinct().size
+                                Text("拍号待补全：$count 个小节缺少或使用了无效拍号；续页需对照原谱首页，不能自动猜测。",
+                                    modifier = Modifier.testTag("score_missing_time_summary"))
+                                Button(onClick = { openMissingTime() }, enabled = !state.busy,
+                                    modifier = Modifier.testTag("score_fill_missing_time")) { Text("只补缺失或无效拍号") }
+                                Text("保留已有合法拍号，包括变拍号。缺失段若本身有变拍号，请用下方疑点逐小节修改。", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (preparation.repeatIssues.isNotEmpty()) {
+                                Text("反复策略待确认：${preparation.repeatIssues.size} 处记号。", modifier = Modifier.testTag("score_repeat_summary"))
+                                OutlinedButton(onClick = { linearRepeatOpen = true }, enabled = !state.busy,
+                                    modifier = Modifier.testTag("score_guide_repeat")) { Text("选择顺序一次演奏策略") }
+                            }
+                            if (preparation.otherErrors.isNotEmpty()) {
+                                Text("另有 ${preparation.otherErrors.size} 项结构错误，补拍号或确认反复不会替你修正。")
+                                val first = preparation.otherErrors.first()
+                                TextButton(onClick = { locateIssue(first) }, enabled = !state.busy,
+                                    modifier = Modifier.testTag("score_guide_other")) { Text("查看其他结构错误") }
+                            }
+                        }
+                    }
+                }
                 Text("轻点音符校对，让谱子更贴近你的演奏。", color = XiuyinMuted)
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(state.message, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("workbench_status"))
@@ -110,7 +151,7 @@ fun ScoreWorkbenchScreen(
                 }
                 OutlinedButton(onClick = { wholeScoreTimeOpen = true }, enabled = score != null && !state.busy,
                     modifier = Modifier.testTag("score_set_whole_time")) { Text("设置全谱拍号") }
-                Text("续页没有拍号时，请对照原谱首页填写；有变拍号的谱请逐小节修改。", style = MaterialTheme.typography.bodySmall)
+                Text("全谱覆盖会替换所有小节拍号；只补续页缺失信息请使用顶部引导，变拍号仍可逐小节修改。", style = MaterialTheme.typography.bodySmall)
                 if (state.original?.source?.format == "OMR_IMAGE") {
                     OutlinedButton(onClick = onRecognizeOmrAgain, enabled = !state.busy,
                         modifier = Modifier.testTag("score_recognize_again")) { Text("重新识别原图（补查漏谱）") }
@@ -172,13 +213,13 @@ fun ScoreWorkbenchScreen(
                     if (selected != null) TextButton(onClick = { restoreTarget = "event" }, enabled = !state.busy,
                         modifier = Modifier.testTag("restore_original_note")) { Text("恢复此音符原始结果") }
                     if (state.sourceImages.isNotEmpty()) SourceReference(state.sourceImages, selected?.sourceBox)
-                    val issues = score?.let { ScoreStructureTools.reviewIssues(it, state.timeline) }.orEmpty()
+                    val issues = reviewIssues
                     if (issues.isNotEmpty()) {
                         val errors = issues.count { it.severity == ScoreIssueSeverity.ERROR }
                         Text("$errors 处阻塞错误 · ${issues.size - errors} 处复核提示（错误优先）",
                             color = if (errors > 0) MaterialTheme.colorScheme.error else XiuyinMuted,
                             modifier = Modifier.testTag("score_review_summary"))
-                        val targets = issues.filter { issue -> measures.any { (_, measure) ->
+                        val targets = issues.filter { issue -> preparation?.repeatIssues?.any { it.id == issue.id } == true || measures.any { (_, measure) ->
                             measure.id == issue.measureId || measure.events.any { it.id == issue.eventId }
                         } }
                         if (targets.isNotEmpty()) Row {
@@ -189,7 +230,7 @@ fun ScoreWorkbenchScreen(
                             val target = measures.firstOrNull { (_, measure) -> measure.id == issue.measureId || measure.events.any { it.id == issue.eventId } }
                             val location = target?.let { "${it.first} · 第 ${it.second.number} 小节：" }.orEmpty()
                             val label = if (issue.severity == ScoreIssueSeverity.ERROR) "需修正" else "请复核"
-                            TextButton(onClick = { locateIssue(issue) }, enabled = target != null,
+                            TextButton(onClick = { locateIssue(issue) }, enabled = !state.busy && (target != null || preparation?.repeatIssues?.any { it.id == issue.id } == true),
                                 modifier = Modifier.testTag("score_review_issue_$index")) {
                                 Text("$label · $location${issue.message}", style = MaterialTheme.typography.bodySmall)
                             }
@@ -214,6 +255,11 @@ fun ScoreWorkbenchScreen(
         }
         item { Spacer(Modifier.height(24.dp)) }
     }
+    missingTimeTarget?.let { target -> MissingTimeEditor(target.measureCount, state.busy,
+        onDismiss = { missingTimeTarget = null }, onApply = { beats, beatType ->
+            onFillMissingScoreTime(target.scoreId, target.generation, beats, beatType)
+            missingTimeTarget = null
+        }) }
     if (wholeScoreTimeOpen) WholeScoreTimeEditor(onDismiss = { wholeScoreTimeOpen = false }) { beats, beatType ->
         onSetWholeScoreTime(beats, beatType); wholeScoreTimeOpen = false
     }
@@ -265,6 +311,36 @@ fun ScoreWorkbenchScreen(
     if (transposeOpen && score != null) TransposeEditor(score, { transposeOpen = false }) { semitones, key -> onTranspose(semitones, key); transposeOpen = false }
 }
 
+private data class MissingTimeTarget(val scoreId: String, val generation: Long, val measureCount: Int)
+
+@Composable
+private fun MissingTimeEditor(measureCount: Int, busy: Boolean, onDismiss: () -> Unit, onApply: (Int, Int) -> Unit) {
+    var beats by remember { mutableStateOf("") }
+    var beatType by remember { mutableStateOf("") }
+    val numerator = beats.trim().toIntOrNull()
+    val denominator = beatType.trim().toIntOrNull()
+    val valid = numerator != null && denominator != null && ScoreStructureTools.isValidTime(ScoreTime(numerator, denominator))
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("对照原谱补全拍号") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("请查看原谱首页或这一段实际标注的拍号，再主动选择或填写。当前没有预选拍号。")
+            Text("只为 $measureCount 个缺失或无效拍号的小节填入同一拍号；已有合法变拍号保留。若这些缺失小节采用不同拍号，请取消后逐小节修改。")
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(2 to 4, 3 to 4, 4 to 4, 6 to 8).forEach { (top, bottom) ->
+                    FilterChip(selected = beats == top.toString() && beatType == bottom.toString(),
+                        onClick = { beats = top.toString(); beatType = bottom.toString() },
+                        label = { Text("$top/$bottom") }, modifier = Modifier.testTag("missing_time_${top}_$bottom"))
+                }
+            }
+            OutlinedTextField(beats, { beats = it }, label = { Text("原谱拍号分子") }, singleLine = true, modifier = Modifier.testTag("missing_time_beats"))
+            OutlinedTextField(beatType, { beatType = it }, label = { Text("原谱拍号分母") }, singleLine = true, modifier = Modifier.testTag("missing_time_beat_type"))
+            if ((beats.isNotBlank() || beatType.isNotBlank()) && !valid) Text("请填写有效拍号：分子 1–128，分母为 1、2、4、8 等。", color = MaterialTheme.colorScheme.error)
+            Text("音符、休止符、时值、指法和确认记录不变；保存为可撤销修订。拍号补全不代表音符识别正确。", style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = {
+        Button(onClick = { if (valid) onApply(requireNotNull(numerator), requireNotNull(denominator)) }, enabled = valid && !busy,
+            modifier = Modifier.testTag("missing_time_apply")) { Text("确认只补缺失拍号") }
+    }, dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("missing_time_cancel")) { Text("取消") } })
+}
 private fun structureSummaryText(value: ScoreStructureSummary): String =
     "${value.partCount} 声部 · ${value.staffCount} 谱表 · ${value.measureCount} 小节记录 · ${value.eventCount} 音符/休止符（休止 ${value.restCount}）· ${value.errorCount} 处阻塞错误"
 

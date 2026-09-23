@@ -88,6 +88,56 @@ class ScoreStructureToolsTest {
         assertEquals(ScoreIssueSeverity.ERROR, noRepeat.issues.single().severity)
     }
 
+    @Test fun fillingMissingMetersPreservesLegalChangesAndEveryEventPayload() {
+        val note = ScoreFixtures.note("n", duration = BeatFraction.of(1)).copy(confidence = 0.4,
+            sourceBox = SourceBox(0, 0.1, 0.2, 0.03, 0.04))
+        val rest = ScoreFixtures.note("rest", offset = BeatFraction.of(1)).copy(pitch = null)
+        val measures = listOf(
+            ScoreFixtures.measure("absent", listOf(note, rest)).copy(time = null),
+            ScoreFixtures.measure("invalid", listOf(ScoreFixtures.note("n2"))).copy(time = ScoreTime(4, 3)),
+            ScoreFixtures.measure("three", listOf(ScoreFixtures.note("n3"))).copy(time = ScoreTime(3, 4)),
+            ScoreFixtures.measure("four", listOf(ScoreFixtures.note("n4"))).copy(time = ScoreTime(4, 4)),
+            ScoreFixtures.measure("six", listOf(ScoreFixtures.note("n5"))).copy(time = ScoreTime(6, 8)),
+        )
+        val original = ScoreFixtures.score(*measures.toTypedArray())
+        val repaired = ScoreStructureTools.fillMissingTime(original, ScoreTime(2, 4))
+        val actual = repaired.parts.single().measures
+        assertEquals(listOf(ScoreTime(2, 4), ScoreTime(2, 4), ScoreTime(3, 4), ScoreTime(4, 4), ScoreTime(6, 8)), actual.map { it.time })
+        measures.zip(actual).forEach { (before, after) -> assertEquals(before.copy(time = after.time), after) }
+        assertEquals(measures.drop(2), actual.drop(2))
+        assertEquals(original.source, repaired.source)
+        assertNull(original.parts.single().measures.first().time)
+        assertEquals(listOf("absent", "invalid"), ScoreStructureTools.missingTimeMeasures(original).map { it.id })
+        assertTrue(ScoreStructureTools.missingTimeMeasures(repaired).isEmpty())
+    }
+
+    @Test fun elevenPreparationProblemsGroupNineMetersAndTwoRepeatsWithoutDroppingOtherErrors() {
+        val measures = (1..9).map { index -> ScoreFixtures.measure("m$index", listOf(ScoreFixtures.note("n$index"))).copy(time = null) }
+        val repeats = (1..2).map { ScoreIssue("omr:repeat:test:$it", "TEST DATA 全局反复 $it", ScoreIssueSeverity.ERROR) }
+        val score = ScoreFixtures.score(*measures.toTypedArray()).copy(source = ScoreSource("OMR_IMAGE", "0".repeat(64), 1), issues = repeats)
+        val needs = ScoreStructureTools.preparationNeeds(score)
+        assertEquals(11, needs.errors.size)
+        assertEquals(9, needs.missingTimeIssues.size)
+        assertEquals(repeats, needs.repeatIssues)
+        assertTrue(needs.otherErrors.isEmpty())
+        val untouched = ScoreIssue("omr:unsupported-tuplet", "TEST DATA 未修复连音时值", ScoreIssueSeverity.ERROR, "m1", "n1")
+        val changed = score.copy(issues = repeats + untouched)
+        val repaired = ScoreStructureTools.fillMissingTime(changed, ScoreTime(2, 4))
+        val after = ScoreStructureTools.preparationNeeds(repaired)
+        assertEquals(3, after.errors.size)
+        assertEquals(listOf(untouched), after.otherErrors)
+        assertEquals(repeats, after.repeatIssues)
+    }
+
+    @Test fun fillMissingRequiresExplicitValidMeterAndNeverTouchesAlreadyCompleteScore() {
+        val score = ScoreFixtures.score(ScoreFixtures.measure(events = listOf(ScoreFixtures.note("n"))).copy(time = null))
+        listOf(ScoreTime(0, 4), ScoreTime(4, 0), ScoreTime(4, 3), ScoreTime(129, 4)).forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) { ScoreStructureTools.fillMissingTime(score, invalid) }
+        }
+        val complete = ScoreStructureTools.fillMissingTime(score, ScoreTime(3, 4))
+        assertThrows(IllegalArgumentException::class.java) { ScoreStructureTools.fillMissingTime(complete, ScoreTime(4, 4)) }
+        assertEquals(ScoreTime(3, 4), complete.parts.single().measures.single().time)
+    }
     @Test fun invalidMeterIsRejectedInsteadOfCoerced() {
         val score = ScoreFixtures.score(ScoreFixtures.measure(events = listOf(ScoreFixtures.note("n"))))
         listOf(ScoreTime(0, 4), ScoreTime(4, 0), ScoreTime(4, 3), ScoreTime(129, 4)).forEach {

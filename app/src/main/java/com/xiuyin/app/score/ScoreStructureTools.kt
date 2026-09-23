@@ -10,6 +10,12 @@ data class ScoreStructureSummary(
     val timelineProblem: String?,
 )
 
+data class ScorePreparationNeeds(
+    val errors: List<ScoreIssue>,
+    val missingTimeIssues: List<ScoreIssue>,
+    val repeatIssues: List<ScoreIssue>,
+    val otherErrors: List<ScoreIssue>,
+)
 /** Structural repairs preserve all source notes and require explicit user choices. */
 object ScoreStructureTools {
     fun requireOriginalRestoreCompatible(original: DigitalScore, current: DigitalScore) {
@@ -51,6 +57,35 @@ object ScoreStructureTools {
 
     private const val LINEAR_REPEAT_CHOICE = "用户已确认：当前导入乐谱按页面和小节顺序演奏一次，不执行反复；反复跳转语义尚不支持"
 
+    fun isValidTime(time: ScoreTime?): Boolean = time != null && time.beats in 1..128 &&
+        time.beatType in 1..1024 && (time.beatType and (time.beatType - 1)) == 0
+
+    fun missingTimeMeasures(score: DigitalScore): List<ScoreMeasure> =
+        score.parts.flatMap { it.measures }.filterNot { isValidTime(it.time) }
+
+    fun isMissingTimeIssue(issue: ScoreIssue): Boolean =
+        issue.id.startsWith("validation:") && issue.id.endsWith(":time") && issue.measureId != null
+
+    fun preparationNeeds(score: DigitalScore, issues: List<ScoreIssue> = reviewIssues(score)): ScorePreparationNeeds {
+        val errors = issues.distinctBy { it.id }.filter { it.severity == ScoreIssueSeverity.ERROR }
+        val time = errors.filter(::isMissingTimeIssue)
+        val repeatIds = pendingRepeatChoices(score).map { it.id }.toSet()
+        val repeats = errors.filter { it.id in repeatIds }
+        val grouped = (time + repeats).map { it.id }.toSet()
+        return ScorePreparationNeeds(errors, time, repeats, errors.filterNot { it.id in grouped })
+    }
+
+    /** Only absent/invalid meters change. A continuation page never supplies an inferred meter. */
+    fun fillMissingTime(score: DigitalScore, time: ScoreTime): DigitalScore {
+        require(isValidTime(time)) { "请明确选择原谱的有效拍号；不能猜测或自动补入拍号" }
+        require(missingTimeMeasures(score).isNotEmpty()) { "当前没有缺失或无效拍号；已有合法拍号未更改" }
+        val changed = score.copy(parts = score.parts.map { part ->
+            part.copy(measures = part.measures.map { measure ->
+                if (isValidTime(measure.time)) measure else measure.copy(time = time)
+            })
+        })
+        return changed.copy(issues = ScoreEditing.validate(changed))
+    }
     fun setWholeScoreTime(score: DigitalScore, time: ScoreTime): DigitalScore {
         require(time.beats in 1..128 && time.beatType in 1..1024 &&
             (time.beatType and (time.beatType - 1)) == 0) { "请输入原谱的有效拍号，例如分子 12、分母 8；不能猜测拍号" }

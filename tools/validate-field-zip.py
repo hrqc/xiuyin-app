@@ -82,6 +82,116 @@ def context_frame_index(context, label):
          label + " context frameIndex missing or invalid")
     return int(value)
 
+SNAPSHOT_FILES = {"score.json", "practice-context.json"}
+MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024
+
+
+def validate_score_snapshot(archive, manifest):
+    """Check original bytes and input identity/configuration, not musical correctness."""
+    present = SNAPSHOT_FILES.intersection(archive.namelist())
+    need(not present or present == SNAPSHOT_FILES, "Partial score snapshot: score and context must appear together")
+    for name in present:
+        need(0 < archive.getinfo(name).file_size <= MAX_SNAPSHOT_BYTES, "Score snapshot file exceeds 4 MiB or is empty: " + name)
+    if "scoreSnapshot" not in manifest:
+        need(not present, "Undeclared score snapshot files")
+        return {"status": "UNAVAILABLE", "reproducible": False, "reason": "Legacy ZIP has no score snapshot"}
+    descriptor = manifest["scoreSnapshot"]
+    need(isinstance(descriptor, dict) and type(descriptor.get("schemaVersion")) is int and descriptor["schemaVersion"] == 1,
+         "Invalid score snapshot descriptor/schema")
+    status = descriptor.get("status")
+    need(status in {"AVAILABLE", "UNAVAILABLE", "PREPARING"}, "Unknown score snapshot status")
+    need(descriptor.get("accuracyValidated") is False, "Score snapshot must not claim accuracy")
+    if status != "AVAILABLE":
+        return {"status": status, "reproducible": False, "reason": descriptor.get("reason", "Snapshot initialization is incomplete"),
+                "filesPresent": sorted(present)}
+    need(present == SNAPSHOT_FILES, "AVAILABLE score snapshot files missing")
+    need(descriptor.get("scoreFile") == "score.json" and descriptor.get("practiceContextFile") == "practice-context.json",
+         "Score snapshot filenames differ")
+    raw = {}
+    for name, length_key, hash_key in (("score.json", "scoreBytes", "scoreSha256"),
+                                       ("practice-context.json", "practiceContextBytes", "practiceContextSha256")):
+        data = archive.read(name)
+        need(integer(descriptor.get(length_key), 1) and len(data) == descriptor[length_key], "Score snapshot byte count differs: " + name)
+        digest = descriptor.get(hash_key)
+        need(isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest) and hashlib.sha256(data).hexdigest() == digest,
+             "Score snapshot SHA256 differs: " + name)
+        raw[name] = data
+    score = obj(raw["score.json"].decode("utf-8-sig"))
+    context = obj(raw["practice-context.json"].decode("utf-8-sig"))
+    need(type(score.get("schemaVersion")) is int and score["schemaVersion"] == 1 and
+         type(context.get("schemaVersion")) is int and context["schemaVersion"] == 1 and context.get("snapshotStatus") == "AVAILABLE",
+         "Score/context snapshot schema or status differs")
+    metadata = manifest.get("metadata")
+    need(isinstance(metadata, dict), "Score snapshot lacks session metadata")
+    score_id = descriptor.get("scoreId")
+    need(isinstance(score_id, str) and 0 < len(score_id) <= 160 and score_id.strip() and
+         score_id == context.get("scoreId") == metadata.get("scoreId"), "Score snapshot scoreId binding differs")
+    revision = descriptor.get("revisionGeneration")
+    metadata_revision = metadata.get("revisionGeneration")
+    need(integer(revision) and integer(context.get("revisionGeneration")) and revision == context["revisionGeneration"] and
+         isinstance(metadata_revision, str) and re.fullmatch(r"[0-9]+", metadata_revision) and int(metadata_revision) == revision,
+         "Score snapshot revision binding differs")
+    source = score.get("source")
+    need(isinstance(source, dict), "Score snapshot DigitalScore source missing")
+    source_sha = source.get("sha256")
+    need(isinstance(source_sha, str) and re.fullmatch(r"[a-f0-9]{64}", source_sha) and
+         source_sha == score.get("id") == context.get("digitalScoreId") == context.get("sourceSha256") == descriptor.get("sourceSha256"),
+         "Score snapshot DigitalScore/source SHA binding differs")
+    if "sourceSha256" in metadata:
+        need(metadata["sourceSha256"] == source_sha, "Score snapshot metadata source SHA differs")
+    need(isinstance(source.get("format"), str) and source["format"] and context.get("sourceFormat") == source["format"] and
+         integer(source.get("byteCount"), 1) and integer(context.get("sourceByteCount"), 1) and context["sourceByteCount"] == source["byteCount"],
+         "Score snapshot source format/byte count differs")
+    need(context.get("scoreFile") == "score.json" and context.get("scoreSha256") == descriptor["scoreSha256"] and
+         integer(context.get("scoreBytes"), 1) and context["scoreBytes"] == descriptor["scoreBytes"],
+         "Score snapshot context score file binding differs")
+    original_hash = descriptor.get("originalScoreSha256")
+    need(original_hash == context.get("originalScoreSha256") and
+         (original_hash is None or isinstance(original_hash, str) and re.fullmatch(r"[a-f0-9]{64}", original_hash)),
+         "Score snapshot original score hash differs")
+    need(context.get("originalScoreStatus") == ("UNAVAILABLE" if original_hash is None else "HASHED_FROM_PROVIDED_ORIGINAL"),
+         "Score snapshot original score availability differs")
+    need(context.get("accuracyValidated") is False and context.get("groundTruth") is None and
+         context.get("structureValidationPassed") is True, "Score snapshot validation/accuracy declaration differs")
+    parts = score.get("parts")
+    need(isinstance(parts, list) and 0 < len(parts) <= 128 and all(isinstance(part, dict) and
+         isinstance(part.get("measures"), list) and 0 < len(part["measures"]) <= 20000 for part in parts),
+         "Score snapshot parts/measures missing or invalid")
+    measure_count = len(parts[0]["measures"])
+    need(all(len(part["measures"]) == measure_count for part in parts) and
+         integer(context.get("measureCount"), 1) and context["measureCount"] == measure_count,
+         "Score snapshot measure count differs")
+    config = context.get("practiceConfig")
+    need(isinstance(config, dict), "Score snapshot practiceConfig missing")
+    fields = {"mode", "hand", "startMeasure", "endMeasure", "resolvedEndMeasure", "repeatTarget", "reviewAcknowledged",
+              "measureIndexDefinition", "tempoBpm", "tempoStatus"}
+    need(set(config) == fields, "Unknown or missing score snapshot practiceConfig fields")
+    need(config["mode"] in {"FREE", "STOP_ON_ERROR", "LOOP", "REINFORCE"} and config["hand"] in {"BOTH", "RIGHT", "LEFT"},
+         "Unknown score snapshot practice mode/hand")
+    first, last, resolved = config["startMeasure"], config["endMeasure"], config["resolvedEndMeasure"]
+    need(integer(first) and first < measure_count and (last is None or integer(last) and first <= last < measure_count) and
+         integer(resolved) and resolved == (measure_count - 1 if last is None else last),
+         "Score snapshot practice measure range differs")
+    need(integer(config["repeatTarget"], 1) and config["repeatTarget"] <= 20 and type(config["reviewAcknowledged"]) is bool,
+         "Score snapshot repeat/review configuration invalid")
+    need(isinstance(config["measureIndexDefinition"], str) and config["measureIndexDefinition"] and config["tempoBpm"] is None and
+         isinstance(config["tempoStatus"], str) and config["tempoStatus"].startswith("UNAVAILABLE"),
+         "Score snapshot unsupported tempo or measure-index definition")
+    need(context.get("practicePhaseAtCapture") in {"READY", "RUNNING", "PAUSED", "LOCKED", "COMPLETED"} and
+         integer(context.get("targetCount"), 1) and integer(context.get("cursorAtCapture")) and
+         context["cursorAtCapture"] <= context["targetCount"] and integer(context.get("capturedAtMillis"), 1),
+         "Score snapshot phase/cursor/target count invalid")
+    issues = context.get("validationIssues")
+    need(isinstance(issues, list) and all(isinstance(issue, dict) and issue.get("severity") in {"INFO", "WARNING"} for issue in issues),
+         "Score snapshot contains invalid or blocking validation issues")
+    return {"status": "AVAILABLE", "reproducible": True, "scoreId": score_id, "digitalScoreId": score["id"],
+            "revisionGeneration": revision, "sourceSha256": source_sha,
+            "scoreSha256": descriptor["scoreSha256"], "practiceContextSha256": descriptor["practiceContextSha256"],
+            "scoreBytes": len(raw["score.json"]), "practiceContextBytes": len(raw["practice-context.json"]),
+            "practiceConfig": config, "measureCount": measure_count, "targetCount": context["targetCount"],
+            "scope": "Input byte integrity, binding and configuration; not an independent musical correctness check"}
+
+
 def validate(path, expected_sha=None, require_music=False, require_labels=False, expected_frames=None):
     if expected_frames is not None:
         need(integer(expected_frames, 1), "Expected frame count must be a positive integer")
@@ -111,6 +221,7 @@ def validate(path, expected_sha=None, require_music=False, require_labels=False,
             need(manifest["gitCommit"] == expected_sha, "ZIP commit differs from tested APK")
         session = manifest["sessionId"]
         need(isinstance(session, str) and session, "Invalid Field session identity")
+        score_snapshot = validate_score_snapshot(archive, manifest)
         summary = docs["session-summary.json"]
         need(summary.get("sessionId") == session, "Wrong session in session-summary.json")
         need(summary.get("statisticsAreAccuracy") is False, "System counts must not be presented as accuracy")
@@ -273,6 +384,7 @@ def validate(path, expected_sha=None, require_music=False, require_labels=False,
                 "modelFrames": len(frames), "sourceStreams": len(streams), "followingFrames": len(following_counts),
                 "confirmedDecisionEvents": len(event_ids), "linkedOctaveRecords": len(octave_keys),
                 "records": {k: len(v) for k, v in rows.items()}, "clips": clips,
+                "scoreSnapshot": score_snapshot["status"], "scoreSnapshotEvidence": score_snapshot,
                 "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()}
 
 def main():

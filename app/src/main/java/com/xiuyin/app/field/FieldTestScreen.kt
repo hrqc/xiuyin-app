@@ -164,6 +164,7 @@ fun FieldTestScreen(
             Text("我同意异常或反馈时保存前 3 秒、后 1.5 秒的短音频到本机", modifier = Modifier.padding(top = 10.dp))
         }
         Text("默认只保留内存环形缓冲，不保存整段录音。不勾选也能保存文字标签和识别证据；短片段不足时如实记录。", style = MaterialTheme.typography.bodySmall)
+        Text("测试包会包含本次练习的数字谱、拍号、左右手和小节范围，供复现问题；只保存在本机，随 ZIP 导出，不附原始谱图。", style = MaterialTheme.typography.bodySmall)
         if (validScore && companion.timeline.issues.isNotEmpty() && !hasPracticeSession && session == null) {
             Row { Checkbox(reviewed, { reviewed = it }, modifier = Modifier.testTag("field_review_ack")); Text("我已校对当前谱面的来源和结构警告", Modifier.padding(top = 10.dp)) }
         }

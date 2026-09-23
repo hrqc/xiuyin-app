@@ -42,13 +42,19 @@ class FieldSessionReplayTest {
             val notes = entries.getJSONObject(index).getJSONArray("expectedMidi")
             (0 until notes.length()).map { notes.getInt(it) }.toSet()
         }
-        val follower = ScoreFollower(ScoreTimelineCompiler.compile(referenceScore(groups)), PracticeConfig(mode = CompanionMode.STOP_ON_ERROR))
+        val score = referenceScore(groups, sha(referenceFile.readBytes()), referenceFile.length().toInt())
+        val config = PracticeConfig(mode = CompanionMode.STOP_ON_ERROR)
+        val follower = ScoreFollower(ScoreTimelineCompiler.compile(score), config)
+        val scoreId = "TEST DATA field-replay-reference"
+        val snapshot = FieldScoreSnapshot.capture(FieldScoreSnapshot.Request(scoreId, 0, score, config,
+            CompanionPhase.READY, 0, score))
         val diagnostics = FieldDiagnostics.get(context)
         diagnostics.refresh()
         check(diagnostics.state.value.activeSession == null) { "Test will not overwrite an existing session" }
         diagnostics.setClipConsent(true)
         val session = diagnostics.startSession("TEST DATA recorded DotIAM field ZIP", mapOf("inputSource" to "RECORDED_REGRESSION",
-            "inputSha256" to inputSha, "timing" to "paced offline file replay, not hardware microphone latency", "feedbackLabels" to "TEST DATA button actions, not verified truth"))
+            "inputSha256" to inputSha, "timing" to "paced offline file replay, not hardware microphone latency", "feedbackLabels" to "TEST DATA button actions, not verified truth",
+            "scoreId" to scoreId, "revisionGeneration" to "0", "sourceSha256" to score.source.sha256), snapshot)
         result.put("sessionId", session.id).put("inputSha256", inputSha).put("inputSamples", pcm.size)
         val frames = AtomicLong(); val ambiguous = AtomicLong(); var saysCorrect = false; var saysWrong = false
         val engine = PianoRecognitionEngine(context, { rawFrame ->
@@ -167,13 +173,13 @@ class FieldSessionReplayTest {
         }
         check(diagnostics.state.value.error == null) { diagnostics.state.value.error.orEmpty() }
     }
-    private fun referenceScore(groups: List<Set<Int>>): DigitalScore {
+    private fun referenceScore(groups: List<Set<Int>>, sourceSha: String, byteCount: Int): DigitalScore {
         val measures = groups.mapIndexed { index, pitches ->
             ScoreMeasure("m$index", (index + 1).toString(), ScoreTime(1, 4), 0, listOf(ScoreClef(1, "G", 2)), pitches.sorted().mapIndexed { noteIndex, midi ->
                 ScoreEvent("e${index}_$noteIndex", BeatFraction.ZERO, BeatFraction.of(1), ScoreEditing.pitchFromMidi(midi), 1, "1", noteIndex > 0, "quarter", 0, emptySet(), index * 10 + noteIndex, 0)
             }, false)
         }
-        return DigitalScore("test-reference", "TEST DATA independent website reference", listOf(ScorePart("p", "Piano", measures)), emptyList(), ScoreSource("independent-web-action-reference", "DotIAM frozen regression", 1))
+        return DigitalScore(sourceSha, "TEST DATA independent website reference", listOf(ScorePart("p", "Piano", measures)), emptyList(), ScoreSource("independent-web-action-reference", sourceSha, byteCount))
     }
     private fun pcm(file: File): ShortArray = pcmBytes(file.readBytes())
     private fun pcmBytes(bytes: ByteArray): ShortArray {

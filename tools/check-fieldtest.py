@@ -26,7 +26,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.xiuyin.app"
-VERSION = "0.3.0-octave.2-fieldtest.2"
+VERSION = "0.3.0-octave.2-fieldtest.3"
 KNOWN_SUITE = "TEST-dotiam-independent2.xml"
 KNOWN_CLASS = PACKAGE + ".practice.PracticePcmIntegrationTest"
 KNOWN_METHOD = "productionPcmToFollowerAndDurableReport"
@@ -444,6 +444,12 @@ def main():
         validated = read(out / "field-zip-validation.json")
         require(validated["status"] == "PASSED" and validated["modelFrames"] == 816 and validated["clips"] and
                 validated["sessionId"] == replay["sessionId"], "Export lacks complete real frames/feedback clips")
+        require(validated.get("scoreSnapshot") == "AVAILABLE" and
+                validated["scoreSnapshotEvidence"]["reproducible"] is True and
+                validated["scoreSnapshotEvidence"]["practiceConfig"]["mode"] == "STOP_ON_ERROR" and
+                validated["scoreSnapshotEvidence"]["practiceConfig"]["hand"] == "BOTH",
+                "Field replay lacks the exact score and actual practice configuration")
+        result["fieldScoreSnapshotAcceptance"] = "PASSED"
         result["fieldReplayAcceptance"] = "PASSED"
         for phase in ("prepare", "verify"):
             started_ms = int(device("shell", "date", "+%s")) * 1000

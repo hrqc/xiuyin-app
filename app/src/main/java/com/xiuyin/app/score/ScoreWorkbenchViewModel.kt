@@ -35,6 +35,7 @@ data class ScoreWorkbenchState(
     val timelineProblem: String? = null,
     val sourceImages: List<File> = emptyList(),
     val structurePreview: OmrStructurePreview? = null,
+    val repairIssue: ScoreIssue? = null,
 )
 
 class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(application) {
@@ -82,7 +83,7 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
         mutableState.value = ScoreWorkbenchState(true, metadata.scoreId, metadata.displayTitle, original, revision,
             selectedEventId = target ?: events.firstOrNull()?.id, sourceImages = images)
         val locationMessage = if (issue == null) "" else if (target != null) "；已定位当前练习的待修正位置" else "；原疑点位置已变化或没有音符，请查看当前修订的结构提示"
-        accept(revision, "已读取本地修订；原文件保持不变$locationMessage")
+        accept(revision, "已读取本地修订；原文件保持不变$locationMessage", issue)
     }
 
     fun exportMidi(uri: android.net.Uri, bpm: Int) = operation("导出当前修订 MIDI") {
@@ -143,6 +144,18 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
             "用户选择当前导入乐谱顺序演奏一次、不执行反复，已记录 $repeatCount 处反复记号选择；结构错误 ${before.errorCount} → ${after.errorCount}。其他错误仍需修正，可撤销")
     }
 
+    fun fillMissingScoreTime(scoreId: String, generation: Long, beats: Int, beatType: Int) = operation("补全缺失拍号") {
+        val current = mutableState.value
+        val prior = requireNotNull(current.revision) { "没有当前乐谱" }
+        require(current.scoreId == scoreId && prior.generation == generation) {
+            "乐谱或修订已变化，旧拍号窗口未应用；请在当前谱面重新选择"
+        }
+        val count = ScoreStructureTools.missingTimeMeasures(prior.current).size
+        val score = ScoreStructureTools.fillMissingTime(prior.current, ScoreTime(beats, beatType))
+        player.stop("拍号已补全，试听已停止")
+        accept(revisions.save(scoreId, generation, score, prior.verifiedEventIds, prior.fingerings),
+            "已按用户选择为 $count 个缺失或无效拍号的小节填入 $beats/$beatType；已有合法拍号、音符时值、指法与确认记录保留，可撤销。请继续校对其余谱面问题")
+    }
     fun setWholeScoreTime(beats: Int, beatType: Int) = operation("保存全谱拍号") {
         player.stop("拍号已更新，试听已停止")
         val current = mutableState.value
@@ -235,14 +248,14 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
     }
     fun stopPlayback(reason: String = "试听已停止") = player.stop(reason)
 
-    private fun accept(revision: ScoreRevisionSnapshot, message: String) {
+    private fun accept(revision: ScoreRevisionSnapshot, message: String, repairIssue: ScoreIssue? = null) {
         var problem: String? = null
         val timeline = try { ScoreTimelineCompiler.compile(revision.current) }
             catch (error: IllegalArgumentException) { problem = error.message; null }
         mutableState.update { old ->
             val ids = revision.current.parts.flatMap { it.measures }.flatMap { it.events }.map { it.id }
             old.copy(revision = revision, timeline = timeline, selectedEventId = old.selectedEventId?.takeIf { it in ids },
-                timelineProblem = problem, structurePreview = null, message = message + if (revision.historyTruncated) "；仅保留最近可用撤销历史" else "")
+                timelineProblem = problem, structurePreview = null, repairIssue = repairIssue, message = message + if (revision.historyTruncated) "；仅保留最近可用撤销历史" else "")
         }
     }
 

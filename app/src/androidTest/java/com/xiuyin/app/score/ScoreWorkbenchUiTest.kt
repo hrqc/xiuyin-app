@@ -243,6 +243,68 @@ class ScoreWorkbenchUiTest {
         assertTrue(ownedDocuments.isEmpty())
     }
 
+    @Test fun bottomPracticeReturnReloadsSavedMeterAndUndoWithoutStartingAudio() {
+        val (id, original) = openTestScore()
+        val first = original.parts.first().measures.first()
+        val expectedTime = requireNotNull(first.time)
+        val practice = ViewModelProvider(compose.activity)[PracticeViewModel::class.java]
+        compose.runOnUiThread { workbench.edit(ScorePatch.UpdateMeasure(first.id, null, first.fifths, first.clefs, first.declaredStaves), null) }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        scroll("score_start_practice"); compose.onNodeWithTag("score_start_practice").performClick()
+        compose.waitUntil(10_000) { !practice.state.value.busy && practice.state.value.error != null }
+        assertEquals(1L, practice.state.value.revisionGeneration)
+        fun returnToWorkbench() {
+            compose.onNodeWithTag("nav_library").performClick()
+            compose.onNodeWithText("导入与数字乐谱").performScrollTo().performClick()
+            compose.onNodeWithTag("score_content").performScrollToNode(hasTestTag("open_score_workbench"))
+            compose.onNodeWithTag("open_score_workbench").performClick()
+            compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.scoreId == id }
+        }
+        returnToWorkbench()
+        scroll("score_set_whole_time"); compose.onNodeWithTag("score_set_whole_time").performClick()
+        compose.onNodeWithTag("whole_time_beats").performTextReplacement(expectedTime.beats.toString())
+        compose.onNodeWithTag("whole_time_beat_type").performTextReplacement(expectedTime.beatType.toString())
+        compose.onNodeWithTag("whole_time_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 2L }
+        val saved = requireNotNull(workbench.state.value.revision)
+        compose.onNodeWithTag("nav_practice").performClick()
+        compose.waitUntil(10_000) { !practice.state.value.busy && practice.state.value.revisionGeneration == saved.generation }
+        assertNull(practice.state.value.error)
+        assertEquals(saved.current, practice.state.value.score)
+        assertNotNull(practice.state.value.timeline)
+        assertFalse(practice.hasActiveSession())
+        assertEquals(original, MusicXmlParser().parse(ScoreSourceStore(File(context.filesDir, "digital-scores")).load(original.id).bytes))
+        returnToWorkbench()
+        scroll("score_undo"); compose.onNodeWithTag("score_undo").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 3L }
+        compose.onNodeWithTag("nav_practice").performClick()
+        compose.waitUntil(10_000) { !practice.state.value.busy && practice.state.value.revisionGeneration == 3L }
+        assertNull(practice.state.value.timeline)
+        assertNotNull(practice.state.value.error)
+        assertEquals(id, practice.state.value.scoreId)
+        assertFalse(practice.hasActiveSession())
+    }
+
+    @Test fun bottomPracticeReturnPreservesPausedSessionAfterWorkbenchEdit() {
+        val (id, _) = openTestScore()
+        val practice = ViewModelProvider(compose.activity)[PracticeViewModel::class.java]
+        scroll("score_start_practice"); compose.onNodeWithTag("score_start_practice").performClick()
+        compose.waitUntil(10_000) { !practice.state.value.busy && practice.state.value.timeline != null }
+        val frozen = practice.state.value
+        compose.runOnUiThread { practice.start(PracticeConfig(reviewAcknowledged = true)) }
+        compose.onNodeWithTag("nav_home").performClick()
+        compose.waitUntil(5_000) { practice.state.value.phase == CompanionPhase.PAUSED }
+        compose.runOnUiThread { workbench.setWholeScoreTime(3, 4) }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        compose.onNodeWithTag("nav_practice").performClick()
+        compose.waitForIdle()
+        assertEquals(id, practice.state.value.scoreId)
+        assertEquals(frozen.revisionGeneration, practice.state.value.revisionGeneration)
+        assertEquals(frozen.score, practice.state.value.score)
+        assertEquals(CompanionPhase.PAUSED, practice.state.value.phase)
+        assertTrue(practice.hasActiveSession())
+    }
+
     private fun missingMeter(original: DigitalScore): DigitalScore {
         val changed = original.copy(parts = original.parts.map { part ->
             part.copy(measures = part.measures.map { it.copy(time = null) })

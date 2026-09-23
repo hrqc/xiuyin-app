@@ -20,6 +20,7 @@ class FieldSessionStore(
     private val monotonicNanos: () -> Long = System::nanoTime,
 ) {
     private val manifests = linkedMapOf<String, MutableMap<String, Any?>>()
+    private val snapshotManifestUpdates = mutableSetOf<String>()
     private var activeId: String? = null
     private var accountedBytes: Long? = null
     private var accountedClips: Int? = null
@@ -48,6 +49,15 @@ class FieldSessionStore(
             val manifest = try { FieldJson.objectValue(source.readText()).toMutableMap() } catch (error: Exception) { throw IllegalStateException("诊断清单损坏：${folder.name}，保留原文件", error) }
             check(manifest["sessionId"] == folder.name) { "诊断会话标识不一致" }
             FieldSessionStatus.valueOf(manifest["status"] as String)
+            val priorSnapshot = manifest["scoreSnapshot"] as? Map<*, *>
+            check(!manifest.containsKey("scoreSnapshot") || (priorSnapshot != null && priorSnapshot["status"] in setOf("AVAILABLE", "PREPARING", "UNAVAILABLE"))) { "实地谱面快照描述损坏，原始记录保留" }
+            val snapshotMetadataChanged = priorSnapshot == null || priorSnapshot["status"] == "PREPARING"
+            if (priorSnapshot == null) manifest["scoreSnapshot"] = FieldScoreSnapshot.unavailable("LEGACY_SESSION_NO_SNAPSHOT")
+            else if (priorSnapshot["status"] == "PREPARING") {
+                manifest["scoreSnapshot"] = priorSnapshot + mapOf("status" to "UNAVAILABLE", "reason" to "SNAPSHOT_INITIALIZATION_INCOMPLETE")
+                manifest["hasErrors"] = true
+            }
+            if (snapshotMetadataChanged) snapshotManifestUpdates += folder.name
             manifests[folder.name] = manifest
             if (manifest["status"] == FieldSessionStatus.ACTIVE.name) {
                 manifest["status"] = FieldSessionStatus.INCOMPLETE.name
@@ -57,6 +67,7 @@ class FieldSessionStore(
                 recoverTails(folder)
                 atomicJson(source, manifest)
                 recoveredSessionIds += folder.name
+                snapshotManifestUpdates -= folder.name
             }
             sessionDataBytes[folder.name] = size(folder)
             sessionFileCounts[folder.name] = fileCount(folder)
@@ -102,11 +113,15 @@ class FieldSessionStore(
         "exportReserveDefinition" to "Two archives for the largest unexported session: 2% deflate overhead + 512 bytes per entry + 4096 bytes per ZIP; reserved inside the unchanged total quota.",
         "spaceMeasurementAgeMs" to spaceMeasuredAt?.let { (monotonicNanos() - it).coerceAtLeast(0L) / 1e6 },
         "spaceBudgetDefinition" to "Measured free bytes minus subsequent local allocation; refresh within 1000 ms and before session/clip/export. Actual write failures remain fatal.")
-    @Synchronized fun start(label: String, identity: Map<String, Any?>, device: Map<String, Any?>, metadata: Map<String, String> = emptyMap()): FieldSessionInfo {
+    @Synchronized fun start(label: String, identity: Map<String, Any?>, device: Map<String, Any?>, metadata: Map<String, String> = emptyMap(),
+        scoreSnapshot: FieldScoreSnapshot? = null): FieldSessionInfo {
         check(activeId == null) { "已有实地测试会话" }
         require(label.isNotBlank() && label.length <= 160)
+        scoreSnapshot?.requireBinding(metadata)
+        val snapshotBytes = scoreSnapshot?.byteCount ?: 0L
         freeBytes()
-        ensureCapacity(65_536, addingSession = true, projectedGrowth = 8192, projectedEntries = 8)
+        ensureCapacity(65_536 + snapshotBytes, addingSession = true, projectedGrowth = 8192 + snapshotBytes,
+            projectedEntries = 8 + if (scoreSnapshot == null) 0 else 2)
         val id = UUID.randomUUID().toString()
         val folder = directory(id)
         check(folder.mkdir()) { "无法创建测试会话" }
@@ -114,7 +129,8 @@ class FieldSessionStore(
         val manifest = (identity + mapOf("schemaVersion" to 1, "sessionId" to id, "label" to label,
             "testStartTime" to java.time.Instant.ofEpochMilli(started).toString(), "startedAtMillis" to started,
             "testEndTime" to null, "endedAtMillis" to null, "status" to FieldSessionStatus.ACTIVE.name,
-            "exportedAtMillis" to null, "metadata" to metadata, "statisticsAreAccuracy" to false)).toMutableMap()
+            "exportedAtMillis" to null, "metadata" to metadata, "statisticsAreAccuracy" to false,
+            "scoreSnapshot" to (scoreSnapshot?.manifest("PREPARING") ?: FieldScoreSnapshot.unavailable("SESSION_CREATED_WITHOUT_SNAPSHOT")))).toMutableMap()
         // Manifest is first: a crash during initialization remains a visible, recoverable incomplete session.
         atomicJson(File(folder, "manifest.json"), manifest)
         manifests[id] = manifest
@@ -123,6 +139,14 @@ class FieldSessionStore(
         STREAM_FILES.forEach { name -> val file = File(folder, name); mutateTracked(file) { check(file.createNewFile()) } }
         atomicJson(File(folder, "performance.json"), emptyPerformance())
         atomicJson(File(folder, "session-summary.json"), mapOf("sessionId" to id, "statisticsAreAccuracy" to false))
+        if (scoreSnapshot != null) {
+            scoreSnapshot.files().forEach { (name, bytes) -> atomicBytes(File(folder, name), bytes) }
+            val readyManifest = manifest + ("scoreSnapshot" to scoreSnapshot.manifest())
+            FieldScoreSnapshot.verifyFiles(folder, readyManifest)
+            manifest["scoreSnapshot"] = scoreSnapshot.manifest()
+            atomicJson(File(folder, "manifest.json"), manifest)
+            FieldScoreSnapshot.verifyFiles(folder, FieldJson.objectValue(File(folder, "manifest.json").readText()))
+        }
         append("app.log", mapOf("timestamp" to started, "level" to "INFO", "module" to "Field", "message" to "FieldSessionStart"))
         return info(id, manifest)
     }
@@ -201,9 +225,15 @@ class FieldSessionStore(
         requireKnown(id)
         freeBytes()
         if (id == activeId) checkpoint()
+        if (id in snapshotManifestUpdates) {
+            // Completed legacy sessions are annotated only through the existing quota-controlled export path.
+            atomicJsonQuota(File(directory(id), "manifest.json"), manifests.getValue(id))
+            snapshotManifestUpdates -= id
+        }
         writeSummary(id)
         val folder = directory(id)
         check(REQUIRED_FILES.all { File(folder, it).isFile }) { "诊断文件不完整，导出失败" }
+        FieldScoreSnapshot.verifyFiles(folder, manifests.getValue(id))
         val target = File(exports, "field-$id.zip")
         val temp = File(exports, "field-$id.zip.partial")
         ensureCapacity(65_536, protectedId = id)
@@ -222,7 +252,12 @@ class FieldSessionStore(
                 }
             }
             }
-            ZipFile(temp).use { zip -> REQUIRED_FILES.forEach { check(zip.getEntry(it) != null) }; zip.entries().asSequence().forEach { entry -> zip.getInputStream(entry).use { input -> val buffer = ByteArray(8192); while (input.read(buffer) >= 0) Unit } } }
+            ZipFile(temp).use { zip ->
+                REQUIRED_FILES.forEach { check(zip.getEntry(it) != null) }
+                zip.entries().asSequence().forEach { entry -> zip.getInputStream(entry).use { input -> val buffer = ByteArray(8192); while (input.read(buffer) >= 0) Unit } }
+                val archivedManifest = FieldJson.objectValue(zip.getInputStream(zip.getEntry("manifest.json")).reader().use { it.readText() })
+                FieldScoreSnapshot.verifyArchive(zip, archivedManifest)
+            }
             mutateTracked(temp, target) { Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
             return target
         } catch (error: Exception) {
@@ -268,7 +303,7 @@ class FieldSessionStore(
         check(folder.parentFile == root.canonicalFile && folder != root.canonicalFile)
         mutateTracked(folder) { check(folder.deleteRecursively()) { "诊断会话清理失败：$id" } }
         listOf(File(exports, "field-$id.zip"), File(exports, "field-$id.zip.partial")).forEach { file -> mutateTracked(file) { check(!file.exists() || file.delete()) { "导出文件清理失败" } } }
-        manifests.remove(id); infoCache.remove(id); sessionDataBytes.remove(id); sessionFileCounts.remove(id); accountedClips = null
+        manifests.remove(id); snapshotManifestUpdates.remove(id); infoCache.remove(id); sessionDataBytes.remove(id); sessionFileCounts.remove(id); accountedClips = null
     }
     @Synchronized fun markFault(message: String) {
         val id = activeId ?: return
@@ -382,9 +417,10 @@ class FieldSessionStore(
     private fun requireKnown(id: String) { require(id in manifests) { "未知实地测试会话" } }
     private fun directory(id: String): File { require(id.matches(Regex("[a-zA-Z0-9-]+"))); return File(root, id) }
     private fun atomicJsonQuota(file: File, value: Map<String, Any?>) { ensureCapacity(FieldJson.encode(value).toByteArray().size.toLong() + 4096, protectedId = file.parentFile?.name?.takeIf { it in manifests }, projectedGrowth = FieldJson.encode(value).toByteArray().size.toLong(), projectedSessionId = file.parentFile?.name?.takeIf { it in manifests }); atomicJson(file, value) }
-    private fun atomicJson(file: File, value: Map<String, Any?>) {
+    private fun atomicJson(file: File, value: Map<String, Any?>) = atomicBytes(file, FieldJson.encode(value).toByteArray(Charsets.UTF_8))
+    private fun atomicBytes(file: File, bytes: ByteArray) {
         val temporary = File(file.parentFile, file.name + ".tmp")
-        mutateTracked(temporary) { FileOutputStream(temporary).use { it.write(FieldJson.encode(value).toByteArray(Charsets.UTF_8)); it.fd.sync() } }
+        mutateTracked(temporary) { FileOutputStream(temporary).use { it.write(bytes); it.fd.sync() } }
         mutateTracked(temporary, file) { Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE) }
     }
     private fun exportReserve(projectedId: String? = null, growth: Long = 0, newEntries: Int = 0): Long {

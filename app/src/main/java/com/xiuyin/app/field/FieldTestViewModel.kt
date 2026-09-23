@@ -35,12 +35,13 @@ class FieldTestViewModel(application: Application) : AndroidViewModel(applicatio
     fun reportError(message: String) { mutableOperation.value = mutableOperation.value.copy(error = message, message = null) }
     fun reportMessage(message: String) { mutableOperation.value = mutableOperation.value.copy(message = message, error = null) }
 
-    fun start(label: String, metadata: Map<String, String>, onStarted: () -> Boolean) = operate {
+    fun start(label: String, metadata: Map<String, String>, scoreSnapshot: FieldScoreSnapshot.Request? = null, onStarted: () -> Boolean) = operate {
         withContext(Dispatchers.IO) {
+            val snapshot = scoreSnapshot?.let { FieldScoreSnapshot.capture(it) }
             diagnostics.refresh()
             check(state.value.storageWritable) { "调试目录不可写，请检查存储空间后重试" }
             check(state.value.freeSpaceBytes >= 10L * 1024 * 1024) { "可用存储不足 10 MiB，请先保存并清理历史会话" }
-            diagnostics.startSession(label.ifBlank { "钢琴现场测试" }, metadata)
+            diagnostics.startSession(label.ifBlank { "钢琴现场测试" }, metadata, snapshot)
         }
         // Permission and READY may have changed while durable session creation was in flight.
         if (!onStarted()) {

@@ -311,16 +311,30 @@ class MainActivity : ComponentActivity() {
                     val reviewed = requestedConfig.reviewAcknowledged
                     requestReadyAudio {
                         val practice = companionModel.state.value
-                        if (practice.timeline == null || practice.score == null || practice.busy) fieldModel.reportError("数字乐谱尚未准备，请从工作台打开有效乐谱")
+                        if (fieldModel.state.value.activeSession != null && !companionModel.hasActiveSession())
+                            fieldModel.reportError("这次实地测试的练习已经结束，请先结束并导出旧实地会话，再新建练习和测试。")
+                        else if (practice.timeline == null || practice.score == null || practice.busy) fieldModel.reportError("数字乐谱尚未准备，请从工作台打开有效乐谱")
                         else if (!builtInMicrophoneAvailable()) fieldModel.reportError("系统未报告可用的内置麦克风，请检查设备")
                         else if (practice.phase != CompanionPhase.PAUSED && practice.timeline.issues.isNotEmpty() && !reviewed)
                             fieldModel.reportError("请先校对并确认谱面的来源或结构警告")
                         else {
+                            val hadPracticeSession = companionModel.hasActiveSession()
+                            val effectiveConfig = if (hadPracticeSession) practice.config else requestedConfig
+                            val snapshot = FieldScoreSnapshot.Request(requireNotNull(practice.scoreId), practice.revisionGeneration,
+                                practice.score, effectiveConfig,
+                                if (hadPracticeSession) practice.phase else CompanionPhase.READY,
+                                if (hadPracticeSession) practice.cursor else 0,
+                                workbenchModel.state.value.original?.takeIf { it.source == practice.score.source })
                             val begin: () -> Boolean = {
                                 val currentPractice = companionModel.state.value
+                                val currentConfig = if (companionModel.hasActiveSession()) currentPractice.config else requestedConfig
                                 if (!FieldScoreBinding.samePreparedScore(practice.scoreId, practice.revisionGeneration,
                                         currentPractice.scoreId, currentPractice.revisionGeneration)) {
                                     fieldModel.reportError("会话准备期间谱面或修订已变化，未启动收音，请重新打开目标谱面并新建会话。")
+                                    false
+                                } else if (currentPractice.score != practice.score || currentConfig != effectiveConfig ||
+                                    companionModel.hasActiveSession() != hadPracticeSession) {
+                                    fieldModel.reportError("会话准备期间谱面内容或练习设置已变化，未启动收音，请重新新建会话。")
                                     false
                                 } else if (!allowFieldBoundInput()) false
                                 else if (!appDataAvailable() || currentRoute != "field" || !fieldPageVisible || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || !modelIsReady() || !hasMicrophonePermission()) false
@@ -337,9 +351,10 @@ class MainActivity : ComponentActivity() {
                             if (fieldModel.state.value.activeSession == null) fieldModel.start(label, mapOf(
                                 "scoreId" to practice.scoreId.orEmpty(), "scoreTitle" to practice.title,
                                 "revisionGeneration" to practice.revisionGeneration.toString(),
+                                "sourceSha256" to practice.score.source.sha256,
                                 "modelReadyAtRequest" to modelIsReady().toString(), "modelSha256" to recognition.modelSha256,
                                 "microphonePermissionAtRequest" to hasMicrophonePermission().toString(),
-                            ), begin)
+                            ), scoreSnapshot = snapshot, onStarted = begin)
                             else if (!begin()) fieldModel.reportError("现场收音未启动，请检查当前页面、模型、谱面和权限后重试")
                         }
                     }
@@ -414,6 +429,21 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(route) {
                     if (route in setOf("companion", "calibration", "field")) prepareModel()
                     if (route == "field") fieldModel.refresh()
+                }
+                LaunchedEffect(route, workbench.scoreId, workbench.revision?.generation, workbench.busy,
+                    companion.busy, field.activeSession?.id, fieldOperation.busy) {
+                    // Bottom-bar return uses this score's saved revision; live sessions retain their binding.
+                    val editor = workbenchModel.state.value
+                    val practice = companionModel.state.value
+                    val revision = editor.revision
+                    if (route == "companion" && !editor.busy && !practice.busy &&
+                        !companionModel.hasActiveSession() && fieldModel.state.value.activeSession == null &&
+                        !fieldModel.operation.value.busy && editor.error == null && revision != null &&
+                        editor.scoreId != null && editor.scoreId == practice.scoreId &&
+                        revision.generation != practice.revisionGeneration) {
+                        companionModel.open(editor.scoreId, editor.title, revision.current, revision.generation,
+                            "Magenta O&F " + recognition.modelSha256)
+                    }
                 }
                 LaunchedEffect(returnAfterPractice, companion.busy, companion.phase, companion.error) {
                     if (returnAfterPractice && !companion.busy) {
@@ -517,6 +547,7 @@ class MainActivity : ComponentActivity() {
                                     onApplyOmrStructure = workbenchModel::applyOmrStructure,
                                     onDismissStructurePreview = workbenchModel::dismissStructurePreview,
                                     onSetWholeScoreTime = workbenchModel::setWholeScoreTime,
+                                    onFillMissingScoreTime = workbenchModel::fillMissingScoreTime,
                                     onConfirmLinearRepeat = workbenchModel::confirmLinearRepeat,
                                     onSelect = workbenchModel::select, onEdit = workbenchModel::edit,
                                     onTranspose = workbenchModel::transpose, onUndo = workbenchModel::undo,
@@ -547,7 +578,11 @@ class MainActivity : ComponentActivity() {
                                     onDispute = { if (field.activeSession != null) recordFieldFeedback(FieldFeedbackLabel.USER_SAYS_SYSTEM_WRONG) else saveRecognitionCase(CaseTrigger.USER_DISPUTE) },
                                     onConfirmWrong = { recordFieldFeedback(FieldFeedbackLabel.USER_CONFIRMS_WRONG_NOTE) },
                                     feedbackMessage = if (field.activeSession != null) fieldOperation.error ?: field.error ?: field.message else calibration.error ?: calibration.message,
-                                    onStart = { config -> requestReadyAudio { companionModel.start(config); if (companionModel.state.value.phase == CompanionPhase.RUNNING) beginFormalInput() } },
+                                    onStart = { config ->
+                                        val problem = FieldScoreBinding.openingProblem(fieldModel.state.value.activeSession, fieldModel.operation.value.busy)
+                                        if (problem != null) fieldModel.reportError(problem)
+                                        else requestReadyAudio { companionModel.start(config); if (companionModel.state.value.phase == CompanionPhase.RUNNING) beginFormalInput() }
+                                    },
                                     onPause = { companionModel.pause(); model.stopAudio("用户暂停陪练") },
                                     onResume = { requestReadyAudio { companionModel.resume(); if (companionModel.state.value.phase in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED)) beginFormalInput() } },
                                     onSeekMeasure = companionModel::seekMeasure,

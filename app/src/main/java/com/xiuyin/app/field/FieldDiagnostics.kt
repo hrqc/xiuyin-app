@@ -146,12 +146,12 @@ class FieldDiagnostics private constructor(context: Context) {
         mutableState.update { it.copy(clipConsent = value) }
         recordLog("INFO", "Field", if (value) "ClipConsentGranted" else "ClipConsentRevoked")
     }
-    suspend fun startSession(label: String, metadata: Map<String, String> = emptyMap()): FieldSessionInfo = operation {
+    suspend fun startSession(label: String, metadata: Map<String, String> = emptyMap(), scoreSnapshot: FieldScoreSnapshot? = null): FieldSessionInfo = operation {
         check(active.get() == null) { "已有实地测试会话" }
         val disk = requiredStore()
         writableAtLastCheck = disk.writable()
         check(writableAtLastCheck) { "诊断目录不可写" }
-        val info = try { disk.start(label, identity(), device(), metadata + mapOf("initialModelState" to engine.status.name)) } catch (error: Exception) {
+        val info = try { disk.start(label, identity(), device(), metadata + mapOf("initialModelState" to engine.status.name), scoreSnapshot) } catch (error: Exception) {
             active.set(disk.active()?.id)
             publish()
             throw error

@@ -89,6 +89,40 @@ class FieldZipIntegrityTest(unittest.TestCase):
         self.extra = {}
         self.omitted = set()
 
+    def add_snapshot(self):
+        # TEST DATA uses a database scoreId distinct from the immutable DigitalScore/source hash.
+        source_sha = "b" * 64
+        self.docs["manifest.json"]["metadata"] = dict(scoreId="TEST-DATA-library-score", revisionGeneration="7", sourceSha256=source_sha)
+        self.snapshot_score = dict(schemaVersion=1, id=source_sha, title="TEST DATA · 谱面快照",
+            source=dict(format="MusicXML", sha256=source_sha, byteCount=1234),
+            parts=[dict(id="P1", name="TEST DATA", measures=[dict(id="M1", number="1", time=dict(beats=4, beatType=4),
+                fifths=0, implicit=False, keyMode="major", declaredStaves=1,
+                clefs=[dict(staff=1, sign="G", line=2, octaveChange=0)],
+                events=[dict(id="N1", offset=dict(numerator=0, denominator=1), duration=dict(numerator=4, denominator=1),
+                    pitch=dict(step="C", alter=0, octave=4), staff=1, voice="1", chord=False, type="whole", dots=0,
+                    ties=[], sourceIndex=0, sourceLine=1, confidence=None, sourceBox=None)])])], issues=[])
+        self.snapshot_context = dict(schemaVersion=1, snapshotStatus="AVAILABLE", scoreId="TEST-DATA-library-score",
+            digitalScoreId=source_sha, sourceSha256=source_sha, sourceFormat="MusicXML", sourceByteCount=1234,
+            revisionGeneration=7, scoreFile="score.json", originalScoreSha256=None, originalScoreStatus="UNAVAILABLE",
+            practiceConfig=dict(mode="FREE", hand="BOTH", startMeasure=0, endMeasure=None, resolvedEndMeasure=0,
+                repeatTarget=3, reviewAcknowledged=False, measureIndexDefinition="Zero-based inclusive TEST DATA",
+                tempoBpm=None, tempoStatus="UNAVAILABLE: PracticeConfig has no tempo/BPM setting"),
+            practicePhaseAtCapture="READY", cursorAtCapture=0, capturedAtMillis=1000, measureCount=1, targetCount=1,
+            validationIssues=[], structureValidationPassed=True, accuracyValidated=False, groundTruth=None)
+        self.docs["manifest.json"]["scoreSnapshot"] = dict(schemaVersion=1, status="AVAILABLE",
+            scoreId="TEST-DATA-library-score", revisionGeneration=7, sourceSha256=source_sha,
+            scoreFile="score.json", practiceContextFile="practice-context.json", originalScoreSha256=None, accuracyValidated=False)
+        self.sync_snapshot()
+
+    def sync_snapshot(self):
+        # Pretty UTF-8 deliberately differs from a canonical/re-serialized digest.
+        score = (json.dumps(self.snapshot_score, ensure_ascii=False, indent=2) + "\n").encode("utf8")
+        self.snapshot_context.update(scoreSha256=hashlib.sha256(score).hexdigest(), scoreBytes=len(score))
+        context = (json.dumps(self.snapshot_context, ensure_ascii=False, indent=3) + "\n").encode("utf8")
+        self.extra.update({"score.json": score, "practice-context.json": context})
+        self.docs["manifest.json"]["scoreSnapshot"].update(scoreBytes=len(score), scoreSha256=hashlib.sha256(score).hexdigest(),
+            practiceContextBytes=len(context), practiceContextSha256=hashlib.sha256(context).hexdigest())
+
     def save(self):
         with zipfile.ZipFile(self.path, "w") as archive:
             for name, value in self.docs.items():
@@ -314,6 +348,129 @@ class FieldZipIntegrityTest(unittest.TestCase):
         self.rows["app.log"].append(record(feedbackLabel="USER_CONFIRMS_WRONG_NOTE"))
         self.docs["manifest.json"]["gitCommit"] = "b" * 40
         with self.assertRaisesRegex(ValueError,"tested APK"): self.validate()
+
+    def test_snapshot_valid_noncanonical_bytes_and_distinct_library_identity(self):
+        self.add_snapshot()
+        result = self.validate()
+        self.assertEqual(result["scoreSnapshot"], "AVAILABLE")
+        evidence = result["scoreSnapshotEvidence"]
+        self.assertTrue(evidence["reproducible"])
+        self.assertNotEqual(evidence["scoreId"], evidence["digitalScoreId"])
+        self.assertEqual(evidence["scoreSha256"], hashlib.sha256(self.extra["score.json"]).hexdigest())
+        self.assertEqual(evidence["practiceConfig"]["hand"], "BOTH")
+        self.assertIn("not an independent musical", evidence["scope"])
+
+    def test_snapshot_legacy_unavailable_and_preparing_are_not_reproducible(self):
+        result = self.validate()
+        self.assertEqual(result["scoreSnapshot"], "UNAVAILABLE")
+        self.assertFalse(result["scoreSnapshotEvidence"]["reproducible"])
+        for status in ("UNAVAILABLE", "PREPARING"):
+            with self.subTest(status=status):
+                self.docs["manifest.json"]["scoreSnapshot"] = dict(schemaVersion=1, status=status, reason="TEST DATA incomplete", accuracyValidated=False)
+                result = self.validate()
+                self.assertEqual(result["scoreSnapshot"], status)
+                self.assertFalse(result["scoreSnapshotEvidence"]["reproducible"])
+        self.add_snapshot()
+        self.docs["manifest.json"]["scoreSnapshot"]["status"] = "PREPARING"
+        self.assertFalse(self.validate()["scoreSnapshotEvidence"]["reproducible"])
+
+    def test_snapshot_partial_files_rejected_even_when_unavailable_or_undeclared(self):
+        for status in (None, "AVAILABLE", "UNAVAILABLE", "PREPARING"):
+            for missing in validator.SNAPSHOT_FILES:
+                with self.subTest(status=status, missing=missing):
+                    self.add_snapshot()
+                    if status is None: del self.docs["manifest.json"]["scoreSnapshot"]
+                    else: self.docs["manifest.json"]["scoreSnapshot"]["status"] = status
+                    del self.extra[missing]
+                    with self.assertRaisesRegex(ValueError, "Partial score snapshot"): self.validate()
+
+    def test_snapshot_available_without_files_or_files_without_descriptor_rejected(self):
+        self.add_snapshot(); self.extra.clear()
+        with self.assertRaisesRegex(ValueError, "AVAILABLE score snapshot files missing"): self.validate()
+        self.add_snapshot(); del self.docs["manifest.json"]["scoreSnapshot"]
+        with self.assertRaisesRegex(ValueError, "Undeclared score snapshot"): self.validate()
+
+    def test_snapshot_hashes_use_exact_raw_bytes_not_reserialization(self):
+        for name, length in (("score.json", "scoreBytes"), ("practice-context.json", "practiceContextBytes")):
+            with self.subTest(name=name):
+                self.add_snapshot()
+                # Same JSON meaning and a truthful new length still must not pass the old byte digest.
+                self.extra[name] += b" "
+                self.docs["manifest.json"]["scoreSnapshot"][length] += 1
+                with self.assertRaisesRegex(ValueError, "SHA256 differs"): self.validate()
+        self.add_snapshot()
+        self.docs["manifest.json"]["scoreSnapshot"]["scoreSha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "SHA256 differs"): self.validate()
+
+    def test_snapshot_lengths_and_each_four_mib_limit_are_checked(self):
+        for length in ("scoreBytes", "practiceContextBytes"):
+            for bad in (True, 0, 999):
+                with self.subTest(length=length, bad=bad):
+                    self.add_snapshot(); self.docs["manifest.json"]["scoreSnapshot"][length] = bad
+                    with self.assertRaisesRegex(ValueError, "byte count differs"): self.validate()
+        for name in validator.SNAPSHOT_FILES:
+            with self.subTest(oversized=name):
+                self.add_snapshot(); self.extra[name] = b" " * (validator.MAX_SNAPSHOT_BYTES + 1)
+                with self.assertRaisesRegex(ValueError, "4 MiB"): self.validate()
+
+    def test_snapshot_revision_and_library_score_binding_cannot_be_reassigned(self):
+        for section, key, bad in (("metadata", "scoreId", "TEST-DATA-other"), ("metadata", "revisionGeneration", "8"),
+                                  ("metadata", "revisionGeneration", 7), ("metadata", "revisionGeneration", True),
+                                  ("scoreSnapshot", "scoreId", "b" * 64), ("scoreSnapshot", "revisionGeneration", True)):
+            with self.subTest(section=section, key=key, bad=bad):
+                self.add_snapshot(); self.docs["manifest.json"][section][key] = bad
+                with self.assertRaisesRegex(ValueError, "binding differs"): self.validate()
+        for key, bad in (("revisionGeneration", 8), ("scoreId", "TEST-DATA-other")):
+            with self.subTest(context=key):
+                self.add_snapshot(); self.snapshot_context[key] = bad; self.sync_snapshot()
+                with self.assertRaisesRegex(ValueError, "binding differs"): self.validate()
+
+    def test_snapshot_source_and_original_score_hashes_must_agree(self):
+        for section, key in (("context", "sourceSha256"), ("context", "digitalScoreId"),
+                             ("descriptor", "sourceSha256"), ("metadata", "sourceSha256"), ("score", "id")):
+            with self.subTest(section=section,key=key):
+                self.add_snapshot()
+                target = {"context":self.snapshot_context, "descriptor":self.docs["manifest.json"]["scoreSnapshot"],
+                          "metadata":self.docs["manifest.json"]["metadata"], "score":self.snapshot_score}[section]
+                target[key] = "c" * 64; self.sync_snapshot()
+                with self.assertRaisesRegex(ValueError, "source SHA binding|source SHA differs"): self.validate()
+        self.add_snapshot(); self.snapshot_context["originalScoreSha256"] = "c" * 64; self.sync_snapshot()
+        with self.assertRaisesRegex(ValueError, "original score hash differs"): self.validate()
+
+    def test_snapshot_unknown_or_out_of_range_config_is_rejected(self):
+        mutations = [("mode", "MAGIC"), ("hand", "AUTO"), ("startMeasure", True), ("startMeasure", -1),
+                     ("endMeasure", 1), ("endMeasure", False), ("resolvedEndMeasure", 1),
+                     ("repeatTarget", 0), ("repeatTarget", 21), ("repeatTarget", True),
+                     ("reviewAcknowledged", "true"), ("tempoBpm", 80), ("unknownControl", True)]
+        for key,bad in mutations:
+            with self.subTest(key=key,bad=bad):
+                self.add_snapshot(); self.snapshot_context["practiceConfig"][key] = bad; self.sync_snapshot()
+                with self.assertRaises(ValueError): self.validate()
+
+    def test_snapshot_context_measure_cursor_and_availability_are_truthful(self):
+        for key,bad in (("measureCount", 2), ("measureCount", True), ("targetCount", 0), ("cursorAtCapture", 2),
+                        ("cursorAtCapture", True), ("practicePhaseAtCapture", "INVENTED"), ("snapshotStatus", "PREPARING"),
+                        ("structureValidationPassed", False), ("accuracyValidated", True), ("groundTruth", "correct"),
+                        ("validationIssues", [{"severity":"ERROR"}]), ("sourceByteCount", True)):
+            with self.subTest(key=key,bad=bad):
+                self.add_snapshot(); self.snapshot_context[key] = bad; self.sync_snapshot()
+                with self.assertRaises(ValueError): self.validate()
+        self.add_snapshot(); self.snapshot_score["parts"].append(dict(id="P2", measures=[])); self.sync_snapshot()
+        with self.assertRaisesRegex(ValueError, "parts/measures"): self.validate()
+
+    def test_snapshot_duplicate_json_keys_rejected_even_with_matching_hash(self):
+        self.add_snapshot()
+        self.extra["score.json"] = self.extra["score.json"].replace(b'{', b'{"schemaVersion": 1,', 1)
+        self.docs["manifest.json"]["scoreSnapshot"].update(scoreBytes=len(self.extra["score.json"]),
+            scoreSha256=hashlib.sha256(self.extra["score.json"]).hexdigest())
+        with self.assertRaisesRegex(ValueError, "Duplicate JSON key"): self.validate()
+
+    def test_snapshot_descriptor_schema_status_and_filenames_fail_closed(self):
+        for key,bad in (("schemaVersion", True), ("schemaVersion", 2), ("status", "READY"),
+                        ("scoreFile", "../score.json"), ("practiceContextFile", "other.json"), ("accuracyValidated", True)):
+            with self.subTest(key=key,bad=bad):
+                self.add_snapshot(); self.docs["manifest.json"]["scoreSnapshot"][key] = bad
+                with self.assertRaises(ValueError): self.validate()
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

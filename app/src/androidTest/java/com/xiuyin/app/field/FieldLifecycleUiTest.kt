@@ -16,6 +16,12 @@ import com.xiuyin.app.MainActivity
 import com.xiuyin.app.audio.AudioStatus
 import com.xiuyin.app.pitch.RecognitionEngineStatus
 import com.xiuyin.app.practice.PracticeViewModel
+import com.xiuyin.app.practice.CompanionMode
+import com.xiuyin.app.practice.CompanionPhase
+import com.xiuyin.app.practice.PracticeConfig
+import com.xiuyin.app.practice.PracticeHand
+import com.xiuyin.app.practice.PracticeReportStore
+import com.xiuyin.app.practice.ScoreFollower
 import com.xiuyin.app.score.*
 import java.io.File
 import java.util.UUID
@@ -146,19 +152,63 @@ class FieldLifecycleUiTest {
             json.writeText(snapshot.toString(2))
         } catch (retentionError: Throwable) { failure.addSuppressed(retentionError) }
     }
-    private fun openPracticeThroughWorkbench() {
+    private data class RestartFixture(val document: ParsedScoreDocument, val bytes: ByteArray, var scoreId: String? = null)
+    private var restartFixture: RestartFixture? = null
+    private fun clearOwnedRestartFixture() {
+        val owned = restartFixture ?: return
+        val sourceId = owned.document.score.id
+        val sourceRoot = File(context.filesDir, "digital-scores")
+        val source = File(sourceRoot, "$sourceId.musicxml")
+        require(source.canonicalFile.parentFile == sourceRoot.canonicalFile)
+        if (source.exists()) assertArrayEquals("只可清理本用例的完整原谱", owned.bytes, source.readBytes())
+        ScoreMetadataDatabase(context).use { database ->
+            val row = database.findBySourceId(sourceId, includeDeleted = true)
+            if (row != null) {
+                assertEquals(owned.document.originalTitle, row.originalTitle)
+                assertEquals(sourceId, row.sourceId)
+                owned.scoreId?.let { assertEquals(it, row.scoreId) }
+                PracticeReportStore(File(context.filesDir, "practice-reports")).deleteForScore(row.scoreId)
+                database.markDeleted(row.scoreId, deletePracticeRecords = true)
+                ScoreSourceStore(sourceRoot).delete(sourceId)
+                ScoreRevisionStore(File(context.filesDir, "score-revisions")).delete(row.scoreId)
+                database.confirmSourceDeleted(row.scoreId)
+                assertFalse(File(context.filesDir, "score-revisions/${row.scoreId}.json").exists())
+            } else ScoreSourceStore(sourceRoot).delete(sourceId)
+        }
+        assertFalse(source.exists())
+        restartFixture = null
+    }
+    private fun openPracticeThroughWorkbench(repeatMeasures: Int = 1) {
         val imports = ViewModelProvider(compose.activity)[ScoreImportViewModel::class.java]
         val workbench = ViewModelProvider(compose.activity)[ScoreWorkbenchViewModel::class.java]
         // A parsed score.id is its source SHA256. Practice uses the durable library UUID.
         // Keep a distinct original fixture so an existing user's revisions are never overwritten.
-        val bytes = InstrumentationRegistry.getInstrumentation().context.assets.open("scores/import-reference.musicxml").use { it.readBytes() }
-            .toString(Charsets.UTF_8).replace("晨间和弦 · 原创导入测试", "实地链路 TEST DATA " + UUID.randomUUID()).toByteArray(Charsets.UTF_8)
+        require(repeatMeasures == 1 || repeatMeasures == 3)
+        var xml = InstrumentationRegistry.getInstrumentation().context.assets.open("scores/import-reference.musicxml").use { it.readBytes() }
+            .toString(Charsets.UTF_8).replace("晨间和弦 · 原创导入测试", "实地链路 TEST DATA " + UUID.randomUUID())
+        if (repeatMeasures > 1) {
+            // Duplicate the complete original measure: both staves, rests, durations and attributes stay intact.
+            val original = Regex("""<measure\b[^>]*>[\s\S]*?</measure>""").findAll(xml).toList().single()
+            require(original.value.contains("number=\"1\""))
+            xml = xml.replaceRange(original.range, (1..repeatMeasures).joinToString("\n") { number ->
+                original.value.replaceFirst("number=\"1\"", "number=\"$number\"")
+            })
+        }
+        val bytes = xml.toByteArray(Charsets.UTF_8)
         val document = MusicXmlParser().parseDocument(bytes)
         val timeline = ScoreTimelineCompiler.compile(document.score)
         assertTrue("XML fixture 存在结构错误：${timeline.issues}", timeline.issues.none { it.severity == ScoreIssueSeverity.ERROR })
+        if (repeatMeasures > 1) {
+            check(restartFixture == null)
+            assertFalse(File(context.filesDir, "digital-scores/${document.score.id}.musicxml").exists())
+            ScoreMetadataDatabase(context).use { assertNull(it.findBySourceId(document.score.id, includeDeleted = true)) }
+            // Register ownership before the first write so failure cleanup also handles partial setup.
+            restartFixture = RestartFixture(document, bytes.copyOf())
+        }
         val stored = ScoreSourceStore(File(context.filesDir, "digital-scores")).save(bytes)
         assertEquals(document.score.id, stored.id)
         val metadata = ScoreMetadataDatabase(context).use { it.ensureImported(document.score.id, ScoreImportMetadata.from(document)) }
+        if (repeatMeasures > 1) requireNotNull(restartFixture).scoreId = metadata.scoreId
         compose.runOnUiThread { imports.reload(); imports.openScore(metadata.scoreId) }
         compose.waitUntil(10_000) { !imports.state.value.importing && (imports.state.value.selectedMetadata?.scoreId == metadata.scoreId || imports.state.value.error != null) }
         assertNull("正式曲库打开失败：${imports.state.value.error}", imports.state.value.error)
@@ -177,6 +227,127 @@ class FieldLifecycleUiTest {
         assertNotNull("正式曲库谱面必须生成时间线", practice.state.value.timeline)
         assertEquals(metadata.scoreId, practice.state.value.scoreId)
     }
+    @Test fun endedBothHandPracticeRestartsAsLeftWithFreshFieldSnapshot() {
+        emulatorOnly()
+        InstrumentationRegistry.getInstrumentation().uiAutomation.grantRuntimePermission(context.packageName, Manifest.permission.RECORD_AUDIO)
+        val diagnostics = FieldDiagnostics.get(context)
+        compose.waitUntil(10_000) { !app.state.value.loading && !field.operation.value.busy }
+        assertNull("不能覆盖其他活动会话", diagnostics.state.value.activeSession)
+        var sessionId: String? = null
+        var testFailure: Throwable? = null
+        try {
+            openPracticeThroughWorkbench(repeatMeasures = 3)
+            val original = practice.state.value
+            val scoreId = requireNotNull(restartFixture?.scoreId)
+            val timeline = requireNotNull(original.timeline)
+            val both = PracticeConfig(mode = CompanionMode.FREE, reviewAcknowledged = true, hand = PracticeHand.BOTH)
+            assertEquals(3, timeline.measures.size)
+            assertEquals(6, ScoreFollower(timeline, both).targets.size)
+            assertEquals(3, ScoreFollower(timeline, both.copy(hand = PracticeHand.LEFT)).targets.size)
+            // TEST DATA exercises the real business state only; no fabricated recognition frames are supplied.
+            compose.runOnUiThread {
+                practice.start(both)
+                assertNull(practice.state.value.error)
+                assertTrue(practice.hasActiveSession())
+                practice.seekMeasure(2)
+                assertEquals(CompanionPhase.RUNNING, practice.state.value.phase)
+                assertEquals(4, practice.state.value.cursor)
+                assertEquals(0, practice.state.value.confirmedInputs)
+                assertEquals(AudioStatus.IDLE, app.audio.value.status)
+                practice.finish()
+                assertFalse(practice.hasActiveSession())
+                assertEquals(CompanionPhase.READY, practice.state.value.phase)
+                assertEquals("必须保留旧游标以复现新会话故障", 4, practice.state.value.cursor)
+                assertNull(practice.state.value.latestReport)
+            }
+            assertTrue("零真实击键不得生成报告", PracticeReportStore(File(context.filesDir, "practice-reports")).load(scoreId).isEmpty())
+            openField(); ready()
+            assertEquals(4, practice.state.value.cursor)
+            compose.runOnUiThread { assertFalse(practice.hasActiveSession()) }
+            scroll("field_mode_FREE"); compose.onNodeWithTag("field_mode_FREE").assertIsEnabled().performClick().assertIsSelected()
+            scroll("field_hand_LEFT"); compose.onNodeWithTag("field_hand_LEFT").assertIsEnabled().performClick().assertIsSelected()
+            val hasWarnings = timeline.issues.isNotEmpty()
+            if (hasWarnings) {
+                scroll("field_review_ack"); compose.onNodeWithTag("field_review_ack").assertIsOff().performClick().assertIsOn()
+            }
+            scroll("field_start"); compose.onNodeWithTag("field_start").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { field.state.value.activeSession != null || field.operation.value.error != null || field.state.value.error != null }
+            sessionId = field.state.value.activeSession?.id
+            assertNull("新建 LEFT 会话不应引用旧 BOTH 游标：${diagnosticSnapshot("restart-left-start", sessionId)}", field.operation.value.error)
+            assertNull(field.state.value.error)
+            val activeId = requireNotNull(sessionId)
+            compose.waitUntil(10_000) {
+                (app.audio.value.status == AudioStatus.LISTENING && app.audio.value.totalFrames > 0) ||
+                    app.audio.value.status == AudioStatus.ERROR || app.recognition.value.status == RecognitionEngineStatus.ERROR ||
+                    field.state.value.error != null || field.operation.value.error != null
+            }
+            assertStillListening("new-left-session-actual-input", activeId)
+            assertTrue("必须收到实际模拟器 PCM", app.audio.value.totalFrames > 0)
+            assertEquals(PracticeHand.LEFT, practice.state.value.config.hand)
+            val actualInput = diagnosticSnapshot("new-left-session-before-stop", activeId)
+            scroll("field_stop_audio"); compose.onNodeWithTag("field_stop_audio").assertIsEnabled().performClick()
+            compose.waitUntil(5_000) { app.audio.value.status == AudioStatus.IDLE }
+            scroll("field_end"); compose.onNodeWithTag("field_end").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { field.state.value.activeSession == null && !field.operation.value.busy }
+            assertNull(field.operation.value.error)
+            scroll("field_export_$activeId"); compose.onNodeWithTag("field_export_$activeId").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) { !field.operation.value.busy && (field.operation.value.exportedFile != null || field.operation.value.error != null) }
+            assertNull(field.operation.value.error)
+            val zip = requireNotNull(field.operation.value.exportedFile)
+            ZipFile(zip).use { archive ->
+                listOf("manifest.json", "device.json", "app.log", "audio-events.jsonl", "octave-diagnostics.jsonl", "score-following.jsonl", "performance.json", "session-summary.json", "score.json", "practice-context.json")
+                    .forEach { assertNotNull(it, archive.getEntry(it)) }
+                val manifestText = archive.getInputStream(archive.getEntry("manifest.json")).bufferedReader().use { it.readText() }
+                FieldScoreSnapshot.verifyArchive(archive, FieldJson.objectValue(manifestText))
+                val descriptor = JSONObject(manifestText).getJSONObject("scoreSnapshot")
+                assertEquals("AVAILABLE", descriptor.getString("status"))
+                assertEquals(scoreId, descriptor.getString("scoreId"))
+                assertEquals(original.revisionGeneration, descriptor.getLong("revisionGeneration"))
+                val snapshot = ScoreJsonCodec.decode(archive.getInputStream(archive.getEntry("score.json")).use { it.readBytes() })
+                assertEquals(original.score, snapshot)
+                val config = JSONObject(archive.getInputStream(archive.getEntry("practice-context.json")).bufferedReader().use { it.readText() })
+                assertEquals(scoreId, config.getString("scoreId"))
+                assertEquals(original.revisionGeneration, config.getLong("revisionGeneration"))
+                assertEquals(0, config.getInt("cursorAtCapture"))
+                assertEquals("READY", config.getString("practicePhaseAtCapture"))
+                assertEquals("LEFT", config.getJSONObject("practiceConfig").getString("hand"))
+                assertEquals("FREE", config.getJSONObject("practiceConfig").getString("mode"))
+                assertEquals(hasWarnings, config.getJSONObject("practiceConfig").getBoolean("reviewAcknowledged"))
+                assertEquals(3, config.getInt("targetCount"))
+                assertEquals(3, config.getInt("measureCount"))
+                assertFalse(config.getBoolean("accuracyValidated"))
+            }
+            val evidence = File(context.getExternalFilesDir(null) ?: context.filesDir, "field-ui-evidence")
+            check(evidence.isDirectory || evidence.mkdirs())
+            val retained = File(evidence, "field-restart-$activeId-${System.currentTimeMillis()}.zip")
+            zip.copyTo(retained, overwrite = false)
+            assertArrayEquals(zip.readBytes(), retained.readBytes())
+            File(evidence, retained.nameWithoutExtension + ".json").writeText(actualInput
+                .put("retainedZip", retained.absolutePath).put("zipBytes", retained.length())
+                .put("setup", "TEST DATA business-state start/seek/finish; no injected recognition")
+                .put("physicalPianoAccuracyValidated", false).toString(2))
+        } catch (failure: Throwable) {
+            testFailure = failure
+            preserveFailure(failure, sessionId, diagnostics)
+            throw failure
+        } finally {
+            val cleanupErrors = mutableListOf<Throwable>()
+            try {
+                compose.runOnUiThread { app.stopAudio("重新开始现场会话回归结束"); practice.pause(); practice.finish() }
+                compose.waitUntil(10_000) { !field.operation.value.busy && !practice.state.value.busy }
+                runBlocking { withTimeout(15_000) {
+                    val id = sessionId
+                    if (id != null && diagnostics.state.value.activeSession?.id == id) diagnostics.endSession("RESTART_TEST_FINALLY")
+                    if (id != null && diagnostics.state.value.sessions.any { it.id == id }) diagnostics.clearSessions(setOf(id))
+                } }
+            } catch (cleanupError: Throwable) { cleanupErrors += cleanupError }
+            try { clearOwnedRestartFixture() } catch (cleanupError: Throwable) { cleanupErrors += cleanupError }
+            val originalFailure = testFailure
+            if (originalFailure != null) cleanupErrors.forEach(originalFailure::addSuppressed)
+            else org.junit.runners.model.MultipleFailureException.assertEmpty(cleanupErrors)
+        }
+    }
+
     @Test fun fieldEntryShowsBuildIdentityAndKeepsAwakeOnlyWhileForeground() {
         emulatorOnly()
         openField(); ready()
@@ -264,6 +435,17 @@ class FieldLifecycleUiTest {
             val zip = requireNotNull(field.operation.value.exportedFile)
             ZipFile(zip).use { archive ->
                 listOf("manifest.json", "device.json", "app.log", "audio-events.jsonl", "octave-diagnostics.jsonl", "score-following.jsonl", "performance.json", "session-summary.json").forEach { assertNotNull(it, archive.getEntry(it)) }
+                FieldScoreSnapshot.verifyArchive(archive, FieldJson.objectValue(archive.getInputStream(archive.getEntry("manifest.json")).reader().readText()))
+                val manifest = JSONObject(archive.getInputStream(archive.getEntry("manifest.json")).reader().readText())
+                assertEquals("AVAILABLE", manifest.getJSONObject("scoreSnapshot").getString("status"))
+                val snapshot = ScoreJsonCodec.decode(archive.getInputStream(archive.getEntry("score.json")).use { it.readBytes() })
+                val config = JSONObject(archive.getInputStream(archive.getEntry("practice-context.json")).reader().readText())
+                assertEquals(practice.state.value.score, snapshot)
+                assertEquals(practice.state.value.scoreId, config.getString("scoreId"))
+                assertEquals(practice.state.value.revisionGeneration, config.getLong("revisionGeneration"))
+                assertEquals(practice.state.value.config.mode.name, config.getJSONObject("practiceConfig").getString("mode"))
+                assertEquals(practice.state.value.config.hand.name, config.getJSONObject("practiceConfig").getString("hand"))
+                assertFalse(config.getBoolean("accuracyValidated"))
                 val logs = archive.getInputStream(archive.getEntry("app.log")).reader().readText()
                 assertTrue(logs.contains("USER_SAYS_SYSTEM_WRONG")); assertTrue(logs.contains("USER_CONFIRMS_WRONG_NOTE"))
                 assertEquals(0, archive.entries().asSequence().count { it.name.endsWith(".wav") })

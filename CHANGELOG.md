@@ -1,5 +1,20 @@
 # 更新记录
 
+## 0.3.0-octave.2-fieldtest.3 · 拍号准备、修订刷新与现场谱面快照 · 2026-09-23
+
+- 新增拍号/反复/其他结构问题集中引导；用户明确选择真实拍号，无预选猜测。只补缺失/无效值，合法变拍号、原图和音符不变；修订可撤销，原逐小节/全谱工具保留。
+- 修复修谱后底部返回练习沿用旧修订；同谱无活动会话时刷新，暂停会话继续保持原修订。Field 创建期间保护谱面和配置；结束双手练习后新建左手会话从新起点开始，不沿用旧游标。
+- 新增实际 Digital Score 与练习配置的本地 Field 快照，记录 scoreId、修订、来源及文件字节 SHA；写入读回后放行收音。旧 ZIP 无快照明确 UNAVAILABLE，半份/损坏/错绑定不通过，无自动上传。
+- 预提交全检440项439通过/1原DotIAM2音乐失败/0跳过，含243 JVM、195主Android全通过；严格Lint与双构建通过。工具17+37=54项通过，阶段实际816帧AVAILABLE快照ZIP通过。报告 reports/20260923T134115559Z/report.json 为dirty阶段，不代替最终固定SHA。
+- 新增换手重开测试先保留夹具失败，再真实复现旧游标阻断；修复后生命周期/快照10项通过，真实PCM→结束→ZIP及独立校验通过。证据 reports/fieldtest3-development/restart-before2.log、restart-fixed.log、restart-fixed-export-validation.json；此新增用例不计入前述195项，最终全检另核验。
+- 新记录真实手机D5/D6失败：用户确认争议时弹D5，4848raw/4848following，D5等待94.112秒、14次74/86歧义；FREE为UNCERTAIN，无LOCK。不把拍号准备提示当演奏错误。旧D4/D5、DotIAM2及OMR135时值/13八度/1额外音失败保留，生产音频算法未改。
+- 更新手机通俗指南，说明补拍号、换手、实时反馈和系统保存ZIP读回。原AGENTS/PRODUCT、旧数据和历史记录保留。
+- Git Commit/Tag/Push、最终同一APK/SHA、固定SHA工程检查和回退的权威记录：outputs/field-tests/v0.3.0-octave.2-fieldtest.3/fieldtest-manifest.json；未实核不得称已同步/交付。仅Field工程候选，不合main、不称音乐全通过。上一Field .2/b099b27，稳定v0.2.0，优先git revert。
+
+以下为历史记录。
+
+# 更新记录
+
 实测补充：D4参照谱会话也已结束并系统保存ZIP，240模型帧与240跟谱帧结构校验通过；暂停后才点的两种反馈明确为STALE_OR_UNAVAILABLE，严格实时反馈绑定检查失败，未声称这两条反馈具备有效当前帧。车尔尼保持收音时的两条反馈已通过绑定检查。详见本地reports/fieldtest2-development/manual-ui/manual-ui-report.json；这些都是模拟器工程操作，无钢琴演奏确认。
 
 ## 0.3.0-octave.2-fieldtest.2 · 导入/分手/现场准备候选（交付以清单核验）· 2026-09-23

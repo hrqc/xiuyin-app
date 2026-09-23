@@ -1,8 +1,28 @@
 # 项目状态
 
+## 当前版本：0.3.0-octave.2-fieldtest.3（versionCode 8，工程 Field 候选）
+
+更新时间：2026-09-23。针对真实手机反馈增量修复谱面准备和现场日志；音乐验收仍 FAILED，不是完整准确版，不合 main。AGENTS.md、PRODUCT.md、旧数据与已有功能保留，生产音频模型、阈值和八度算法未改。
+
+- 本次手机证据：.2 / vivo PA2473 / Android16 的真实 ZIP 中，截图的 11 个准备 ERROR 是 9 小节缺有效拍号、2 处反复顺序待确认；后续 revision7 已进入 FREE 并采集麦克风，不应描述为始终无法开始。旧 ZIP 缺完整谱面和手别配置，不可补造当时设置。
+- D5 新失败：用户确认争议时弹 D5。4848 raw 对应 4848 following，cursor6 的 D5 目标停留 94.112 秒，14 次 D5 起音带 74/86 歧义；FREE 没有 LOCK，实际为长期 UNCERTAIN 不前进。标注仅限争议演奏，不将整段其他声音当 D5。D5/D6 音乐 FAILED；0 overflow/drop 仅证明工程记录正常。本地证据 reports/fieldtest3-development/zip-audit/。
+- 已实现并测试：集中显示拍号、反复和其他结构问题；由用户明确选择，只补缺失/无效拍号，保留合法变拍号、原事件和确认状态；逐小节及全谱修改保留，保存为可撤销修订。反复可显式选择顺序一次；其他 ERROR 继续阻断。
+- 已实现并测试：修谱后底部返回“练习”，同谱且无活动会话时重新准备新修订；暂停中的练习/Field 保留旧绑定，警告确认随修订重置。Field 创建前后核对谱和实际配置；已结束双手练习再开左手时，新快照从 READY/cursor0 开始，活动会话保留实际位置。
+- 已实现并测试：新 Field 本地保存真实 score.json 与 practice-context.json（实际拍号、音符、修订、手别、范围等），manifest 记录字节数与双 SHA，写入/读回通过后才放行启动。原图不随包附送，无自动上传。旧会话快照明确 UNAVAILABLE，部分/损坏文件不能假称完整；哈希一致不等于乐谱或演奏正确。
+- 预提交完整检查 reports/20260923T134115559Z/report.json：243 JVM、195 主 Android 通过，2 个 DotIAM 中 1 通过/1 原音乐失败；合计440项439通过1失败0跳过。严格Lint及Debug/Release构建通过；dirty=true、基础HEAD b099b27，不代表本轮最终身份。工具17+37共54项通过，阶段实际816帧Field快照ZIP验证通过。
+- 补充换手边界：先前测试夹具错误失败保留；修正夹具后 restart-before2.log 真实复现“实地谱面游标超出当前练习目标”。仅修正无活动会话的新起点后，restart-fixed-build.log 单元/Lint/成对构建通过；restart-fixed.log 10项生命周期/快照测试通过，含实际PCM开始、结束和ZIP；restart-fixed-export-validation.json 独立校验通过。新增用例不混入先前195项统计，最终全检另核验。
+- 最终身份：Commit/Tag/Push、最终APK及SHA、固定SHA完整工程门禁、同APK实际UI和回退统一以 outputs/field-tests/v0.3.0-octave.2-fieldtest.3/fieldtest-manifest.json 为准，避免循环回填SHA。清单缺失或关键工程项未通过即未交付；不得用dirty预检或.2证据替代，不预填远程同步成功。
+- 已知失败仍保留：D5/D6长时间歧义；旧D4视频3次D4附近多接受3次D5；DotIAM2真23/接受30/额外7；本照片OMR135个时值/连音错误、13个8va遗漏、1个额外G4。补拍号不修复音乐错误，不删除真实休止；人工校对谱仍待教师复核。
+- 回退：上一Field v0.3.0-octave.2-fieldtest.2 / b099b27c38b0bf34f5fb4f0f5a624c7e70a4a9f1；最近稳定v0.2.0 / dbe1a852d2609126f1688039110ec0187808af63。旧标签/APK保留，代码优先git revert；实际APK回退及旧数据保留以固定门禁核验，物理手机降级未验证，不卸载清库。
+- 下一步与未验证：完成固定SHA工程门禁和同APK交付后，手机覆盖安装按 docs/FIELD_TEST_GUIDE.md 复测。D5/D6等音乐失败需独立音频专项继续修复；本版物理手机琴房准确率、误停率、延迟、可靠踏板和教师逐音复核仍未验证。长会话导出等待明显、进度不够细；远程CI和服务端分支保护未启用。
+
+以下完整保留 .2 及以前历史状态；历史测试与同步状态只对应当时阶段。
+
+# 项目状态
+
 实测补充：D4参照谱会话也已结束并系统保存ZIP，240模型帧与240跟谱帧结构校验通过；暂停后才点的两种反馈明确为STALE_OR_UNAVAILABLE，严格实时反馈绑定检查失败，未声称这两条反馈具备有效当前帧。车尔尼保持收音时的两条反馈已通过绑定检查。详见本地reports/fieldtest2-development/manual-ui/manual-ui-report.json；这些都是模拟器工程操作，无钢琴演奏确认。
 
-## 当前版本：0.3.0-octave.2-fieldtest.2（versionCode 7，工程Field候选）
+## 历史版本：0.3.0-octave.2-fieldtest.2（versionCode 7，工程Field候选）
 
 更新时间：2026-09-23。**当前阶段：预提交全检与Field主要实际UI已取得阶段证据，最终固定SHA交付状态以权威清单核验；整体音乐验收FAILED，不发布完整验收稳定版。**
 
