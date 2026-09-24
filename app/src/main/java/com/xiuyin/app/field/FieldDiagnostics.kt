@@ -364,6 +364,33 @@ class FieldDiagnostics private constructor(context: Context) {
                 "decisionEventId" to trace.decisionEventId, "evidenceAudioTimeSeconds" to trace.evidenceAudioTimeSeconds))
         }
     }
+    /** A lifecycle disposition, never a note judgment or a reuse of the follower's last decision. */
+    fun recordNotEvaluated(frame: PianoRecognitionFrame, reason: String, actualPracticeState: String,
+                           actualPosition: String?, locked: Boolean) {
+        if (active.get() == null || frame.fieldSessionId == null) return
+        if (!sourceMatches(frame.fieldSessionId, frame.audioStreamId, frame.engineSessionId)) {
+            recordLog("WARNING", "Field", "StaleDispositionRejected", "未判分帧不属于当前流；未重新归属")
+            return
+        }
+        val at = System.currentTimeMillis()
+        enqueue(allowAfterFault = true) {
+            requiredStore().append("score-following.jsonl", mapOf(
+                "timestamp" to at, "audioStreamId" to frame.audioStreamId, "engineSessionId" to frame.engineSessionId,
+                "frameIndex" to frame.frameIndex, "audioTimeSeconds" to frame.audioTimeSeconds,
+                "processingDisposition" to "NOT_EVALUATED", "decision" to "NOT_EVALUATED",
+                "practiceState" to actualPracticeState, "lockState" to locked, "reason" to reason,
+                "previousScorePosition" to actualPosition, "currentScorePosition" to actualPosition,
+                "expectedMeasure" to null, "expectedBeat" to null,
+                "expectedNotes" to emptyList<Int>(), "detectedNotes" to emptyList<Int>(),
+                "observedCandidates" to frame.onsetMidi.sorted(),
+                "recoveryEvent" to null, "followingLatencyMs" to null,
+                "confirmedDecision" to false, "decisionEventId" to null, "evidenceAudioTimeSeconds" to null,
+                "countsAsMusicalEvaluation" to false))
+        }
+        if (reason != "PRACTICE_COMPLETED" || actualPracticeState != "COMPLETED") {
+            fail("跟谱帧未判分：$reason；frame=${frame.frameIndex}；请结束并导出故障记录")
+        }
+    }
     fun appendPcm(samples: ShortArray, count: Int, firstInputSample: Long) {
         if (active.get() == null || !accepting.get()) return
         synchronized(clipLock) {

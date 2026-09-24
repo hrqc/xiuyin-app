@@ -427,6 +427,17 @@ class FieldLifecycleUiTest {
             assertStillListening("after-stop-control-scroll", sessionId)
             compose.onNodeWithTag("field_stop_audio").assertIsEnabled().performClick()
             compose.waitUntil(5_000) { app.audio.value.status == AudioStatus.IDLE }
+            val stoppedForCalibration = app.audio.value.totalFrames
+            compose.onNodeWithTag("nav_monitor").performClick()
+            compose.onNode(hasScrollAction()).performScrollToNode(hasText("环境校准与误判案例"))
+            compose.onNodeWithText("环境校准与误判案例").performClick()
+            compose.onNodeWithTag("calibration_start").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithText("当前实地测试会话尚未结束。请先到实地测试页面结束并导出，再单独校准；两种记录不能混用。").assertExists()
+            assertEquals(sessionId, field.state.value.activeSession?.id)
+            assertEquals(AudioStatus.IDLE, app.audio.value.status)
+            assertEquals(stoppedForCalibration, app.audio.value.totalFrames)
+            assertNull(field.state.value.error)
+            compose.onNodeWithTag("field_active_banner").performClick()
             scroll("field_end"); compose.onNodeWithTag("field_end").assertIsEnabled().performClick()
             compose.waitUntil(10_000) { field.state.value.activeSession == null && !field.operation.value.busy }
             scroll("field_export_$sessionId"); compose.onNodeWithTag("field_export_$sessionId").performClick()

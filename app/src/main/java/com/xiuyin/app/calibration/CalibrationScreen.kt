@@ -50,7 +50,7 @@ fun CalibrationScreen(
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("钢琴环境校准", style = MaterialTheme.typography.headlineSmall)
         ModelReadyStatus(recognition, onRetryModel)
-        if (fieldInputBlocked) Text("实地测试记录故障，已禁止继续收音。请在设置的实地测试页面结束并导出已有记录。", color = MaterialTheme.colorScheme.error)
+        if (fieldInputBlocked) Text("当前实地测试会话尚未结束。请先到实地测试页面结束并导出，再单独校准；两种记录不能混用。", color = MaterialTheme.colorScheme.error)
         Text("先保持安静数秒，再弹 C2、C3、C4、C5、C6，若干三和弦、双手和弦，以及一次延音踏板演奏。未自动验证你是否完成全部示范。")
         Text("平时仅保留最近 5 秒 PCM 在内存，旧样本自动覆盖，退出收音时清空。", style = MaterialTheme.typography.bodySmall)
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

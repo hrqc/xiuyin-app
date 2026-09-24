@@ -1,6 +1,8 @@
 package com.xiuyin.app
 
 import android.app.Application
+import android.os.Looper
+import androidx.annotation.MainThread
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.xiuyin.app.audio.MicrophoneEngine
@@ -55,6 +57,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private var observePcm = false
     @Volatile private var pcmObserver: ((ShortArray, Int, Long) -> Unit)? = null
     @Volatile private var audioStopped: (() -> Unit)? = null
+    private var inputDrainListener: (() -> Unit)? = null
+    private var stoppingAudio = false
     @Volatile private var inputFailureListener: ((String) -> Unit)? = null
     @Volatile private var companionCaptureRequested = false
     private var preparedConfig = PitchEvidenceConfig()
@@ -78,15 +82,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             refresh()
         }
         if (snapshot.status == RecognitionEngineStatus.ERROR) {
-            companionCaptureRequested = false
-            synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
-            fieldDiagnostics.endAudioStream()
-            audioEngine.stop("识音失败，收音已停止")
-            viewModelScope.launch { inputFailureListener?.invoke(snapshot.message) }
+            closeInputAcceptance()
+            // Never wait for Main while the recognition engine owns its worker lock.
+            viewModelScope.launch(Dispatchers.Main) {
+                stopAudio("识音失败，收音已停止")
+                inputFailureListener?.invoke(snapshot.message)
+            }
         }
     })
     fun setRecognitionListener(listener: ((PianoRecognitionFrame) -> Unit)?) { recognitionListener = listener }
     fun setPcmObserver(listener: ((ShortArray, Int, Long) -> Unit)?, onStopped: (() -> Unit)?) { pcmObserver = listener; audioStopped = onStopped }
+    @MainThread
+    fun setInputDrainListener(listener: (() -> Unit)?) { inputDrainListener = listener }
     fun setInputFailureListener(listener: ((String) -> Unit)?) { inputFailureListener = listener }
 
     /** Preparing the model never requests microphone permission or starts capture. */
@@ -121,13 +128,31 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             mutableState.update { it.copy(error = "当前测试会话记录故障；请先结束并导出已有记录，再新建会话") }
             return
         }
-        companionCaptureRequested = false; pianoEngine.stop(); synchronized(pcmGuard) { observePcm = true }; audioEngine.start() }
+        stopAudio("切换音频输入前结束已有模型输入")
+        synchronized(pcmGuard) { observePcm = true }
+        audioEngine.start()
+    }
+    private fun closeInputAcceptance() {
+        synchronized(pcmGuard) { companionCaptureRequested = false; observePcm = false }
+    }
+    /** Seal worker input, settle admitted frames on Main, then retire their source identity. */
+    @MainThread
     fun stopAudio(reason: String = "用户已停止监听") {
-        companionCaptureRequested = false
-        synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
-        fieldDiagnostics.endAudioStream()
-        audioEngine.stop(reason)
-        pianoEngine.stop()
+        check(Looper.myLooper() == Looper.getMainLooper()) { "停止输入必须在主线程结算已接收模型帧" }
+        if (stoppingAudio) return
+        stoppingAudio = true
+        try {
+            closeInputAcceptance()
+            // No engine/PCM lock is held while the Main-owned follower is drained.
+            inputDrainListener?.invoke()
+        } finally {
+            try {
+                audioStopped?.invoke()
+                fieldDiagnostics.endAudioStream()
+                audioEngine.stop(reason)
+                pianoEngine.stop()
+            } finally { stoppingAudio = false }
+        }
     }
     fun audioPermissionDenied() = audioEngine.permissionDenied()
 
@@ -154,12 +179,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 fieldDiagnostics.recordAudio(snapshot)
                 if (companionCaptureRequested && snapshot.status in setOf(AudioStatus.PERMISSION_DENIED,
                         AudioStatus.UNAVAILABLE, AudioStatus.ERROR, AudioStatus.SILENCED, AudioStatus.STOPPING, AudioStatus.IDLE)) {
-                    companionCaptureRequested = false
-                    synchronized(pcmGuard) { observePcm = false; audioStopped?.invoke() }
+                    stopAudio("音频不可用，当前判分已暂停")
                     inputFailureListener?.invoke(snapshot.statusMessage)
-                    fieldDiagnostics.endAudioStream()
-                    audioEngine.stop("音频不可用，当前判分已暂停")
-                    pianoEngine.stop()
                 }
             }
         }
@@ -234,12 +255,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         fieldDiagnostics.setFailureListener(null)
-        companionCaptureRequested = false
-        synchronized(pcmGuard) {
-            observePcm = false; pcmObserver = null
-            audioStopped?.invoke(); audioStopped = null
-        }
-        fieldDiagnostics.endAudioStream()
+        stopAudio("应用控制器关闭，输入已停止")
+        pcmObserver = null; audioStopped = null; inputDrainListener = null
         inputFailureListener = null
         recognitionListener = null
         audioEngine.setPcmListener(null)

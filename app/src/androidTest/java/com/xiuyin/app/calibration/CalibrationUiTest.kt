@@ -61,7 +61,7 @@ class CalibrationUiTest {
             compose.waitUntil(10_000) { !ViewModelProvider(compose.activity)[CalibrationViewModel::class.java].state.value.busy }
             assertEquals(current, ViewModelProvider(compose.activity)[CalibrationViewModel::class.java].state.value.profile)
         } finally {
-            app.stopAudio("实际校准界面测试结束")
+            compose.runOnUiThread { app.stopAudio("实际校准界面测试结束") }
             // Restore only the profile modified by this test, byte-for-byte; never clear the app/library.
             require(file.canonicalFile.parentFile == File(context.filesDir, "piano-calibration").canonicalFile)
             if (previous == null) { if (file.exists()) check(file.delete()) }

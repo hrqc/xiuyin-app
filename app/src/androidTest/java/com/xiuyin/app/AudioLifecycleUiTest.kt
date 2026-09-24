@@ -91,7 +91,7 @@ class AudioLifecycleUiTest {
             assertEquals(FinalDecision.UNCERTAIN, stoppedOnHome.decision)
             assertTrue(stoppedOnHome.notes.isEmpty())
         } finally {
-            model.stopAudio("音频生命周期测试结束")
+            compose.runOnUiThread { model.stopAudio("音频生命周期测试结束") }
             // Do not revoke target-package permission; revocation can kill instrumentation.
         }
     }

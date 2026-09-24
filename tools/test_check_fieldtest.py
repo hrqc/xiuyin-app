@@ -548,6 +548,15 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
             artifacts[name]=dict(path=str(path.relative_to(self.root)),bytes=path.stat().st_size,sha256=gate.sha(path))
         self.identity={gate.PACKAGE:artifacts['app']['sha256'],gate.PACKAGE+'.test':artifacts['tests']['sha256']}
         gate.write(self.folder/'before-field-installed-identity.json',self.identity);gate.write(self.folder/'after-rollback-installed-identity.json',self.identity)
+        # Full TEST DATA evidence is validated by the real new ZIP/boundary gates; no validator is mocked here.
+        boundary_spec=importlib.util.spec_from_file_location('prepared_boundary_test_fixtures',Path(__file__).with_name('test_field_boundary_evidence.py'))
+        boundary_module=importlib.util.module_from_spec(boundary_spec);boundary_spec.loader.exec_module(boundary_module)
+        self.boundary_fixture=boundary_module.build_fixture(gate,self.root,self.folder,self.identity,self.commit)
+        for name,value in self.boundary_fixture['overrides'].items():
+            fixture_patch=patch.object(gate,name,value);fixture_patch.start();self.addCleanup(fixture_patch.stop)
+        first_boundary,terminal_boundary=boundary_module.write_verdicts(gate,self.boundary_fixture)
+        gate.write(self.folder/'field-frame-boundary-validation.json',first_boundary)
+        gate.write(self.folder/'field-completion-boundary-validation.json',terminal_boundary)
         self.report=dict(phase='PREPARE',status='PREPARED_AWAITING_WEBSITE',preparationPassed=True,engineeringAcceptance='PASSED',
             apkDeliveryAllowed=False,stableRelease=False,eligibleForMain=False,version=gate.VERSION,sha=self.commit,dirty=False,
             sourceUnchangedDuringRun=True,websiteRegressionEvidenceAcceptance='UNVERIFIED',
@@ -556,7 +565,9 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
             tests={'TEST DATA summary':True},originalCorpusMusicAcceptance='FAILED',historicalMusicFailurePreserved=True,
             knownMusicFailureStillObserved=True,phoneVideoMusicAcceptance='UNVERIFIED',historicalPhoneVideoMusicAcceptance='FAILED')
         self.report['tests']['failed']=1
-        for key in ('defaultFullTraceAcceptance','phoneVideoDiagnosticAcceptance','fieldScoreSnapshotAcceptance',
+        self.report['fieldFrameBoundaryEvidence']=str(self.boundary_fixture['boundary'].relative_to(self.root))
+        self.report['fieldCompletionBoundaryEvidence']=str(self.boundary_fixture['completion'].relative_to(self.root))
+        for key in ('defaultFullTraceAcceptance','fieldFrameBoundaryAcceptance','fieldCompletionBoundaryAcceptance','phoneVideoDiagnosticAcceptance','fieldScoreSnapshotAcceptance',
             'fieldReplayAcceptance','processRecoveryAcceptance','rollbackAcceptance'):self.report[key]='PASSED'
         self.reseal()
     def reseal(self):

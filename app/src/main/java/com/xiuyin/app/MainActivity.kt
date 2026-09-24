@@ -161,6 +161,7 @@ class MainActivity : ComponentActivity() {
         val requiresReady = pendingRequiresReady
         permissionPending = false; pendingAudioAction = null; pendingAudioRoute = null
         if (!granted) {
+            appModel.stopAudio("麦克风未授权，停止待处理输入")
             appModel.audioPermissionDenied()
             companionModel.inputUnavailable("麦克风权限未授权，请允许后重试")
             calibrationModel.inputUnavailable("麦克风权限未授权，请允许后重试")
@@ -180,6 +181,12 @@ class MainActivity : ComponentActivity() {
 
     private fun allowFieldBoundInput(): Boolean {
         val practice = companionModel.state.value
+        if (fieldModel.state.value.activeSession != null && currentRoute !in setOf("field", "companion")) {
+            val message = "请先结束并导出当前实地测试，再单独进行环境校准或其他收音。"
+            calibrationModel.inputUnavailable(message)
+            fieldModel.reportMessage(message)
+            return false
+        }
         val problem = FieldScoreBinding.problem(fieldModel.state.value.activeSession, practice.scoreId, practice.revisionGeneration)
             ?: return true
         appModel.stopAudio("实地测试谱面绑定不符，收音已停止")
@@ -217,6 +224,7 @@ class MainActivity : ComponentActivity() {
             return false
         }
         if (!modelIsReady() || !hasMicrophonePermission() || !audioPageVisible) return false
+        if (appModel.audio.value.status in setOf(AudioStatus.STARTING, AudioStatus.LISTENING, AudioStatus.STOPPING)) return false
         companionModel.invalidateInputFrames()
         val started = appModel.startCompanionAudio(calibrationModel.state.value.profile?.parameters ?: PitchEvidenceConfig())
         if (!started) {
@@ -238,9 +246,9 @@ class MainActivity : ComponentActivity() {
         pendingAudioAction = null; pendingAudioRoute = null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         workbenchModel.stopPlayback("应用进入后台，试听已停止")
+        appModel.stopAudio("应用已进入后台，麦克风已停止")
         companionModel.pause()
         calibrationModel.cancelCalibration(); calibrationModel.clearMemory()
-        appModel.stopAudio("应用已进入后台，麦克风已停止")
         super.onStop()
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -256,6 +264,13 @@ class MainActivity : ComponentActivity() {
             if (fieldPageVisible) fieldModel.reportError("输入已暂停：$message；检查后需要手动重新开始")
         }
         appModel.setRecognitionListener { frame -> companionModel.accept(frame); calibrationModel.acceptRecognition(frame) }
+        appModel.setInputDrainListener(companionModel::drainPendingInputFrames)
+        companionModel.setInputCompletedListener { appModel.stopAudio("陪练已完成，停止后续输入") }
+        companionModel.setInputQueueFailureListener { message ->
+            appModel.stopAudio("跟谱输入异常，已停止收音")
+            calibrationModel.inputUnavailable(message)
+            if (fieldModel.state.value.activeSession != null) fieldModel.reportError(message)
+        }
         appModel.setPcmObserver(calibrationModel::appendPcm) { calibrationModel.clearMemory(); companionModel.invalidateInputFrames() }
         setContent {
             XiuyinTheme {
@@ -282,8 +297,8 @@ class MainActivity : ComponentActivity() {
                 val currentPiece = SampleLibrary.find(selectedId ?: state.preparation?.pieceId ?: state.recentPieceId.orEmpty())
                 val navigate: (String) -> Unit = { destination ->
                     if ((route == "companion" || route == "field") && destination != route) {
-                        companionModel.pause()
                         model.stopAudio("已离开陪练页面")
+                        companionModel.pause()
                     }
                     if (destination != route && destination in setOf("companion", "calibration", "field") &&
                         route !in setOf("companion", "calibration", "field")) model.stopAudio("进入模型准备页面，先停止已有收音")
@@ -424,7 +439,7 @@ class MainActivity : ComponentActivity() {
                     companionPageVisible = route == "companion"
                     calibrationPageVisible = route == "calibration"
                     audioPageVisible = !state.loading && state.error == null && route in setOf("monitor", "practice", "companion", "calibration", "field")
-                    if (!audioPageVisible) { companionModel.pause(); calibrationModel.cancelCalibration(); model.stopAudio("音频页面不可用，麦克风已停止") }
+                    if (!audioPageVisible) { model.stopAudio("音频页面不可用，麦克风已停止"); companionModel.pause(); calibrationModel.cancelCalibration() }
                 }
                 LaunchedEffect(route) {
                     if (route in setOf("companion", "calibration", "field")) prepareModel()
@@ -460,9 +475,9 @@ class MainActivity : ComponentActivity() {
                 }
                 LaunchedEffect(audio.status, recognition.status, route) {
                     if (route in setOf("companion", "field") && companion.phase in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED)) {
-                        if (recognition.status == RecognitionEngineStatus.ERROR) companionModel.inputUnavailable(recognition.message)
+                        if (recognition.status == RecognitionEngineStatus.ERROR) { model.stopAudio("识别输入故障，暂停陪练"); companionModel.inputUnavailable(recognition.message) }
                         else if (audio.status in setOf(AudioStatus.PERMISSION_DENIED, AudioStatus.UNAVAILABLE, AudioStatus.ERROR, AudioStatus.SILENCED)) {
-                            companionModel.inputUnavailable(audio.statusMessage); model.stopAudio("音频不可用，暂停陪练")
+                            model.stopAudio("音频不可用，暂停陪练"); companionModel.inputUnavailable(audio.statusMessage)
                         }
                     }
                 }
@@ -501,8 +516,8 @@ class MainActivity : ComponentActivity() {
                                     microphonePermission = hasMicrophonePermission(), builtInMicrophoneAvailable = builtInMicrophoneAvailable(),
                                     appDataAvailable = !state.loading && state.error == null, appDataError = state.error,
                                     onStart = { label, reviewed -> startField(label, PracticeConfig(reviewAcknowledged = reviewed)) },
-                                    onConfiguredStart = startField, onStopAudio = { companionModel.pause(); model.stopAudio("用户暂停现场收音") },
-                                    onEndSession = { companionModel.pause(); model.stopAudio("用户结束实地测试"); fieldModel.finish() },
+                                    onConfiguredStart = startField, onStopAudio = { model.stopAudio("用户暂停现场收音"); companionModel.pause() },
+                                    onEndSession = { model.stopAudio("用户结束实地测试"); companionModel.pause(); fieldModel.finish() },
                                     onRetryModel = ::prepareModel, onConsent = fieldModel::setClipConsent,
                                     onFeedback = recordFieldFeedback, onExport = fieldModel::export,
                                     onSave = ::saveFieldZip, onShare = ::shareFieldZip, onClear = fieldModel::clearConfirmed,
@@ -514,7 +529,7 @@ class MainActivity : ComponentActivity() {
                                     onFinishCalibration = { calibrationModel.finishCalibration(); if (!calibrationModel.state.value.calibrating) model.stopAudio("校准已结束") },
                                     onConsentChange = calibrationModel::setCaseConsent, onApplyParameters = calibrationModel::applyParameters,
                                     onResetDefaults = calibrationModel::resetDefaults, onClearCases = calibrationModel::clearCases,
-                                    onBack = { navigate(if (companion.scoreId != null) "companion" else "monitor") }, recognition = recognition, onRetryModel = ::prepareModel, fieldInputBlocked = field.activeSession != null && (field.error != null || fieldBindingProblem != null))
+                                    onBack = { navigate(if (companion.scoreId != null) "companion" else "monitor") }, recognition = recognition, onRetryModel = ::prepareModel, fieldInputBlocked = field.activeSession != null)
                                 "library" -> LibraryScreen(SampleLibrary.pieces, openPiece, onDigitalScores = { navigate("digital") })
                                 "score" -> currentPiece?.let {
                                     ScoreScreen(it, onBack = { navigate("library") }, onPrepare = { navigate("practice") }, onWorkbench = { scoreModel.openBuiltIn(it.id); navigate("digital") })
@@ -584,8 +599,8 @@ class MainActivity : ComponentActivity() {
                                         else requestReadyAudio { companionModel.start(config); if (companionModel.state.value.phase == CompanionPhase.RUNNING) beginFormalInput() }
                                     },
                                     onPause = {
-                                        companionModel.pause()
                                         model.stopAudio("用户暂停陪练")
+                                        companionModel.pause()
                                         // Preparation alone never queues capture. READY still needs a new Continue tap.
                                         if (companionPageVisible && appDataAvailable() && companionModel.hasActiveSession() &&
                                             lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) prepareModel()

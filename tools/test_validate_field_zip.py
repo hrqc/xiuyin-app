@@ -144,6 +144,92 @@ class FieldZipIntegrityTest(unittest.TestCase):
         return validator.validate(self.path, expected_sha=SHA, require_music=True,
                                   require_labels=True, expected_frames=expected)
 
+    def completed_tail(self):
+        # TEST DATA proves lifecycle provenance rules only, never musical correctness.
+        self.add_snapshot()
+        self.rows["score-following.jsonl"][0].update(practiceState="COMPLETED", currentScorePosition="1", decision="CORRECT")
+        self.rows["score-following.jsonl"].append(following(self.frames[0], practiceState="COMPLETED",
+            currentScorePosition="1", decision="CORRECT", confirmedDecision=True,
+            decisionEventId="TEST DATA actual completion event", evidenceAudioTimeSeconds=self.frames[0]["audioTimeSeconds"]))
+        self.frames[1]["finalCandidates"] = [48, 60]
+        self.rows["score-following.jsonl"][1].update(
+            processingDisposition="NOT_EVALUATED", decision="NOT_EVALUATED", reason="PRACTICE_COMPLETED",
+            practiceState="COMPLETED", lockState=False, expectedMeasure=None, expectedBeat=None,
+            expectedNotes=[], detectedNotes=[], observedCandidates=[48, 60],
+            previousScorePosition="1", currentScorePosition="1", countsAsMusicalEvaluation=False,
+            followingLatencyMs=None, decisionEventId=None, evidenceAudioTimeSeconds=None)
+        return self.rows["score-following.jsonl"][1]
+
+    def test_completed_tail_is_linked_but_never_counted_as_evaluated(self):
+        self.completed_tail()
+        result = self.validate()
+        self.assertEqual(result["followingFrames"], 2)
+        self.assertEqual(result["evaluatedFollowingFrames"], 1)
+        self.assertEqual(result["notEvaluatedFrames"], 1)
+        self.assertFalse(result["notEvaluatedFramesCountAsAccuracy"])
+
+    def test_unprocessed_pause_or_fault_is_not_accepted_as_completed_tail(self):
+        tail = self.completed_tail()
+        tail.update(reason="INPUT_GENERATION_INVALIDATED", practiceState="PAUSED")
+        with self.assertRaisesRegex(ValueError, "Faulted or unexplained"):
+            self.validate()
+
+    def test_completed_tail_requires_actual_prior_completion(self):
+        self.completed_tail()
+        self.rows["score-following.jsonl"][0]["practiceState"] = "RUNNING"
+        with self.assertRaisesRegex(ValueError, "earlier actual completion"):
+            self.validate()
+
+    def test_completed_tail_cannot_claim_completion_before_score_end(self):
+        tail = self.completed_tail()
+        tail.update(previousScorePosition="0", currentScorePosition="0")
+        for row in self.rows["score-following.jsonl"]:
+            row["currentScorePosition"] = "0"
+        with self.assertRaisesRegex(ValueError, "actual end position"):
+            self.validate()
+
+    def test_completed_tail_requires_real_confirmation_at_completion_frame(self):
+        self.completed_tail()
+        self.rows["score-following.jsonl"] = self.rows["score-following.jsonl"][:2]
+        with self.assertRaisesRegex(ValueError, "earlier actual completion"):
+            self.validate()
+
+    def test_completed_tail_requires_available_bound_snapshot(self):
+        self.completed_tail()
+        self.docs["manifest.json"].pop("scoreSnapshot")
+        self.extra.pop("score.json")
+        self.extra.pop("practice-context.json")
+        with self.assertRaisesRegex(ValueError, "bound score snapshot"):
+            self.validate()
+
+    def test_completed_tail_cannot_copy_last_decision_or_advance(self):
+        tail = self.completed_tail()
+        tail["detectedNotes"] = [48]
+        with self.assertRaisesRegex(ValueError, "must not judge notes"):
+            self.validate()
+        tail["detectedNotes"] = []
+        tail["currentScorePosition"] = "2"
+        with self.assertRaisesRegex(ValueError, "must not judge notes"):
+            self.validate()
+
+    def test_completed_tail_candidates_must_match_raw(self):
+        tail = self.completed_tail()
+        tail["observedCandidates"] = [48]
+        with self.assertRaisesRegex(ValueError, "candidates differ"):
+            self.validate()
+
+    def test_completed_tail_cannot_claim_confirmation(self):
+        tail = self.completed_tail()
+        tail["confirmedDecision"] = True
+        with self.assertRaisesRegex(ValueError, "must not claim a judgment"):
+            self.validate()
+
+    def test_completed_tail_cannot_replace_raw_or_duplicate_processed_state(self):
+        tail = self.completed_tail()
+        self.rows["score-following.jsonl"].append(dict(tail))
+        with self.assertRaisesRegex(ValueError, "Duplicate following state"):
+            self.validate()
+
     def test_complete_small_package_links_raw_following_and_sparse_octave(self):
         result = self.validate()
         self.assertEqual(result["status"],"PASSED")

@@ -447,6 +447,288 @@ def validate_default_trace(folder, expected_app=None, expected_test=None, device
     return result
 
 
+FIELD_BOUNDARY_CLASS = PACKAGE + ".field.FieldFrameBoundaryTest"
+FIELD_BOUNDARY_METHOD = "realRawQueuedOnMainIsActuallyFollowedBeforePauseBackgroundAndFieldEnd"
+FIELD_BOUNDARY_REFERENCE_SHA = "cdfc2bccc23a8bfe0a23dbbfe8a6a4e76561a31cff383ff0a2930e359a1fd099"
+
+
+def is_prior_session_field_log(row, session_started_ms):
+    """A historical flag alone cannot exempt an event generated during the current session."""
+    timestamp = row.get("timestamp")
+    return row.get("beforeSessionStart") is True and type(timestamp) is int and 0 < timestamp <= session_started_ms
+
+
+def field_boundary_files(folder):
+    """Only a flat, uniquely created evidence directory may enter the prepared seal."""
+    folder = Path(folder).resolve()
+    require(folder.is_relative_to(ROOT.resolve()) and folder.is_dir(), "Boundary evidence is outside the project or missing")
+    paths = list(folder.iterdir())
+    require(paths and all(path.is_file() and not path.is_symlink() for path in paths), "Boundary evidence must contain original flat files only")
+    return sorted(paths)
+
+
+def validate_field_frame_boundary(folder, expected_commit, expected_app=None, expected_test=None, device_start=None):
+    folder = Path(folder).resolve()
+    field_boundary_files(folder)
+    context = read(folder / "boundary-context.json")
+    require(re.fullmatch(r"[a-f0-9]{40}", expected_commit or "") and context.get("gitCommit") == expected_commit,
+            "Boundary evidence Commit differs from the current tested source")
+    require(context.get("runId") == folder.name and re.fullmatch(r"device-\d{8}t\d{6}-[a-f0-9]{32}", folder.name),
+            "Boundary evidence lacks the unique current instrumentation run identity")
+    require(re.fullmatch(r"emulator-\d+", context.get("device", "")), "Boundary evidence device missing")
+    app = expected_app or sha(ROOT / "app/build/outputs/apk/debug/app-debug.apk")
+    tests = expected_test or sha(ROOT / "app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk")
+    require(context.get("appSha256") == app and context.get("testApkSha256") == tests,
+            "Boundary tested APK pair changed")
+    command_names = {phase + "-" + kind + "-" + suffix + ".log" for phase in ("before", "after")
+                     for kind in ("app", "tests") for suffix in ("path", "sha")}
+    command_names.update({"before-clock.log", "after-clock.log", "before-report-sha.log"})
+    for name in ("field-frame-boundary-result.json", "field-frame-boundary-export.zip"):
+        command_names.update({name + "-pull.log", name + "-device-sha.log"})
+    commands = context.get("commands", [])
+    require(type(commands) is list and len(commands) == len(command_names) and
+            {item.get("file") for item in commands} == command_names, "Boundary capture command evidence incomplete")
+    for item in commands:
+        require(type(item.get("exitCode")) is int and item["exitCode"] == 0 and sha(folder / item["file"]) == item.get("sha256"),
+                "Boundary capture failed or original command log changed: " + item["file"])
+    def log(name):
+        return (folder / name).read_text(encoding="utf-8-sig").strip()
+    for phase in ("before", "after"):
+        for kind, expected in (("app", app), ("tests", tests)):
+            location = log(phase + "-" + kind + "-path.log")
+            require(re.fullmatch(r"package:/data/app/[A-Za-z0-9_./+=~\-]+/base\.apk", location), "Unexpected actual installed boundary APK path")
+            require(log(phase + "-" + kind + "-sha.log").split() == [expected, location[8:]],
+                    "Actual installed APK before/after instrumentation differs from the tested artifact")
+    files = context.get("files", [])
+    required_files = {"instrumentation.log", "instrumentation-result.xml", "field-frame-boundary-result.json", "field-frame-boundary-export.zip"}
+    require(type(files) is list and len(files) == 4 and {item.get("file") for item in files} == required_files,
+            "Boundary original result/ZIP/instrumentation inventory incomplete")
+    for item in files:
+        require(sha(folder / item["file"]) == item.get("sha256"), "Boundary original evidence hash changed: " + item["file"])
+    report_path = folder / "field-frame-boundary-result.json"
+    zip_path = folder / "field-frame-boundary-export.zip"
+    for path in (report_path, zip_path):
+        require(log(path.name + "-device-sha.log").split() == [sha(path), EXTERNAL + path.name], "Boundary device and archived original bytes differ")
+    old = log("before-report-sha.log")
+    require(old == "ABSENT" or re.fullmatch(r"[a-f0-9]{64}\s+" + re.escape(EXTERNAL + report_path.name), old),
+            "Previous boundary report state was not sampled")
+    require(old == "ABSENT" or old.split()[0] != sha(report_path), "Fixed boundary report was reused from a previous run")
+    before, after = log("before-clock.log"), log("after-clock.log")
+    require(re.fullmatch(r"\d{10,}", before) and re.fullmatch(r"\d{10,}", after), "Boundary device clock sampling failed")
+    start_ms, end_ms = int(before) * 1000, (int(after) + 1) * 1000 - 1
+    report = read(report_path)
+    require(all(type(report.get(key)) is int for key in ("startedAtMillis", "endedAtMillis")) and
+            start_ms <= report["startedAtMillis"] <= report["endedAtMillis"] <= end_ms,
+            "Boundary report is stale or outside this actual instrumentation device-clock window")
+    if device_start is not None:
+        require(start_ms >= device_start and report["startedAtMillis"] >= device_start, "Boundary evidence predates this prepare run")
+    require(report.get("gitCommit") == expected_commit and report.get("chainPassed") is True and
+            not report.get("error") and not report.get("cleanupError"), "Boundary test identity/assertions/cleanup failed")
+    require(all(report.get(key) is False for key in ("accuracyValidated", "privateMicrophoneInjected", "activityBackgroundTransitionExercised")),
+            "Component boundary evidence must not claim microphone, Activity background, or musical acceptance")
+    require(report.get("rawFrames") == report.get("ordinaryFollowingFrames") == 240 and report.get("zipSha256") == sha(zip_path),
+            "Boundary report frame counts or ZIP identity differ")
+    # The selected real @Test must have begun and completed successfully in THIS archived main runner output.
+    require(type(context.get("instrumentationExitCode")) is int and context["instrumentationExitCode"] == 0, "Main instrumentation process failed")
+    cases = [case for case in ET.parse(folder / "instrumentation-result.xml").getroot().iter("testcase")
+             if case.get("classname") == FIELD_BOUNDARY_CLASS and case.get("name") == FIELD_BOUNDARY_METHOD]
+    require(len(cases) == 1 and not any(cases[0].find(tag) is not None for tag in ("failure", "error", "skipped")),
+            "Boundary @Test did not pass exactly once in this full instrumentation XML")
+    parts = re.split(r"(?m)^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$", log("instrumentation.log"))
+    statuses = []
+    for block, code in zip(parts[0::2], parts[1::2]):
+        classes = re.findall(r"(?m)^INSTRUMENTATION_STATUS: class=(.+)$", block)
+        methods = re.findall(r"(?m)^INSTRUMENTATION_STATUS: test=(.+)$", block)
+        if [v.strip() for v in classes] == [FIELD_BOUNDARY_CLASS] and [v.strip() for v in methods] == [FIELD_BOUNDARY_METHOD]:
+            statuses.append(int(code))
+    require(statuses == [1, 0], "Boundary real runner start/pass events missing or repeated")
+    source = ROOT / "reports/dotiam-piano-independent2-20260921/dotiam-session-0.wav"
+    reference = source.parent / "expected-timeline.json"
+    require(sha(source) == report.get("inputSha256") == WAV_SHA and
+            sha(reference) == report.get("referenceSha256") == FIELD_BOUNDARY_REFERENCE_SHA,
+            "Boundary fixed real PCM/reference identity changed")
+    with wave.open(str(source), "rb") as pcm:
+        require((pcm.getnchannels(), pcm.getsampwidth(), pcm.getframerate()) == (1, 2, 48000), "Boundary input PCM format changed")
+        subset = pcm.readframes(144000)
+    require(report.get("subsetFirstSample") == 0 and report.get("subsetSamplesPerStream") == 144000 and
+            len(subset) == 288000 and hashlib.sha256(subset).hexdigest() == report.get("subsetPcmSha256"), "Boundary actual PCM subset changed")
+    spec = importlib.util.spec_from_file_location("field_boundary_zip_validator", ROOT / "tools/validate-field-zip.py")
+    validator = importlib.util.module_from_spec(spec); spec.loader.exec_module(validator)
+    # --expected-frames intentionally remains a single-stream gate. This test has three real streams.
+    verified = validator.validate(zip_path, expected_commit, require_music=True)
+    require(verified == read(folder / "field-zip-validation.json"), "Strict ZIP verdict differs from its original CLI validation")
+    require(verified["status"] == "PASSED" and verified["modelFrames"] == verified["followingFrames"] ==
+            verified["evaluatedFollowingFrames"] == 240 and verified["notEvaluatedFrames"] == 0 and verified["sourceStreams"] == 3,
+            "Boundary ZIP lacks 240 actual evaluated associations across three streams")
+    with zipfile.ZipFile(zip_path) as archive:
+        manifest = validator.obj(archive.read("manifest.json").decode("utf-8-sig"))
+        rows = lambda name: [validator.obj(line) for line in archive.read(name).decode("utf-8-sig").splitlines() if line.strip()]
+        raw = [row for row in rows("audio-events.jsonl") if row.get("type") == "RecognitionFrame"]
+        following = [row for row in rows("score-following.jsonl") if not row.get("confirmedDecision", False)]
+        logs = rows("app.log")
+    require(manifest["sessionId"] == report.get("sessionId") and manifest["status"] == "COMPLETED" and manifest["appVersion"] == VERSION and
+            report["startedAtMillis"] <= manifest["startedAtMillis"] <= manifest["endedAtMillis"] <= report["endedAtMillis"],
+            "Boundary ZIP session/version/time does not belong to this completed test")
+    boundaries = report.get("boundaries")
+    require(type(boundaries) is list and len(boundaries) == 3 and [item.get("reason") for item in boundaries] ==
+            ["USER_PAUSE", "BACKGROUND_STOP", "FIELD_END"], "Three actual component stop boundaries missing or reordered")
+    streams = [(item.get("audioStreamId"), item.get("engineSessionId")) for item in boundaries]
+    require(len(set(streams)) == 3 and len({item[0] for item in streams}) == 3 and len({item[1] for item in streams}) == 3,
+            "Boundary streams/engine identities were reused")
+    pauses = [row for row in logs if row.get("message") == "Practice Stop" and row.get("detail") == "PAUSED" and not is_prior_session_field_log(row, manifest["startedAtMillis"])]
+    require(len(pauses) == 3, "ZIP lacks three actual Practice pause records")
+    for index, (boundary, stream) in enumerate(zip(boundaries, streams)):
+        actual = [row for row in raw if (row["audioStreamId"], row["engineSessionId"]) == stream]
+        evaluated = [row for row in following if (row["audioStreamId"], row["engineSessionId"]) == stream]
+        require(boundary.get("frames") == 80 and boundary.get("firstFrame") == 0 and boundary.get("lastFrame") == 79 and
+                [row["frameIndex"] for row in actual] == [row["frameIndex"] for row in evaluated] == list(range(80)),
+                "Boundary stream must contain exactly 80 original raw and actual following frames")
+        require(all(row["practiceState"] != "COMPLETED" and row.get("processingDisposition") != "NOT_EVALUATED" for row in evaluated) and
+                str(boundary.get("actualCursorAfterDrain")) == evaluated[-1]["currentScorePosition"], "Boundary did not drain actual live PracticeSession input")
+        require(evaluated[-1]["timestamp"] <= pauses[index]["timestamp"] and
+                (index == 0 or pauses[index - 1]["timestamp"] <= actual[0]["timestamp"]), "Actual follow/pause/next-stream order differs")
+    require(not any(row.get("message") in {"StaleFollowingRejected", "StaleFrameRejected"} and not is_prior_session_field_log(row, manifest["startedAtMillis"]) for row in logs),
+            "Boundary ZIP records a rejected original frame association")
+    return dict(status="PASSED", runId=context["runId"], device=context["device"], gitCommit=expected_commit,
+        appSha256=app, testApkSha256=tests, reportSha256=sha(report_path), zipSha256=sha(zip_path),
+        contextSha256=sha(folder / "boundary-context.json"), rawFrames=240, ordinaryFollowingFrames=240,
+        sourceStreams=3, boundaries=boundaries, sessionId=report["sessionId"],
+        startedAtMillis=report["startedAtMillis"], endedAtMillis=report["endedAtMillis"],
+        scope="Actual model/component FIFO drain and three stop boundaries; not Activity background or microphone/accuracy acceptance",
+        accuracyValidated=False, privateMicrophoneInjected=False, activityBackgroundTransitionExercised=False)
+
+
+FIELD_COMPLETION_CLASS = PACKAGE + ".field.FieldCompletionBoundaryTest"
+FIELD_COMPLETION_METHOD = "realE2CompletionStopsInputAndPreservesUnevaluatedTailWithoutRepeatingJudgment"
+FIELD_COMPLETION_FILES = {"result.json", "reference-source.json", "original-reference.json", "actual-practice-report.xpr", "field-completion-export.zip"}
+
+
+def validate_field_completion_boundary(folder, boundary_folder, expected_commit, expected_app=None, expected_test=None, device_start=None):
+    """The terminal fixture has one scored completion and an explicit unscored remainder."""
+    boundary_folder = Path(boundary_folder).resolve(); folder = Path(folder).resolve()
+    base = validate_field_frame_boundary(boundary_folder, expected_commit, expected_app, expected_test, device_start)
+    field_boundary_files(folder)
+    context = read(folder / "completion-context.json")
+    require(context.get("runId") == base["runId"] == folder.name and context.get("device") == base["device"] and
+            context.get("gitCommit") == expected_commit and context.get("boundaryContextSha256") == base["contextSha256"],
+            "Terminal evidence is not bound to the same current instrumentation/APK/clock capture")
+    raw_runner = (boundary_folder / "instrumentation.log").read_text(encoding="utf-8-sig")
+    paths = re.findall(r"(?m)^INSTRUMENTATION_RESULT: FIELD_COMPLETION_BOUNDARY_RESULT=([^\r\n]+)\s*$", raw_runner)
+    require(len(paths) == 1 and paths[0].strip() == context.get("reportedResultPath"), "Runner did not publish one actual terminal result path")
+    remote_path = paths[0].strip()
+    match = re.fullmatch(r"/(?:storage/emulated/0|sdcard)/Android/data/com\.xiuyin\.app/files/field-completion-boundary/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/result\.json", remote_path)
+    require(match is not None, "Terminal runner output path escapes the owned unique test directory")
+    cases = [case for case in ET.parse(boundary_folder / "instrumentation-result.xml").getroot().iter("testcase") if case.get("classname") == FIELD_COMPLETION_CLASS]
+    require(len(cases) == 1 and cases[0].get("name") == FIELD_COMPLETION_METHOD and not any(cases[0].find(tag) is not None for tag in ("failure", "error", "skipped")),
+            "Terminal @Test did not pass exactly once in the actual main instrumentation")
+    method = cases[0].get("name")
+    parts = re.split(r"(?m)^INSTRUMENTATION_STATUS_CODE:\s*(-?\d+)\s*$", raw_runner)
+    statuses = []
+    for block, code in zip(parts[0::2], parts[1::2]):
+        if [v.strip() for v in re.findall(r"(?m)^INSTRUMENTATION_STATUS: class=(.+)$", block)] == [FIELD_COMPLETION_CLASS] and \
+                [v.strip() for v in re.findall(r"(?m)^INSTRUMENTATION_STATUS: test=(.+)$", block)] == [method]: statuses.append(int(code))
+    require(statuses == [1, 0], "Terminal runner start/pass events missing or repeated")
+    commands = context.get("commands", []); files = context.get("files", [])
+    command_names = {name + suffix for name in FIELD_COMPLETION_FILES for suffix in ("-pull.log", "-device-sha.log")}
+    require(type(commands) is list and len(commands) == 10 and {r.get("file") for r in commands} == command_names and
+            type(files) is list and len(files) == 5 and {r.get("file") for r in files} == FIELD_COMPLETION_FILES,
+            "Terminal five actual files and transfer logs incomplete")
+    for record in commands + files:
+        require(sha(folder / record["file"]) == record.get("sha256"), "Terminal original file/log changed")
+        if record in commands: require(type(record.get("exitCode")) is int and record["exitCode"] == 0, "Terminal file transfer failed")
+    for name in FIELD_COMPLETION_FILES:
+        require((folder / (name + "-device-sha.log")).read_text(encoding="utf-8-sig").split() ==
+                [sha(folder / name), remote_path[:-len("result.json")] + name], "Terminal device and archive bytes differ")
+    report = read(folder / "result.json")
+    start_ms = int((boundary_folder / "before-clock.log").read_text(encoding="utf-8-sig").strip()) * 1000
+    end_ms = (int((boundary_folder / "after-clock.log").read_text(encoding="utf-8-sig").strip()) + 1) * 1000 - 1
+    require(report.get("schemaVersion") == 1 and report.get("runId") == match[1] and report.get("gitCommit") == expected_commit and
+            all(type(report.get(k)) is int for k in ("startedAtMillis", "endedAtMillis")) and
+            start_ms <= report["startedAtMillis"] <= report["endedAtMillis"] <= end_ms, "Stale terminal report or wrong run/Commit identity")
+    require(report.get("chainPassed") is True and not report.get("error") and not report.get("cleanupError") and
+            report.get("ownedMetadataAndPracticeReportsCleaned") is True, "Terminal test or owned cleanup failed")
+    require(all(report.get(k) is False for k in ("accuracyValidated", "privateMicrophoneInjected", "activityBackgroundTransitionExercised")),
+            "Terminal engineering fixture must not claim physical/music acceptance")
+    require(all(type(report.get(k)) is int for k in ("rawFrames", "evaluatedFrames", "notEvaluatedFrames", "completionFrame", "correct", "confirmedInputs", "newConfirmationsAfterCompletion")) and
+            report["rawFrames"] == 80 and report["evaluatedFrames"] == report["completionFrame"] + 1 and
+            report["evaluatedFrames"] + report["notEvaluatedFrames"] == 80 and report["notEvaluatedFrames"] > 0 and
+            report["correct"] == report["confirmedInputs"] == report.get("completionCallbacks") == report.get("nestedStopDrainCalls") == 1 and
+            report["newConfirmationsAfterCompletion"] == report.get("wrongBeforeCompletion") == 0,
+            "Terminal completion/tail/counter conservation failed")
+    definition = read(folder / "reference-source.json")
+    reference = read(folder / "original-reference.json")
+    require(sha(folder / "original-reference.json") == FIELD_BOUNDARY_REFERENCE_SHA and reference["sha256"] == WAV_SHA and
+            reference["groups"][1]["expectedMidi"] == definition.get("expectedMidi") == [40] and
+            definition.get("ownedTestNonce") == report["runId"] and definition.get("referenceSha256") == FIELD_BOUNDARY_REFERENCE_SHA,
+            "Terminal original fixed reference or owned source definition changed")
+    require(sha(folder / "reference-source.json") == report.get("sourceSha256") and definition.get("wavSha256") == report.get("inputSha256") == WAV_SHA and
+            definition.get("referenceGroupIndex") == report.get("referenceGroupIndex") == 1 and
+            definition.get("firstSourceSample") == report.get("firstSourceSample") == 91200 and
+            definition.get("exclusiveEndSourceSample") == report.get("exclusiveEndSourceSample") == 235200 and report.get("subsetSamples") == 144000,
+            "Terminal actual source/crop identity changed")
+    with wave.open(str(ROOT / "reports/dotiam-piano-independent2-20260921/dotiam-session-0.wav"), "rb") as pcm:
+        pcm.setpos(91200); subset = pcm.readframes(144000)
+    require(len(subset) == 288000 and hashlib.sha256(subset).hexdigest() == definition.get("subsetPcmSha256") == report.get("subsetPcmSha256"),
+            "Terminal fixed crop PCM bytes changed")
+    spec = importlib.util.spec_from_file_location("terminal_zip_validator", ROOT / "tools/validate-field-zip.py")
+    validator = importlib.util.module_from_spec(spec); spec.loader.exec_module(validator)
+    zip_path = folder / "field-completion-export.zip"
+    verified = validator.validate(zip_path, expected_commit, require_music=True, expected_frames=80)
+    require(verified == read(folder / "field-zip-validation.json") and verified["sha256"] == report.get("zipSha256") and
+            verified["sessionId"] == report.get("sessionId") and verified["evaluatedFollowingFrames"] == report["evaluatedFrames"] and
+            verified["notEvaluatedFrames"] == report["notEvaluatedFrames"] and verified["confirmedDecisionEvents"] == 1,
+            "Terminal strict ZIP verdict or actual completion counts differ")
+    with zipfile.ZipFile(zip_path) as archive:
+        manifest = validator.obj(archive.read("manifest.json").decode("utf-8-sig"))
+        practice = validator.obj(archive.read("practice-context.json").decode("utf-8-sig"))
+        score = validator.obj(archive.read("score.json").decode("utf-8-sig"))
+        following = [validator.obj(line) for line in archive.read("score-following.jsonl").decode("utf-8-sig").splitlines() if line.strip()]
+        logs = [validator.obj(line) for line in archive.read("app.log").decode("utf-8-sig").splitlines() if line.strip()]
+    require(not any(row.get("message") in {"StaleFollowingRejected", "StaleFrameRejected"} and
+                    not is_prior_session_field_log(row, manifest["startedAtMillis"]) for row in logs),
+            "Terminal ZIP records a rejected original frame association")
+    require(manifest["status"] == "COMPLETED" and manifest["appVersion"] == VERSION and
+            report["startedAtMillis"] <= manifest["startedAtMillis"] <= manifest["endedAtMillis"] <= report["endedAtMillis"] and
+            practice["sourceSha256"] == report["sourceSha256"] and practice["scoreId"] == report.get("scoreId") and
+            practice["sourceByteCount"] == (folder / "reference-source.json").stat().st_size and practice["targetCount"] == 1 and
+            practice["practiceConfig"]["mode"] == "STOP_ON_ERROR" and practice["practiceConfig"]["hand"] == "BOTH",
+            "Terminal actual score/source/session configuration differs")
+    events = [event for part in score["parts"] for measure in part["measures"] for event in measure["events"]]
+    require(len(events) == 1 and events[0]["pitch"] == dict(step="E", alter=0, octave=2), "Terminal actual target differs from frozen E2 excerpt")
+    confirmed = [row for row in following if row.get("confirmedDecision", False)]
+    require(len(confirmed) == 1 and confirmed[0]["frameIndex"] == report["completionFrame"] and confirmed[0]["decision"] == "CORRECT" and
+            confirmed[0]["practiceState"] == "COMPLETED" and confirmed[0]["expectedNotes"] == confirmed[0]["detectedNotes"] == [40],
+            "Terminal ZIP lacks its one real E2 completion")
+    tail = [row for row in following if row.get("processingDisposition") == "NOT_EVALUATED"]
+    require([row["frameIndex"] for row in tail] == list(range(report["completionFrame"] + 1, 80)) and
+            all(row["reason"] == "PRACTICE_COMPLETED" for row in tail), "Terminal unscored remainder is not the exact completion tail")
+    # XPR is the actual durable binary report. Check its checksum and scored header; retain all original bytes.
+    binary = (folder / "actual-practice-report.xpr").read_bytes(); payload = binary[32:]
+    require(32 < len(binary) <= 2 * 1024 * 1024 and hashlib.sha256(payload).digest() == binary[:32], "Terminal durable report checksum failed")
+    offset = 0
+    def scalar(fmt):
+        nonlocal offset
+        value = struct.unpack_from(fmt, payload, offset)[0]; offset += struct.calcsize(fmt); return value
+    def utf():
+        nonlocal offset
+        length = scalar(">H"); value = payload[offset:offset + length]; require(len(value) == length, "Truncated XPR string"); offset += length; return value
+    require(scalar(">i") == 2, "Unsupported terminal report binary schema")
+    utf(); score_id = utf().decode("ascii"); utf(); scalar(">q"); utf(); started = scalar(">q"); ended = scalar(">q")
+    mode = utf(); scalar(">i"); scalar(">i"); scalar(">i"); scalar(">?"); hand = utf()
+    counters = [scalar(">i") for _ in range(7)]; completed = scalar(">?"); truncated = scalar(">?"); evidence_count = scalar(">i")
+    require(score_id == report["scoreId"] and report["startedAtMillis"] <= started <= ended <= report["endedAtMillis"] and
+            mode == b"STOP_ON_ERROR" and hand == b"BOTH" and counters[0] == counters[1] == 1 and counters[2] == counters[3] == 0 and
+            0 <= counters[4] <= report["evaluatedFrames"] and completed and not truncated and evidence_count == 1,
+            "Durable terminal report counted extra input or differs from the actual completed session")
+    return dict(status="PASSED", runId=base["runId"], terminalRunId=report["runId"], device=base["device"], gitCommit=expected_commit,
+        appSha256=base["appSha256"], testApkSha256=base["testApkSha256"], reportSha256=sha(folder / "result.json"),
+        zipSha256=sha(zip_path), contextSha256=sha(folder / "completion-context.json"), sourceSha256=report["sourceSha256"],
+        practiceReportSha256=sha(folder / "actual-practice-report.xpr"), originalReferenceSha256=sha(folder / "original-reference.json"),
+        rawFrames=80, evaluatedFrames=report["evaluatedFrames"], notEvaluatedFrames=report["notEvaluatedFrames"],
+        completionFrame=report["completionFrame"], correct=1, confirmedInputs=1, newConfirmationsAfterCompletion=0,
+        sessionId=report["sessionId"], accuracyValidated=False, scope="Actual terminal component lifecycle and unscored tail; not musical or physical microphone acceptance")
+
+
 def website_music_verdict(metrics, acoustic, truth):
     """Keep the original thresholds; exclude only demonstrably inapplicable old fixture scenarios."""
     groups = truth["groups"]
@@ -696,7 +978,7 @@ def validate_prepared_report(path, expected_report_sha, current_commit, current_
             prepared.get("preparationPassed") is True and prepared.get("engineeringAcceptance") == "PASSED" and
             prepared.get("apkDeliveryAllowed") is False and prepared.get("stableRelease") is False and
             prepared.get("eligibleForMain") is False, "Preparation is incomplete, failed, or improperly marked delivered")
-    flags = ("defaultFullTraceAcceptance", "phoneVideoDiagnosticAcceptance", "fieldScoreSnapshotAcceptance",
+    flags = ("defaultFullTraceAcceptance", "fieldFrameBoundaryAcceptance", "fieldCompletionBoundaryAcceptance", "phoneVideoDiagnosticAcceptance", "fieldScoreSnapshotAcceptance",
              "fieldReplayAcceptance", "processRecoveryAcceptance", "rollbackAcceptance")
     require(all(prepared.get(key) == "PASSED" for key in flags), "Prepared engineering evidence incomplete")
     require(prepared.get("version") == VERSION and prepared.get("sha") == current_commit and
@@ -714,7 +996,7 @@ def validate_prepared_report(path, expected_report_sha, current_commit, current_
         seen.add(source)
         require(source.stat().st_size == record["bytes"] and sha(source) == record["sha256"], "Prepared evidence bytes changed: " + record["path"])
     essential = [path.parent / name for name in ("source-start.json", "source-end.json", "declared-tests.json",
-        "default-full-trace-validation.json", "phone-video-validation.json", "phone-video-metadata.json",
+        "default-full-trace-validation.json", "field-frame-boundary-validation.json", "field-completion-boundary-validation.json", "phone-video-validation.json", "phone-video-metadata.json",
         "phone-video-frames.jsonl", "phone-video-status.jsonl", "field-replay-result.json", "field-replay-export.zip",
         "field-zip-validation.json", "field-recovery-prepare.json", "field-recovery-verify.json",
         "rollback/rollback-report.json", "runtime-logcat.log", "before-field-installed-identity.json", "after-rollback-installed-identity.json",
@@ -724,6 +1006,12 @@ def validate_prepared_report(path, expected_report_sha, current_commit, current_
     trace_folder = (ROOT / prepared["defaultFullTraceEvidence"]).resolve()
     require(trace_folder.is_relative_to((path.parent / "default-full-trace").resolve()), "Prepared full trace was not archived locally")
     essential.extend(trace_folder / name for name in ("trace-context.json", "metadata.json", "frames.jsonl", "engine-status.jsonl", "practice-replay-result.json"))
+    boundary_folder = (ROOT / prepared["fieldFrameBoundaryEvidence"]).resolve()
+    require(boundary_folder.is_relative_to((path.parent / "field-frame-boundary").resolve()), "Prepared boundary evidence was not archived locally")
+    essential.extend(field_boundary_files(boundary_folder))
+    completion_folder = (ROOT / prepared["fieldCompletionBoundaryEvidence"]).resolve()
+    require(completion_folder.is_relative_to((path.parent / "field-completion-boundary").resolve()), "Prepared terminal evidence was not archived locally")
+    essential.extend(field_boundary_files(completion_folder))
     essential.extend((product_path.parent / "current-results").rglob("TEST-*.xml"))
     require(all(item.resolve() in seen for item in essential), "Required actual preparation evidence was not sealed")
     require(read(path.parent / "source-start.json") == read(path.parent / "source-end.json") == current_source,
@@ -742,6 +1030,14 @@ def validate_prepared_report(path, expected_report_sha, current_commit, current_
     identity = {PACKAGE: artifacts["app"]["sha256"], PACKAGE + ".test": artifacts["tests"]["sha256"]}
     require(read(path.parent / "before-field-installed-identity.json") == read(path.parent / "after-rollback-installed-identity.json") == identity,
             "Archived APK pair does not match actual tested and restored package identity")
+    boundary_validation = validate_field_frame_boundary(boundary_folder, current_commit, identity[PACKAGE], identity[PACKAGE + ".test"], prepared["deviceStartedAtMillis"])
+    require(boundary_validation == read(path.parent / "field-frame-boundary-validation.json") and
+            boundary_validation == read(boundary_folder / "boundary-validation.json") and boundary_validation["device"] == prepared["device"],
+            "Prepared boundary evidence changed or belongs to a different device/run")
+    completion_validation = validate_field_completion_boundary(completion_folder, boundary_folder, current_commit,
+        identity[PACKAGE], identity[PACKAGE + ".test"], prepared["deviceStartedAtMillis"])
+    require(completion_validation == read(path.parent / "field-completion-boundary-validation.json") and
+            completion_validation == read(completion_folder / "completion-validation.json"), "Prepared terminal verdict changed")
     return prepared
 
 
@@ -776,7 +1072,7 @@ def finalize_prepared(args):
         result["productReport"] = prepared["productReport"]
         result["productAcceptance"] = prepared["productAcceptance"]
         for key in ("originalCorpusMusicAcceptance", "historicalMusicFailurePreserved", "knownMusicFailureStillObserved",
-                    "defaultFullTraceAcceptance", "phoneVideoDiagnosticAcceptance", "phoneVideoMusicAcceptance", "historicalPhoneVideoMusicAcceptance",
+                    "defaultFullTraceAcceptance", "fieldFrameBoundaryAcceptance", "fieldFrameBoundaryEvidence", "fieldCompletionBoundaryAcceptance", "fieldCompletionBoundaryEvidence", "phoneVideoDiagnosticAcceptance", "phoneVideoMusicAcceptance", "historicalPhoneVideoMusicAcceptance",
                     "fieldScoreSnapshotAcceptance", "fieldReplayAcceptance", "processRecoveryAcceptance", "rollbackAcceptance", "artifacts"):
             result[key] = prepared[key]
         artifacts = prepared["artifacts"]
@@ -784,6 +1080,12 @@ def finalize_prepared(args):
         full_trace_folder = ROOT / prepared["defaultFullTraceEvidence"]
         default_trace = validate_default_trace(full_trace_folder, identity[PACKAGE], identity[PACKAGE + ".test"])
         write(out / "default-full-trace-validation.json", default_trace)
+        boundary_trace = validate_field_frame_boundary(ROOT / prepared["fieldFrameBoundaryEvidence"], prepared["sha"],
+            identity[PACKAGE], identity[PACKAGE + ".test"], prepared["deviceStartedAtMillis"])
+        write(out / "field-frame-boundary-validation.json", boundary_trace)
+        completion_trace = validate_field_completion_boundary(ROOT / prepared["fieldCompletionBoundaryEvidence"], ROOT / prepared["fieldFrameBoundaryEvidence"],
+            prepared["sha"], identity[PACKAGE], identity[PACKAGE + ".test"], prepared["deviceStartedAtMillis"])
+        write(out / "field-completion-boundary-validation.json", completion_trace)
         phone_trace = validate_phone_video_trace(preparation / "phone-video-metadata.json", preparation / "phone-video-frames.jsonl",
             preparation / "phone-video-status.jsonl", prepared["deviceStartedAtMillis"])
         write(out / "phone-video-validation.json", phone_trace)
@@ -857,13 +1159,42 @@ def main():
     parser.add_argument("--prepared-report")
     parser.add_argument("--prepared-sha")
     parser.add_argument("--website-regression-manifest")
-    parser.add_argument("--validate-default-trace")
+    validation_modes = parser.add_mutually_exclusive_group()
+    validation_modes.add_argument("--validate-default-trace")
+    validation_modes.add_argument("--validate-field-frame-boundary")
+    validation_modes.add_argument("--validate-field-completion-boundary")
+    parser.add_argument("--boundary-evidence")
+    parser.add_argument("--expected-commit")
     parser.add_argument("--output")
     args = parser.parse_args()
     if args.finalize:
-        require(not args.validate_default_trace, "Finalize and default trace modes cannot be combined")
+        require(not args.validate_default_trace and not args.validate_field_frame_boundary and not args.validate_field_completion_boundary and not args.boundary_evidence and not args.expected_commit, "Finalize and standalone evidence validation cannot be combined")
         return finalize_prepared(args)
     require(not args.prepared_report and not args.prepared_sha, "Prepared identity flags require --finalize")
+    if args.validate_field_completion_boundary:
+        require(not args.prepare and not args.serial and not args.website_regression_manifest and args.output and args.boundary_evidence and
+                re.fullmatch(r"[a-f0-9]{40}", args.expected_commit or ""), "Terminal validator requires input, same-run boundary evidence, new output and explicit Commit")
+        destination = Path(args.output).resolve()
+        require(destination.is_relative_to(ROOT.resolve()) and not destination.exists(), "Terminal validation output must be new and inside project")
+        try:
+            validation = validate_field_completion_boundary(args.validate_field_completion_boundary, args.boundary_evidence, args.expected_commit)
+            write(destination, validation); print(json.dumps(validation, ensure_ascii=True)); return 0
+        except Exception as error:
+            write(destination, dict(status="FAILED", failure=str(error), accuracyValidated=False))
+            print(str(error), file=sys.stderr); return 1
+    require(not args.boundary_evidence, "Boundary linkage only applies to terminal evidence validation")
+    if args.validate_field_frame_boundary:
+        require(not args.prepare and not args.serial and not args.website_regression_manifest and args.output and
+                re.fullmatch(r"[a-f0-9]{40}", args.expected_commit or ""), "Boundary validator requires input, new output and explicit tested Commit only")
+        destination = Path(args.output).resolve()
+        require(destination.is_relative_to(ROOT.resolve()) and not destination.exists(), "Boundary validation output must be new and inside project")
+        try:
+            validation = validate_field_frame_boundary(args.validate_field_frame_boundary, args.expected_commit)
+            write(destination, validation); print(json.dumps(validation, ensure_ascii=True)); return 0
+        except Exception as error:
+            write(destination, dict(status="FAILED", failure=str(error), accuracyValidated=False))
+            print(str(error), file=sys.stderr); return 1
+    require(not args.expected_commit, "Explicit Commit argument only applies to boundary evidence validation")
     if args.validate_default_trace:
         require(not args.prepare, "Prepare and default trace validation cannot be combined")
         require(args.output and not args.serial and not args.website_regression_manifest, "Default trace validator requires only input and output paths")
@@ -928,6 +1259,7 @@ def main():
         original = read(ROOT / "tools/evaluation/octave-baseline-v1.json")
         run([sys.executable, "-B", ROOT / "tools/test_check_fieldtest.py"], "field-gate-self-tests")
         run([sys.executable, "-B", ROOT / "tools/test_validate_field_zip.py"], "field-zip-self-tests")
+        run([sys.executable, "-B", ROOT / "tools/test_field_boundary_evidence.py"], "field-boundary-self-tests")
         sdk_line = next(line.split("=", 1)[1] for line in (ROOT / "local.properties").read_text().splitlines() if line.startswith("sdk.dir="))
         adb = Path(sdk_line.replace("\\:", ":").replace("\\\\", "\\")) / "platform-tools/adb.exe"
         def device(*command, raw_output=False):
@@ -999,6 +1331,37 @@ def main():
         write(out / "default-full-trace-validation.json", default_trace)
         result["defaultFullTraceAcceptance"] = "PASSED"
         result["defaultFullTraceEvidence"] = str(copied_trace.relative_to(ROOT))
+        boundary_evidence = executor.get("fieldFrameBoundary") or {}
+        require(boundary_evidence.get("status") == "PASSED" and boundary_evidence.get("runId") == default_evidence["runId"],
+                "Default full instrumentation omitted or failed real frame boundary evidence")
+        boundary_folder = Path(boundary_evidence["directory"]).resolve()
+        require(boundary_folder.is_relative_to((device_results / "field-frame-boundary").resolve()) and
+                boundary_folder.name == boundary_evidence["runId"], "Boundary evidence association path invalid")
+        boundary_validation = validate_field_frame_boundary(boundary_folder, result["sha"], tested_identity[PACKAGE], tested_identity[PACKAGE + ".test"], device_start)
+        require(boundary_validation == read(boundary_folder / "boundary-validation.json") and boundary_validation["device"] == args.serial,
+                "Boundary evidence differs from the actual default instrumentation verdict/device")
+        copied_boundary = out / "field-frame-boundary" / boundary_evidence["runId"]; copied_boundary.mkdir(parents=True)
+        for source in field_boundary_files(boundary_folder):
+            destination = copied_boundary / source.name
+            shutil.copyfile(source, destination)
+            require(sha(source) == sha(destination), "Boundary evidence archive copy changed")
+        write(out / "field-frame-boundary-validation.json", boundary_validation)
+        result["fieldFrameBoundaryAcceptance"] = "PASSED"
+        result["fieldFrameBoundaryEvidence"] = str(copied_boundary.relative_to(ROOT))
+        completion_evidence = executor.get("fieldCompletionBoundary") or {}
+        require(completion_evidence.get("status") == "PASSED" and completion_evidence.get("runId") == default_evidence["runId"], "Default instrumentation omitted or failed terminal evidence")
+        completion_folder = Path(completion_evidence["directory"]).resolve()
+        require(completion_folder.is_relative_to((device_results / "field-completion-boundary").resolve()) and
+                completion_folder.name == completion_evidence["runId"], "Terminal evidence association path invalid")
+        completion_validation = validate_field_completion_boundary(completion_folder, boundary_folder, result["sha"], tested_identity[PACKAGE], tested_identity[PACKAGE + ".test"], device_start)
+        require(completion_validation == read(completion_folder / "completion-validation.json"), "Terminal default instrumentation verdict differs")
+        copied_completion = out / "field-completion-boundary" / completion_evidence["runId"]; copied_completion.mkdir(parents=True)
+        for source in field_boundary_files(completion_folder):
+            destination = copied_completion / source.name; shutil.copyfile(source, destination)
+            require(sha(source) == sha(destination), "Terminal evidence archive copy changed")
+        write(out / "field-completion-boundary-validation.json", completion_validation)
+        result["fieldCompletionBoundaryAcceptance"] = "PASSED"
+        result["fieldCompletionBoundaryEvidence"] = str(copied_completion.relative_to(ROOT))
         if not args.prepare:
             website = validate_website_regression(args.website_regression_manifest, tested_identity[PACKAGE], tested_identity[PACKAGE + ".test"], args.serial)
             write(out / "website-regression-validation.json", website)

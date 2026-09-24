@@ -2,6 +2,8 @@ package com.xiuyin.app.practice
 
 import android.app.Application
 import android.os.SystemClock
+import android.os.Looper
+import androidx.annotation.MainThread
 import com.xiuyin.app.field.FieldDiagnostics
 import com.xiuyin.app.field.FieldFollowingTrace
 import androidx.lifecycle.AndroidViewModel
@@ -23,7 +25,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 data class CompanionState(
     val busy: Boolean = false, val scoreId: String? = null, val title: String = "实时陪练",
@@ -54,6 +59,26 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
     private var openGeneration = 0L
     private val frameHistory = linkedMapOf<Long, PianoRecognitionFrame>()
     private val inputGeneration = AtomicLong()
+    private data class PendingInputFrame(val generation: Long, val frame: PianoRecognitionFrame)
+    private val pendingInputFrames = ArrayBlockingQueue<PendingInputFrame>(MAX_PENDING_INPUT_FRAMES)
+    private val inputDrainScheduled = AtomicBoolean()
+    private val pendingQueueFailure = AtomicReference<String?>(null)
+    private var drainingInputFrames = false
+    private var completingInput = false
+    private var completionDeliveredFor: PracticeSession? = null
+    private var notifyingInputFailure = false
+    private var inputFaultedFieldSessionId: String? = null
+    private var inputQueueFailureListener: ((String) -> Unit)? = null
+    private var inputCompletedListener: (() -> Unit)? = null
+
+    companion object {
+        internal const val MAX_PENDING_INPUT_FRAMES = 256
+    }
+
+    @MainThread
+    fun setInputQueueFailureListener(listener: ((String) -> Unit)?) { inputQueueFailureListener = listener }
+    @MainThread
+    fun setInputCompletedListener(listener: (() -> Unit)?) { inputCompletedListener = listener }
 
     /** Main-thread navigation query; paused sessions still require an explicit finish. */
     fun hasActiveSession(): Boolean = session != null
@@ -108,63 +133,156 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 if (error is CancellationException) throw error
                 mutableState.value = current.copy(error = error.message) }
     }
-    /** Safe to call from the inference worker; mutation is serialized by the main dispatcher. */
+    /** Worker delivery is retained synchronously; only Main consumes and mutates the practice session. */
     fun accept(frame: PianoRecognitionFrame) {
-        val generation = inputGeneration.get()
-        viewModelScope.launch {
-            if (generation != inputGeneration.get()) return@launch
-            val active = session ?: return@launch
-            if (mutableState.value.busy || (active.phase != CompanionPhase.RUNNING && active.phase != CompanionPhase.LOCKED)) return@launch
+        val pending = PendingInputFrame(inputGeneration.get(), frame)
+        if (!pendingInputFrames.offer(pending)) {
+            pendingQueueFailure.compareAndSet(null, "跟谱输入队列已满；已请求停止，不能将未处理帧当作判分结果")
+            recordNotEvaluated(frame, "INPUT_QUEUE_OVERFLOW")
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) drainPendingInputFrames()
+        else scheduleInputDrain()
+    }
+
+    private fun scheduleInputDrain() {
+        if (inputDrainScheduled.compareAndSet(false, true)) viewModelScope.launch {
+            inputDrainScheduled.set(false)
+            drainPendingInputFrames()
+        }
+    }
+
+    /** Close the producer first. This drains real accepted frames before pause/stream rollover. */
+    @MainThread
+    fun drainPendingInputFrames() {
+        check(Looper.myLooper() == Looper.getMainLooper()) { "drainPendingInputFrames must run on Main" }
+        if (drainingInputFrames) return
+        drainingInputFrames = true
+        var failure = pendingQueueFailure.getAndSet(null)
+        try {
+            failure?.let(::inputUnavailable)
+            while (true) {
+                // Queue.poll releases its lock before follower work or lifecycle callbacks.
+                val pending = pendingInputFrames.poll() ?: break
+                val error = consumePendingInputFrame(pending)
+                if (failure == null) failure = error
+            }
+        } finally {
+            drainingInputFrames = false
+        }
+        if (failure != null && !notifyingInputFailure) {
+            notifyingInputFailure = true
+            try { inputQueueFailureListener?.invoke(requireNotNull(failure)) }
+            finally { notifyingInputFailure = false }
+        }
+        val completed = session?.takeIf { it.phase == CompanionPhase.COMPLETED }
+        if (failure == null && completed != null && completed !== completionDeliveredFor && !completingInput) {
+            completingInput = true
+            completionDeliveredFor = completed
             try {
-                val notes = frame.notes.associateBy { it.midi }
-                fun evidence(midi: Int): ObservedNote? = notes[midi]?.let { ObservedNote(midi, it.onsetScore.toDouble(), it.frameScore.toDouble()) }
-                frameHistory[frame.frameIndex] = frame
-                while (frameHistory.size > 64) frameHistory.remove(frameHistory.keys.first())
-                val previousPosition = active.follower.cursor
-                val previousLocked = active.follower.locked
-                val target = active.follower.targets.getOrNull(previousPosition)
-                val expectedBefore = active.follower.expectedMidi()
-                val measureBefore = active.follower.measureIndex()
-                val followingStart = SystemClock.elapsedRealtimeNanos()
-                val update = active.accept(RecognitionObservation(frame.frameIndex, frame.audioTimeSeconds,
-                    frame.onsetMidi.mapNotNull(::evidence), frame.activeMidi.mapNotNull(::evidence),
-                    frame.state != RecognitionState.WARMING_UP, frame.clipped, frame.uncertainMidi, frame.ambiguousOctaveMidi))
-                val followingMs = (SystemClock.elapsedRealtimeNanos() - followingStart) / 1_000_000.0
-                fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
-                    expectedMeasure = (measureBefore + 1).toString(), expectedBeat = target?.startBeat?.toDouble(),
-                    expectedNotes = expectedBefore, detectedNotes = update.detectedMidi,
-                    previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
-                    decision = update.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
-                    reason = update.reason, recoveryEvent = if (previousLocked && !active.follower.locked) "UNLOCK_AFTER_RECOGNIZED_CORRECTION" else null,
-                    followingLatencyMs = followingMs, fieldSessionId = frame.fieldSessionId,
-                    audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
-                update.evidence.forEach { item ->
-                    fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
-                        expectedMeasure = (item.measureIndex + 1).toString(),
-                        expectedBeat = active.follower.targets.getOrNull(item.targetIndex)?.startBeat?.toDouble(),
-                        expectedNotes = item.expectedMidi, detectedNotes = item.detectedMidi,
-                        previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
-                        decision = item.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
-                        reason = item.reason, evidenceAudioTimeSeconds = item.audioTimeSeconds,
-                        decisionEventId = "${active.scoreId}:${active.revisionGeneration}:${frame.frameIndex}:${item.targetIndex}:${item.decision}:${item.audioTimeSeconds}",
-                        confirmedDecision = true, fieldSessionId = frame.fieldSessionId,
-                        audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
-                }
-                publish()
-                if (update.evidence.isNotEmpty()) {
-                    val decisionTime = update.evidence.last().audioTimeSeconds
-                    val source = frameHistory.values.minByOrNull { kotlin.math.abs(it.audioTimeSeconds - decisionTime) } ?: frame
-                    val wrong = update.evidence.lastOrNull { it.decision == PracticeDecision.WRONG }
-                    val wrongFrame = wrong?.let { evidence -> frameHistory.values.minByOrNull { kotlin.math.abs(it.audioTimeSeconds - evidence.audioTimeSeconds) } ?: frame }
-                    mutableState.value = mutableState.value.copy(lastDecisionFrame = source, lastWrongFrame = wrongFrame ?: mutableState.value.lastWrongFrame)
-                }
-                if (active.phase == CompanionPhase.COMPLETED) finish()
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                invalidateInputFrames(); active.pause(); publish()
-                mutableState.value = mutableState.value.copy(error = "识别帧无法用于陪练：${error.message}")
+                // Root closes input and may re-enter drain for a final queued worker batch.
+                // The nested drain must not finish or notify completion a second time.
+                inputCompletedListener?.invoke()
+                if (session === completed && completed.phase == CompanionPhase.COMPLETED && !mutableState.value.busy) finish()
+            } finally {
+                completingInput = false
             }
         }
+    }
+
+    private fun consumePendingInputFrame(pending: PendingInputFrame): String? {
+        val frame = pending.frame
+        val active = session
+        currentFieldInputFailure(frame)?.let { message ->
+            pauseForFieldInputFailure(frame, message)
+            recordNotEvaluated(frame, "FIELD_DIAGNOSTICS_FAILED", active)
+            return message
+        }
+        val disposition = when {
+            pending.generation != inputGeneration.get() -> "INPUT_GENERATION_INVALIDATED"
+            active == null -> "NO_ACTIVE_PRACTICE"
+            mutableState.value.busy -> "PRACTICE_BUSY"
+            active.phase == CompanionPhase.COMPLETED -> "PRACTICE_COMPLETED"
+            active.phase != CompanionPhase.RUNNING && active.phase != CompanionPhase.LOCKED -> "PRACTICE_INACTIVE"
+            else -> null
+        }
+        if (disposition != null) {
+            recordNotEvaluated(frame, disposition, active)
+            return currentFieldInputFailure(frame)?.also { pauseForFieldInputFailure(frame, it) }
+        }
+        requireNotNull(active)
+        var followingRecorded = false
+        try {
+            val notes = frame.notes.associateBy { it.midi }
+            fun evidence(midi: Int): ObservedNote? = notes[midi]?.let { ObservedNote(midi, it.onsetScore.toDouble(), it.frameScore.toDouble()) }
+            frameHistory[frame.frameIndex] = frame
+            while (frameHistory.size > 64) frameHistory.remove(frameHistory.keys.first())
+            val previousPosition = active.follower.cursor
+            val previousLocked = active.follower.locked
+            val target = active.follower.targets.getOrNull(previousPosition)
+            val expectedBefore = active.follower.expectedMidi()
+            val measureBefore = active.follower.measureIndex()
+            val followingStart = SystemClock.elapsedRealtimeNanos()
+            val update = active.accept(RecognitionObservation(frame.frameIndex, frame.audioTimeSeconds,
+                frame.onsetMidi.mapNotNull(::evidence), frame.activeMidi.mapNotNull(::evidence),
+                frame.state != RecognitionState.WARMING_UP, frame.clipped, frame.uncertainMidi, frame.ambiguousOctaveMidi))
+            val followingMs = (SystemClock.elapsedRealtimeNanos() - followingStart) / 1_000_000.0
+            fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
+                expectedMeasure = (measureBefore + 1).toString(), expectedBeat = target?.startBeat?.toDouble(),
+                expectedNotes = expectedBefore, detectedNotes = update.detectedMidi,
+                previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
+                decision = update.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
+                reason = update.reason, recoveryEvent = if (previousLocked && !active.follower.locked) "UNLOCK_AFTER_RECOGNIZED_CORRECTION" else null,
+                followingLatencyMs = followingMs, fieldSessionId = frame.fieldSessionId,
+                audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
+            followingRecorded = true
+            update.evidence.forEach { item ->
+                fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
+                    expectedMeasure = (item.measureIndex + 1).toString(),
+                    expectedBeat = active.follower.targets.getOrNull(item.targetIndex)?.startBeat?.toDouble(),
+                    expectedNotes = item.expectedMidi, detectedNotes = item.detectedMidi,
+                    previousScorePosition = previousPosition.toString(), currentScorePosition = active.follower.cursor.toString(),
+                    decision = item.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
+                    reason = item.reason, evidenceAudioTimeSeconds = item.audioTimeSeconds,
+                    decisionEventId = "${active.scoreId}:${active.revisionGeneration}:${frame.frameIndex}:${item.targetIndex}:${item.decision}:${item.audioTimeSeconds}",
+                    confirmedDecision = true, fieldSessionId = frame.fieldSessionId,
+                    audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
+            }
+            publish()
+            if (update.evidence.isNotEmpty()) {
+                val decisionTime = update.evidence.last().audioTimeSeconds
+                val source = frameHistory.values.minByOrNull { kotlin.math.abs(it.audioTimeSeconds - decisionTime) } ?: frame
+                val wrong = update.evidence.lastOrNull { it.decision == PracticeDecision.WRONG }
+                val wrongFrame = wrong?.let { evidence -> frameHistory.values.minByOrNull { kotlin.math.abs(it.audioTimeSeconds - evidence.audioTimeSeconds) } ?: frame }
+                mutableState.value = mutableState.value.copy(lastDecisionFrame = source, lastWrongFrame = wrongFrame ?: mutableState.value.lastWrongFrame)
+            }
+        } catch (error: Exception) {
+            if (!followingRecorded) recordNotEvaluated(frame, "FOLLOWING_EXCEPTION", active)
+            val message = "识别帧无法用于陪练：${error.message ?: error.javaClass.simpleName}"
+            inputUnavailable(message)
+            fieldDiagnostics.recordLog("ERROR", "Practice", "FollowingProcessingFailure", error.stackTraceToString())
+            return message
+        }
+        return null
+    }
+
+    private fun currentFieldInputFailure(frame: PianoRecognitionFrame): String? {
+        val field = fieldDiagnostics.state.value
+        return field.error?.takeIf { frame.fieldSessionId != null && field.activeSession?.id == frame.fieldSessionId }
+    }
+
+    private fun pauseForFieldInputFailure(frame: PianoRecognitionFrame, message: String) {
+        if (inputFaultedFieldSessionId != frame.fieldSessionId) {
+            inputFaultedFieldSessionId = frame.fieldSessionId
+            inputUnavailable(message)
+        }
+    }
+
+    private fun recordNotEvaluated(frame: PianoRecognitionFrame, reason: String, active: PracticeSession? = null) {
+        val current = mutableState.value
+        fieldDiagnostics.recordNotEvaluated(frame, reason,
+            actualPracticeState = active?.phase?.name ?: current.phase.name,
+            actualPosition = active?.follower?.cursor?.toString(),
+            locked = active?.follower?.locked ?: current.locked)
     }
     /** May be called from an audio worker; old queued callbacks become invalid immediately. */
     fun invalidateInputFrames() {

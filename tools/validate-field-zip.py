@@ -287,19 +287,39 @@ def validate(path, expected_sha=None, require_music=False, require_labels=False,
                 need(record[field] is None or number(record[field]), "Nonfinite octave evidence")
 
         following_counts = Counter()
+        not_evaluated = {}
+        completed_frames = {}
+        confirmed_completion_keys = set()
         event_ids = set()
         for record in rows["score-following.jsonl"]:
             for field in ("expectedMeasure", "expectedBeat", "expectedNotes", "detectedNotes", "previousScorePosition",
                           "currentScorePosition", "decision", "practiceState", "lockState", "recoveryEvent", "reason"):
                 need(field in record, "Following record missing " + field)
             key, source = same_frame(record, indexed, "Following")
-            need(record["decision"] in DECISIONS and isinstance(record["lockState"], bool), "Invalid following state")
+            disposition = record.get("processingDisposition")
+            need(disposition in {None, "NOT_EVALUATED"}, "Unknown following processing disposition")
+            is_not_evaluated = disposition == "NOT_EVALUATED"
+            need(record["decision"] in ({"NOT_EVALUATED"} if is_not_evaluated else DECISIONS) and
+                 isinstance(record["lockState"], bool), "Invalid following state")
             for field in ("expectedNotes", "detectedNotes"):
                 values = record[field]
                 need(isinstance(values, list) and all(integer(v) and v <= 127 for v in values) and
                      len(values) == len(set(values)), "Invalid following notes")
             confirmed = record.get("confirmedDecision", False)  # Existing rows without this optional flag are per-frame state.
             need(isinstance(confirmed, bool), "Invalid confirmed-decision flag")
+            if is_not_evaluated:
+                need(confirmed is False and record.get("countsAsMusicalEvaluation") is False and
+                     record.get("followingLatencyMs") is None and record.get("decisionEventId") is None and
+                     record.get("evidenceAudioTimeSeconds") is None and record["recoveryEvent"] is None,
+                     "Not-evaluated disposition must not claim a judgment, event or processing latency")
+                need(record["expectedNotes"] == [] and record["detectedNotes"] == [] and
+                     record["expectedMeasure"] is None and record["expectedBeat"] is None and
+                     record["previousScorePosition"] == record["currentScorePosition"],
+                     "Not-evaluated disposition must not judge notes or advance the cursor")
+                need(isinstance(source.get("finalCandidates"), list) and
+                     record.get("observedCandidates") == source["finalCandidates"],
+                     "Not-evaluated observed candidates differ from the original frame")
+                not_evaluated[key] = record
             if confirmed:
                 event = record.get("decisionEventId")
                 evidence_time = record.get("evidenceAudioTimeSeconds")
@@ -308,11 +328,31 @@ def validate(path, expected_sha=None, require_music=False, require_labels=False,
                 event_key = key[:2] + (event,)
                 need(event_key not in event_ids, "Duplicate confirmed decision event")
                 event_ids.add(event_key)
+                if record["decision"] == "CORRECT" and record["practiceState"] == "COMPLETED":
+                    confirmed_completion_keys.add(key)
             else:
                 following_counts[key] += 1
                 need(following_counts[key] == 1, "Duplicate following state for one raw frame")
+                if not is_not_evaluated and record["practiceState"] == "COMPLETED":
+                    completed_frames[key] = record
         if require_music:
             need(set(following_counts) == set(indexed), "Missing following association for raw frames")
+            for key, record in not_evaluated.items():
+                need(record["reason"] == "PRACTICE_COMPLETED" and record["practiceState"] == "COMPLETED" and
+                     record["lockState"] is False,
+                     "Faulted or unexplained unevaluated frame prevents required-music acceptance")
+                target_count = score_snapshot.get("targetCount")
+                need(score_snapshot["status"] == "AVAILABLE" and integer(target_count, 1) and
+                     record["currentScorePosition"] == str(target_count),
+                     "Completed tail requires a bound score snapshot and its actual end position")
+                need(any(prior[:2] == key[:2] and prior[2] < key[2] and prior in confirmed_completion_keys and
+                         indexed[prior]["audioTimeSeconds"] < indexed[key]["audioTimeSeconds"] and
+                         value["currentScorePosition"] == str(target_count) and value["lockState"] is False and
+                         isinstance(value["previousScorePosition"], str) and
+                         re.fullmatch(r"[0-9]+", value["previousScorePosition"]) and
+                         int(value["previousScorePosition"]) < target_count
+                         for prior, value in completed_frames.items()),
+                     "Completed tail disposition lacks an earlier actual completion in the same stream")
 
         bound_labels = set()
         for record in rows["app.log"]:
@@ -382,6 +422,8 @@ def validate(path, expected_sha=None, require_music=False, require_labels=False,
         return {"status": "PASSED", "scope": "Export structure and evidence integrity, NOT musical accuracy",
                 "sessionId": session, "appVersion": manifest["appVersion"], "gitCommit": manifest["gitCommit"],
                 "modelFrames": len(frames), "sourceStreams": len(streams), "followingFrames": len(following_counts),
+                "evaluatedFollowingFrames": len(following_counts) - len(not_evaluated),
+                "notEvaluatedFrames": len(not_evaluated), "notEvaluatedFramesCountAsAccuracy": False,
                 "confirmedDecisionEvents": len(event_ids), "linkedOctaveRecords": len(octave_keys),
                 "records": {k: len(v) for k, v in rows.items()}, "clips": clips,
                 "scoreSnapshot": score_snapshot["status"], "scoreSnapshotEvidence": score_snapshot,

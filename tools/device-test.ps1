@@ -166,6 +166,10 @@ $deviceSerial = $null
 $result = $null
 $failure = $null
 $traceEvidence = $null
+$boundaryEvidence = $null
+$completionEvidence = $null
+$boundaryContext = $null
+$boundaryDirectory = $null
 try {
     New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
     $sdkLine = Get-Content -LiteralPath (Join-Path $projectRoot 'local.properties') | Where-Object { $_ -match '^sdk.dir=' } | Select-Object -First 1
@@ -209,12 +213,124 @@ try {
     }
     $traceContext | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $traceDirectory 'trace-context.json') -Encoding utf8
     $traceEvidence = [ordered]@{ runId = $traceRunId; directory = $traceDirectory; status = 'NOT_VERIFIED' }
+    # Fixed device filenames must be bound to THIS invocation, never trusted as fresh by name.
+    $boundaryDirectory = Join-Path $outputRoot ('field-frame-boundary\' + $traceRunId)
+    New-Item -ItemType Directory -Path $boundaryDirectory | Out-Null
+    $boundaryEvidence = [ordered]@{ runId = $traceRunId; directory = $boundaryDirectory; status = 'NOT_VERIFIED' }
+    $commitOutput = & git -c ('safe.directory=' + $projectRoot) -C $projectRoot rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $commitOutput -notmatch '^[a-f0-9]{40}$') { throw '无法确认当前边界测试 Git Commit。' }
+    $boundaryContext = [ordered]@{
+        runId = $traceRunId; device = $deviceSerial; gitCommit = [string]$commitOutput
+        appSha256 = $traceContext.appSha256; testApkSha256 = $traceContext.testApkSha256
+        commands = @(); files = @(); instrumentationExitCode = $null
+        scope = 'TEST DATA real model/component stop boundaries; not physical microphone, Activity background transition, or musical accuracy'
+    }
+    function Invoke-BoundaryCapture([string[]]$Arguments, [string]$Name, [string]$Directory = $boundaryDirectory, $Context = $boundaryContext) {
+        $path = Join-Path $Directory $Name
+        if (Test-Path -LiteralPath $path) { throw ('拒绝覆盖边界证据：' + $path) }
+        $capture = Invoke-AdbCapture -AdbArguments $Arguments -LogPath $path
+        $Context.commands += [ordered]@{ file = $Name; exitCode = $capture.exitCode; sha256 = (Get-ArtifactSha256 -Path $path) }
+        return $capture
+    }
+    function Save-BoundaryInstalledIdentity([string]$Phase) {
+        foreach ($entry in @(@('app', 'com.xiuyin.app', $traceContext.appSha256), @('tests', 'com.xiuyin.app.test', $traceContext.testApkSha256))) {
+            $locations = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'pm', 'path', $entry[1]) -Name ($Phase + '-' + $entry[0] + '-path.log')
+            if ($locations.exitCode -ne 0 -or $locations.output.Trim() -notmatch '^package:(/data/app/[A-Za-z0-9_./+=~\-]+/base\.apk)$') { throw '边界测试 APK 安装路径异常。' }
+            $installedPath = $Matches[1]
+            $identity = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', $installedPath) -Name ($Phase + '-' + $entry[0] + '-sha.log')
+            if ($identity.exitCode -ne 0 -or $identity.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -ne $entry[2]) { throw '边界测试实际安装 APK 与本次构建不同。' }
+        }
+    }
+    Save-BoundaryInstalledIdentity -Phase 'before'
+    $oldBoundary = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'if [ -f /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json ]; then sha256sum /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json; else echo ABSENT; fi') -Name 'before-report-sha.log'
+    if ($oldBoundary.exitCode -ne 0) { throw '无法读取边界测试旧报告状态。' }
+    $beforeClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'before-clock.log'
+    if ($beforeClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$') { throw '无法读取边界测试设备开始时间。' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
     $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
+    $afterClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'after-clock.log'
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
     Write-InstrumentationXml -Result $result -Path (Join-Path $outputRoot 'TEST-instrumentation.xml') -Raw $instrumentation.output -StartedAt $testStarted -Duration $duration
+    # Archive failures too; boundary failure must not prevent preserving the existing full trace.
+    $boundaryFailure = $null
+    try {
+        $boundaryContext.instrumentationExitCode = $instrumentation.exitCode
+        foreach ($name in @('instrumentation.log', 'TEST-instrumentation.xml')) {
+            # Evidence XML is not another executed suite; recursive TEST-*.xml discovery must see the main suite only once.
+            $archiveName = if ($name -eq 'TEST-instrumentation.xml') { 'instrumentation-result.xml' } else { $name }
+            $destination = Join-Path $boundaryDirectory $archiveName
+            if (Test-Path -LiteralPath $destination) { throw ('拒绝覆盖边界证据：' + $name) }
+            Copy-Item -LiteralPath (Join-Path $outputRoot $name) -Destination $destination
+            $boundaryContext.files += [ordered]@{ file = $archiveName; sha256 = (Get-ArtifactSha256 -Path $destination) }
+        }
+        $pullFailures = @()
+        foreach ($name in @('field-frame-boundary-result.json', 'field-frame-boundary-export.zip')) {
+            $destination = Join-Path $boundaryDirectory $name
+            if (Test-Path -LiteralPath $destination) { throw ('拒绝覆盖边界证据：' + $name) }
+            $remote = '/sdcard/Android/data/com.xiuyin.app/files/' + $name
+            $pulled = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'pull', $remote, $destination) -Name ($name + '-pull.log')
+            $remoteSha = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', $remote) -Name ($name + '-device-sha.log')
+            if ($pulled.exitCode -ne 0 -or -not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+                $pullFailures += ('缺少本次边界证据：' + $name)
+            } elseif ($remoteSha.exitCode -ne 0 -or $remoteSha.output -notmatch '^([a-f0-9]{64})\s+' -or (Get-ArtifactSha256 -Path $destination) -ne $Matches[1]) {
+                $pullFailures += ('边界证据原字节传输哈希不符：' + $name)
+            } else { $boundaryContext.files += [ordered]@{ file = $name; sha256 = (Get-ArtifactSha256 -Path $destination) } }
+        }
+        Save-BoundaryInstalledIdentity -Phase 'after'
+        if ($pullFailures.Count -gt 0) { throw ($pullFailures -join '；') }
+        $boundaryContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $boundaryDirectory 'boundary-context.json') -Encoding utf8
+        & 'C:\Python314\python.exe' -B (Join-Path $PSScriptRoot 'validate-field-zip.py') (Join-Path $boundaryDirectory 'field-frame-boundary-export.zip') --require-music --sha $boundaryContext.gitCommit --output (Join-Path $boundaryDirectory 'field-zip-validation.json') > (Join-Path $boundaryDirectory 'field-zip-validation.log') 2>&1
+        $zipValidationExit = $LASTEXITCODE
+        & 'C:\Python314\python.exe' -B (Join-Path $PSScriptRoot 'check-fieldtest.py') --validate-field-frame-boundary $boundaryDirectory --expected-commit $boundaryContext.gitCommit --output (Join-Path $boundaryDirectory 'boundary-validation.json') > (Join-Path $boundaryDirectory 'boundary-validation.log') 2>&1
+        if ($LASTEXITCODE -ne 0 -or $zipValidationExit -ne 0) { throw '真实停止边界证据未通过本次身份/240帧/三边界及严格ZIP门禁。' }
+        $boundaryEvidence.status = 'PASSED'
+        $boundaryEvidence.validation = Join-Path $boundaryDirectory 'boundary-validation.json'
+    } catch {
+        $boundaryFailure = $_.Exception.Message
+        $boundaryEvidence.status = 'FAILED'; $boundaryEvidence.failure = $boundaryFailure
+    }
+    # The terminal test publishes its newly created directory via the runner, never via mtime guessing.
+    $completionFailure = $null
+    $completionDirectory = Join-Path $outputRoot ('field-completion-boundary\' + $traceRunId)
+    New-Item -ItemType Directory -Path $completionDirectory | Out-Null
+    $completionEvidence = [ordered]@{ runId = $traceRunId; directory = $completionDirectory; status = 'NOT_VERIFIED' }
+    $completionContext = [ordered]@{ runId = $traceRunId; device = $deviceSerial; gitCommit = $boundaryContext.gitCommit; commands = @(); files = @() }
+    try {
+        $resultPaths = [regex]::Matches($instrumentation.output, '(?m)^INSTRUMENTATION_RESULT: FIELD_COMPLETION_BOUNDARY_RESULT=([^\r\n]+)\s*$')
+        if ($resultPaths.Count -ne 1) { throw '终态用例没有返回唯一的本次结果路径。' }
+        $reportedPath = $resultPaths[0].Groups[1].Value.Trim()
+        if ($reportedPath -notmatch '^/(storage/emulated/0|sdcard)/Android/data/com\.xiuyin\.app/files/field-completion-boundary/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/result\.json$') { throw '终态结果路径越界或不符合真实独立目录契约。' }
+        $completionContext.reportedResultPath = $reportedPath
+        $completionContext.boundaryContextSha256 = Get-ArtifactSha256 -Path (Join-Path $boundaryDirectory 'boundary-context.json')
+        $remoteDirectory = $reportedPath.Substring(0, $reportedPath.Length - '/result.json'.Length)
+        $pullFailures = @()
+        foreach ($name in @('result.json', 'reference-source.json', 'original-reference.json', 'actual-practice-report.xpr', 'field-completion-export.zip')) {
+            $destination = Join-Path $completionDirectory $name
+            if (Test-Path -LiteralPath $destination) { throw ('拒绝覆盖终态证据：' + $name) }
+            $remote = $remoteDirectory + '/' + $name
+            $pulled = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'pull', $remote, $destination) -Name ($name + '-pull.log') -Directory $completionDirectory -Context $completionContext
+            $remoteSha = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', $remote) -Name ($name + '-device-sha.log') -Directory $completionDirectory -Context $completionContext
+            if ($pulled.exitCode -ne 0 -or -not (Test-Path -LiteralPath $destination -PathType Leaf)) { $pullFailures += ('缺少终态实际文件：' + $name) }
+            elseif ($remoteSha.exitCode -ne 0 -or $remoteSha.output -notmatch '^([a-f0-9]{64})\s+' -or (Get-ArtifactSha256 -Path $destination) -ne $Matches[1]) { $pullFailures += ('终态文件原字节哈希不符：' + $name) }
+            else { $completionContext.files += [ordered]@{ file = $name; sha256 = (Get-ArtifactSha256 -Path $destination) } }
+        }
+        if ($pullFailures.Count -gt 0) { throw ($pullFailures -join '；') }
+        $completionContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $completionDirectory 'completion-context.json') -Encoding utf8
+        & 'C:\Python314\python.exe' -B (Join-Path $PSScriptRoot 'validate-field-zip.py') (Join-Path $completionDirectory 'field-completion-export.zip') --require-music --sha $boundaryContext.gitCommit --expected-frames 80 --output (Join-Path $completionDirectory 'field-zip-validation.json') > (Join-Path $completionDirectory 'field-zip-validation.log') 2>&1
+        $zipValidationExit = $LASTEXITCODE
+        & 'C:\Python314\python.exe' -B (Join-Path $PSScriptRoot 'check-fieldtest.py') --validate-field-completion-boundary $completionDirectory --boundary-evidence $boundaryDirectory --expected-commit $boundaryContext.gitCommit --output (Join-Path $completionDirectory 'completion-validation.json') > (Join-Path $completionDirectory 'completion-validation.log') 2>&1
+        if ($LASTEXITCODE -ne 0 -or $zipValidationExit -ne 0) { throw '终态80帧、真实一次完成/尾帧未判分或本次身份门禁失败。' }
+        $completionEvidence.status = 'PASSED'; $completionEvidence.validation = Join-Path $completionDirectory 'completion-validation.json'
+    } catch {
+        $completionFailure = $_.Exception.Message
+        $completionEvidence.status = 'FAILED'; $completionEvidence.failure = $completionFailure
+    } finally {
+        if (-not (Test-Path -LiteralPath (Join-Path $completionDirectory 'completion-context.json'))) {
+            $completionContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $completionDirectory 'completion-context.json') -Encoding utf8
+        }
+    }
     # Preserve complete diagnostic bytes even if another main-suite assertion failed.
     $traceRemote = '/sdcard/Android/data/com.xiuyin.app/files/independent-pcm-traces/' + $traceRunId
     foreach ($name in @('metadata.json', 'frames.jsonl', 'engine-status.jsonl', 'practice-replay-result.json')) {
@@ -225,6 +341,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '默认真实 Autopiano 完整 raw/跟谱诊断未通过身份或完整性门禁' }
     $traceEvidence.status = 'PASSED'
     $traceEvidence.validation = Join-Path $traceDirectory 'trace-validation.json'
+    if ($boundaryFailure) { throw $boundaryFailure }
+    if ($completionFailure) { throw $completionFailure }
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
     $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
     # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
@@ -267,12 +385,15 @@ try {
     [Console]::Error.WriteLine('原生仪器测试失败：' + $failure)
 } finally {
     $env:ANDROID_USER_HOME = $previousUserHome
+    if ($boundaryContext -and $boundaryDirectory -and -not (Test-Path -LiteralPath (Join-Path $boundaryDirectory 'boundary-context.json'))) {
+        $boundaryContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $boundaryDirectory 'boundary-context.json') -Encoding utf8
+    }
     if (Test-Path -LiteralPath $outputRoot -PathType Container) {
         [ordered]@{
             executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
             startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
             status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
-            failure = $failure; result = $result; fullTrace = $traceEvidence
+            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence
         } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
     }
 }
