@@ -887,14 +887,52 @@ def validate_log_window(buffers, boundary, read_window):
         scope="Main retains unique start/prepared markers; system retains records at or before start; all available main/system/crash entries scanned through actual device read. Empty crash buffer is not proof of historical absence.")
 
 
+def capture_runtime_device(command, out, name, records):
+    """Retain unmodified command output even when logcat disconnects or times out."""
+    require(re.fullmatch(r"logcat-(main|system|crash)|log-read-(before|after)", name),
+            "Unexpected runtime evidence command name")
+    folder = Path(out) / ("runtime-device-" + name)
+    folder.mkdir()  # A second capture must never replace earlier failure evidence.
+    stdout_path = folder / "stdout.bin"; stderr_path = folder / "stderr.bin"
+    values = [str(value) for value in command]
+    started = time.monotonic()
+    entry = dict(command=values, cwd=str(ROOT), startedAt=datetime.now(timezone.utc).isoformat(),
+        timeoutSeconds=120, exitCode=None, timedOut=False, status="FAILED",
+        evidenceDirectory=folder.name)
+    records.append(entry)
+    try:
+        with stdout_path.open("xb") as stdout, stderr_path.open("xb") as stderr:
+            child = subprocess.run(values, cwd=ROOT, stdout=stdout, stderr=stderr, timeout=120,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            entry["exitCode"] = child.returncode
+            if child.returncode == 0: entry["status"] = "PASSED"
+    except subprocess.TimeoutExpired as error:
+        entry.update(timedOut=True, exceptionType=type(error).__name__, exception=str(error))
+        raise
+    except Exception as error:
+        entry.update(exceptionType=type(error).__name__, exception=str(error))
+        raise
+    finally:
+        entry.update(finishedAt=datetime.now(timezone.utc).isoformat(), seconds=round(time.monotonic() - started, 6))
+        for key, path in (("stdout", stdout_path), ("stderr", stderr_path)):
+            if path.is_file():
+                entry[key] = dict(path=str(path.relative_to(out)), bytes=path.stat().st_size, sha256=sha(path))
+        with (folder / "command.json").open("x", encoding="utf8") as stream:
+            json.dump(entry, stream, ensure_ascii=False, indent=2, allow_nan=False)
+            stream.write("\n")
+    require(entry["exitCode"] == 0,
+            "Runtime device command exited " + str(entry["exitCode"]) + "; raw evidence: " + str(folder))
+    return stdout_path.read_bytes()
+
+
 def collect_runtime_logs(device, out, boundary):
-    window = dict(beforeMillis=int(device("shell", "date", "+%s")) * 1000)
+    window = dict(beforeMillis=int(device("shell", "date", "+%s", evidence_name="log-read-before")) * 1000)
     buffers = {}
     for name in LOG_BUFFERS:
-        raw = device("logcat", "-b", name, "-d", "-v", "threadtime", "-v", "epoch", raw_output=True)
+        raw = device("logcat", "-b", name, "-d", "-v", "threadtime", "-v", "epoch", raw_output=True, evidence_name="logcat-" + name)
         (out / ("runtime-logcat-" + name + ".log")).write_bytes(raw)
         buffers[name] = raw.decode("utf8")
-    window["afterMillis"] = int(device("shell", "date", "+%s")) * 1000
+    window["afterMillis"] = int(device("shell", "date", "+%s", evidence_name="log-read-after")) * 1000
     write(out / "runtime-log-read-window.json", window)
     (out / "runtime-logcat.log").write_text("\n".join(buffers.values()), encoding="utf8")
     validation = validate_log_window(buffers, boundary, window)
@@ -1091,8 +1129,11 @@ def finalize_prepared(args):
         write(out / "phone-video-validation.json", phone_trace)
         sdk_line = next(line.split("=", 1)[1] for line in (ROOT / "local.properties").read_text().splitlines() if line.startswith("sdk.dir="))
         adb = Path(sdk_line.replace("\\:", ":").replace("\\\\", "\\")) / "platform-tools/adb.exe"
-        def device(*command, global_command=False, raw_output=False):
+        def device(*command, global_command=False, raw_output=False, evidence_name=None):
             values = [str(adb)] + ([] if global_command else ["-s", args.serial]) + list(command)
+            if evidence_name is not None:
+                raw = capture_runtime_device(values, out, evidence_name, result.setdefault("runtimeLogCommands", []))
+                return raw if raw_output else raw.decode("utf8", "replace").strip()
             child = subprocess.run(values, cwd=ROOT, capture_output=True, timeout=120,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             log = out / ("read-only-device-" + str(len(result["commands"]) + 1) + ".log")
@@ -1262,8 +1303,12 @@ def main():
         run([sys.executable, "-B", ROOT / "tools/test_field_boundary_evidence.py"], "field-boundary-self-tests")
         sdk_line = next(line.split("=", 1)[1] for line in (ROOT / "local.properties").read_text().splitlines() if line.startswith("sdk.dir="))
         adb = Path(sdk_line.replace("\\:", ":").replace("\\\\", "\\")) / "platform-tools/adb.exe"
-        def device(*command, raw_output=False):
-            raw = subprocess.check_output([str(adb), "-s", args.serial, *command], timeout=120)
+        def device(*command, raw_output=False, evidence_name=None):
+            values = [str(adb), "-s", args.serial, *command]
+            if evidence_name is not None:
+                raw = capture_runtime_device(values, out, evidence_name, result.setdefault("runtimeLogCommands", []))
+            else:
+                raw = subprocess.check_output(values, timeout=120)
             return raw if raw_output else raw.decode("utf8", "replace").strip()
         listing = subprocess.check_output([str(adb), "devices"], text=True)
         require(re.findall(r"^(\S+)\s+device$", listing, re.M) == [args.serial], "Exactly one selected emulator required")

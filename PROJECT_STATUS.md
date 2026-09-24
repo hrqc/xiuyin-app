@@ -2,6 +2,8 @@
 
 日期：2026-09-24。本轮对应 PRODUCT 第4/5/14节的真实 OMR 谱行补漏、来源证据与双谱表验证；不重建数据库，不改变音频模型或阈值，AGENTS/PRODUCT及已有功能保留。
 
+- 日志取证工具已补齐：collect前后设备时间及main/system/crash采用独占文件保存原stdout/stderr、实际命令、UTC时间、120秒时限、退出码、字节数与SHA；非零/超时仍立即失败、无重试，原日志窗口校验不变。68项工具测试通过，实际runtime-stream-smoke-20260924T075959Z-08a538的5条设备命令均0退出，完整读回约13.8MB main和20.7MB system；该smoke不替代完整prepare。另4个已备份TEST DATA经实际系统保存、SHA/ZIP校验后清理，记录见storage-capacity-20260924/maintenance-r3-result.json；期间一次ADB传回失败的零字节文件保留，重新完整传回校验后才清理。
+- d5e688固定提交的两次prepare均为PAUSE，原报告保留：reports/fieldtest-20260924T065921Z-2b4f25eb/与reports/fieldtest-20260924T072137Z-475fdc71/。后一轮294 JVM、210主Android全过，含另跑DotIAM后506/505/1/0；Field快照、帧边界、跨进程恢复和真实旧版回退均通过，但最终logcat退出255，未Tag/Push/交付。两次对应秒内均见adbd write failed后transport重连；事后读取成功仅作诊断，不能补写原验收通过。两对失败APK及所有原日志独立归档。正在补全日志采集失败的原stdout/stderr/退出码取证，保留原命令、120秒超时、非零立即暂停和完整窗口校验，不自动重试放行。
 - 已实现原图像素五线复查和短谱行补查，保留旧可靠裁框、原图、Raw/Original和人工修订；补查不依赖预期音符、拍号或行数。短谱行必须逐列满足真实模型像素连续度，五条虚线反例拒绝；29项专项通过，随后294项JVM通过，两轮不重复计数。
 - 最新预提交完整复检 reports/20260924T064141345Z/report.json：506项505通过、1既有DotIAM2音乐失败、0跳过；294 JVM、210主Android全部通过，另2项DotIAM中1过1原失败。严格Lint、Debug/Release构建通过。默认真实trace896帧完整，Autopiano25/25、旧DotIAM18/18保持，DotIAM2仍23真/30接受/额外7。此报告为基础HEAD=9bf2732的dirty开发候选，不能替代后续干净提交、固定双APK与最终交付。
 - 第一轮全检 reports/20260924T055813672Z/report.json 为504/501/3、0跳过、整体FAILED：模拟器累积20个未确认导出的历史TEST DATA会话，保护上限阻断3项Field测试。全部原件90,457,088字节tar已备份；10个明确TEST DATA会话经实际App生成ZIP、Android系统保存、SHA读回、主机ZIP验证后，才在App确认清理。剩余10个会话、曲库和修订保留，未改容量限制或清库。维护及自动化定位失败原记录见reports/fieldtest5-development/storage-capacity-20260924/maintenance-result.json。

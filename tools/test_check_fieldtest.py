@@ -400,6 +400,124 @@ def log_fixture():
     return boundary,buffers,dict(beforeMillis=3000,afterMillis=4000)
 
 
+class RuntimeCommandCaptureTest(unittest.TestCase):
+    """TEST DATA host processes/transport failures; no ADB or musical acceptance."""
+    def setUp(self):
+        from unittest.mock import patch
+        self.temp = tempfile.TemporaryDirectory(prefix="xiuyin-runtime-TEST-DATA-")
+        self.addCleanup(self.temp.cleanup)
+        self.folder = Path(self.temp.name)
+        self.boundary, self.buffers, _ = log_fixture()
+        self.records = []; self.calls = []; self.failure = None
+        self.partial = b"TEST DATA partial main\r\n\xff\x00"
+        self.stderr = b"TEST DATA transport offline\r\n"
+        self.patcher = patch.object(gate.subprocess, "run", side_effect=self.child)
+        self.mock = self.patcher.start(); self.addCleanup(self.patcher.stop)
+
+    def child(self, command, **kwargs):
+        self.calls.append(command)
+        self.assertEqual(kwargs["timeout"], 120)
+        self.assertEqual(kwargs["cwd"], gate.ROOT)
+        self.assertNotIn("capture_output", kwargs); self.assertNotIn("text", kwargs)
+        if command[3:6] == ["shell", "date", "+%s"]:
+            kwargs["stdout"].write(b"3\n" if len(self.calls) == 1 else b"4\n")
+        else:
+            self.assertEqual(command[3:], ["logcat", "-b", command[5], "-d", "-v", "threadtime", "-v", "epoch"])
+            if self.failure is not None:
+                kwargs["stdout"].write(self.partial); kwargs["stderr"].write(self.stderr)
+                if self.failure == "timeout": raise gate.subprocess.TimeoutExpired(command, 120)
+                if self.failure == "launch": raise OSError("TEST DATA launch failure")
+                return gate.subprocess.CompletedProcess(command, 255)
+            kwargs["stdout"].write(self.buffers[command[5]].encode("utf8"))
+        return gate.subprocess.CompletedProcess(command, 0)
+
+    def device(self, *command, raw_output=False, evidence_name=None):
+        self.assertIsNotNone(evidence_name)
+        raw = gate.capture_runtime_device(["TEST_DATA_ADB", "-s", "TEST_DATA_DEVICE", *command],
+            self.folder, evidence_name, self.records)
+        return raw if raw_output else raw.decode("utf8", "replace").strip()
+
+    def assert_evidence(self, name, stdout, stderr, status, code, timed_out=False):
+        folder = self.folder / ("runtime-device-" + name)
+        entry = gate.read(folder / "command.json")
+        self.assertEqual(entry, next(row for row in self.records if row["evidenceDirectory"] == folder.name))
+        self.assertEqual((entry["status"], entry["exitCode"], entry["timedOut"]), (status, code, timed_out))
+        self.assertEqual(entry["timeoutSeconds"], 120)
+        self.assertLessEqual(gate.datetime.fromisoformat(entry["startedAt"]), gate.datetime.fromisoformat(entry["finishedAt"]))
+        self.assertGreaterEqual(entry["seconds"], 0)
+        for key, data in (("stdout", stdout), ("stderr", stderr)):
+            path = self.folder / entry[key]["path"]
+            self.assertEqual(path.read_bytes(), data)
+            self.assertEqual(entry[key]["bytes"], len(data))
+            self.assertEqual(entry[key]["sha256"], gate.sha(path))
+        return entry
+
+    def test_success_captures_all_five_commands_and_keeps_full_window_gate(self):
+        result = gate.collect_runtime_logs(self.device, self.folder, self.boundary)
+        self.assertEqual(result["status"], "PASSED")
+        self.assertEqual((len(self.calls), len(self.records)), (5, 5))
+        self.assert_evidence("log-read-before", b"3\n", b"", "PASSED", 0)
+        self.assert_evidence("log-read-after", b"4\n", b"", "PASSED", 0)
+        for name, raw in self.buffers.items():
+            self.assert_evidence("logcat-" + name, raw.encode("utf8"), b"", "PASSED", 0)
+            self.assertEqual((self.folder / ("runtime-logcat-" + name + ".log")).read_bytes(), raw.encode("utf8"))
+        from unittest.mock import patch
+        with patch.object(gate, "ROOT", self.folder):
+            sealed = {row["path"] for row in gate.preparation_evidence_seal(self.folder, self.folder)}
+        for row in self.records:
+            self.assertIn(row["stdout"]["path"], sealed); self.assertIn(row["stderr"]["path"], sealed)
+            self.assertIn(str(Path(row["evidenceDirectory"]) / "command.json"), sealed)
+
+    def test_nonzero_partial_output_is_archived_and_stops_without_retry(self):
+        self.failure = "nonzero"
+        with self.assertRaisesRegex(ValueError, "exited 255"):
+            gate.collect_runtime_logs(self.device, self.folder, self.boundary)
+        self.assertEqual(len(self.calls), 2)
+        self.assert_evidence("logcat-main", self.partial, self.stderr, "FAILED", 255)
+        self.assertFalse((self.folder / "runtime-log-validation.json").exists())
+        self.assertFalse((self.folder / "runtime-device-logcat-system").exists())
+
+    def test_timeout_partial_output_is_archived_and_not_returned_as_success(self):
+        self.failure = "timeout"
+        with self.assertRaises(gate.subprocess.TimeoutExpired):
+            gate.collect_runtime_logs(self.device, self.folder, self.boundary)
+        self.assertEqual(len(self.calls), 2)
+        entry = self.assert_evidence("logcat-main", self.partial, self.stderr, "FAILED", None, True)
+        self.assertEqual(entry["exceptionType"], "TimeoutExpired")
+        self.assertFalse((self.folder / "runtime-log-validation.json").exists())
+
+    def test_process_error_retains_received_bytes_and_failure_metadata(self):
+        self.failure = "launch"
+        with self.assertRaisesRegex(OSError, "TEST DATA launch failure"):
+            gate.collect_runtime_logs(self.device, self.folder, self.boundary)
+        entry = self.assert_evidence("logcat-main", self.partial, self.stderr, "FAILED", None)
+        self.assertEqual(entry["exceptionType"], "OSError")
+        self.assertEqual(len(self.calls), 2)
+
+    def test_successful_commands_with_missing_marker_still_fail_validation(self):
+        self.buffers["main"] = self.buffers["main"].splitlines()[1] + "\n"
+        with self.assertRaisesRegex(ValueError, "start log marker"):
+            gate.collect_runtime_logs(self.device, self.folder, self.boundary)
+        self.assertEqual(len(self.calls), 5)
+        self.assertFalse((self.folder / "runtime-log-validation.json").exists())
+        self.assert_evidence("logcat-main", self.buffers["main"].encode("utf8"), b"", "PASSED", 0)
+
+    def test_existing_capture_cannot_be_overwritten_or_reexecuted(self):
+        self.device("shell", "date", "+%s", evidence_name="log-read-before")
+        before = {p.name: p.read_bytes() for p in (self.folder / "runtime-device-log-read-before").iterdir()}
+        with self.assertRaises(FileExistsError):
+            self.device("shell", "date", "+%s", evidence_name="log-read-before")
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in (self.folder / "runtime-device-log-read-before").iterdir()})
+
+    def test_actual_host_exit_255_preserves_binary_stdout_and_stderr(self):
+        self.patcher.stop()
+        code = "import sys;sys.stdout.buffer.write(b'TEST DATA\\r\\n\\xff\\x00');sys.stderr.buffer.write(b'TEST DATA offline\\r\\n');sys.exit(255)"
+        with self.assertRaisesRegex(ValueError, "exited 255"):
+            gate.capture_runtime_device([gate.sys.executable, "-c", code], self.folder, "logcat-main", self.records)
+        self.assert_evidence("logcat-main", b"TEST DATA\r\n\xff\x00", b"TEST DATA offline\r\n", "FAILED", 255)
+
+
 class LogWindowProtectionTest(unittest.TestCase):
     def setUp(self):self.boundary,self.buffers,self.window=log_fixture()
     def validate(self):return gate.validate_log_window(self.buffers,self.boundary,self.window)
@@ -634,6 +752,9 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
                 elif operation[:2]==['logcat','-b']:
                     self.assertEqual(operation[3:],['-d','-v','threadtime','-v','epoch']);output=self.log_buffers[operation[2]]
                 else:raise AssertionError('Finalize attempted a build/install/instrumentation or unexpected command: '+str(command))
+            if 'stdout' in kwargs:
+                self.assertEqual(kwargs['timeout'],120)
+                kwargs['stdout'].write(output.encode());kwargs['stderr'].write(b'')
             return SimpleNamespace(returncode=0,stdout=output.encode(),stderr=b'')
         website=dict(evidenceAcceptance='PASSED',regressionFailures=[],musicAcceptance='FAILED',total=15,passed=1,failed=14,coreTotal=9,corePassed=0)
         args=SimpleNamespace(serial='emulator-5562',prepared_report=str(self.report_path),prepared_sha=self.report_sha,website_regression_manifest='TEST DATA corpus manifest',output=None)
@@ -651,6 +772,13 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
         result=gate.read(results[0]);self.assertTrue(result['noBuildExecuted']);self.assertTrue(result['noInstallationExecuted']);self.assertTrue(result['noInstrumentationExecuted'])
         self.assertEqual(result['musicAcceptance'],'FAILED');self.assertEqual(result['artifacts'],self.report['artifacts']);self.assertEqual(len(calls),10)
         self.assertTrue(result['finalEvidenceSeal']);self.assertTrue(all('sha256' in command for command in result['commands']))
+        self.assertEqual(len(result['runtimeLogCommands']),5)
+        for row in result['runtimeLogCommands']:
+            self.assertEqual((row['status'],row['exitCode'],row['timedOut']),('PASSED',0,False))
+            self.assertEqual(gate.read(results[0].parent/row['evidenceDirectory']/'command.json'),row)
+            for key in ('stdout','stderr'):
+                expected=str((results[0].parent/row[key]['path']).relative_to(self.root))
+                self.assertTrue(any(item['path']==expected and item['sha256']==row[key]['sha256'] for item in result['finalEvidenceSeal']))
         for name,raw in self.log_buffers.items():self.assertEqual((results[0].parent/('runtime-logcat-'+name+'.log')).read_bytes(),raw.encode('utf8'))
 
 if __name__=='__main__':
