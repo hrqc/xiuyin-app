@@ -6,12 +6,18 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-/** Geometry from the real segmentation mask only: no pitches, meter, score or expected staff count. */
+/** Measured staff geometry only: model lines plus optional original pixels, never score contents or an expected count. */
 internal object OmrStaffDetector {
     data class Region(
         val lines: DoubleArray, val spacing: Double, val lineBox: IntArray, var box: IntArray,
         val detectionMethod: String,
         val trajectory: List<TrajectoryPoint> = emptyList(),
+        val imageLineEvidence: ImageLineEvidence? = null,
+    )
+    data class ImageLineEvidence(
+        val imageBandCoverage: List<Double>, val modelLineCoverage: List<Double>,
+        val imagePixelCoverage: List<Double>, val longestImageGapPixels: List<Int>,
+        val imageSpanPixels: Int, val minimumDarkRunPixels: Int, val maximumGapPixels: Int,
     )
     data class TrajectoryPoint(
         val bandLeft: Int, val bandWidth: Int, val x: Double, val centerY: Double,
@@ -26,12 +32,19 @@ internal object OmrStaffDetector {
     private data class Track(
         val center: Double, val spacing: Double, val centers: DoubleArray, val matches: List<Match>,
         val minimumLineCoverage: Double, val coverage: Double, val quality: Double,
+        val shortStaff: Boolean = false,
     )
 
-    private data class LocalDetection(val regions: List<Region>, val candidates: List<Track>)
+    private data class LocalDetection(val regions: List<Region>, val candidates: List<Track>,
+        val shortStaffs: List<Region> = emptyList())
 
-    fun detect(labels: ByteArray, width: Int, height: Int): List<Region> {
+    fun detect(labels: ByteArray, width: Int, height: Int): List<Region> = detect(labels, width, height, null)
+
+    fun detect(labels: ByteArray, width: Int, height: Int, originalGray: IntArray?): List<Region> {
         require(width > 0 && height > 0 && width.toLong() * height == labels.size.toLong()) { "谱线分割尺寸无效" }
+        require(originalGray == null || originalGray.size == labels.size && originalGray.all { it in 0..255 }) {
+            "原图灰度与分割尺寸不一致"
+        }
         val legacy = legacyRegions(labels, width, height)
         val local = localRegions(labels, width, height)
         // Keep all independently supported five-line candidates for agreement. A long
@@ -52,10 +65,129 @@ internal object OmrStaffDetector {
             }
             else -> legacy
         }
-        require(chosen.isNotEmpty()) { "未找到可信五线谱区域；请使用清晰、近水平谱页，不能生成假音符" }
-        require(chosen.size <= 64) { "单页谱表过多，请按区域分开导入" }
+        // The final system may occupy only part of a page. Its five measured lines
+        // must pass their own local support checks; do not reduce the page-wide
+        // checks or replace previously established crops.
         pad(chosen, width, height)
-        return chosen
+        val chosenBoxes = chosen.map { it.box.copyOf() }
+        val complete = (chosen + local.shortStaffs.filter { candidate ->
+            chosen.none { existing -> abs(candidate.lines[2] - existing.lines[2]) <=
+                min(candidate.spacing, existing.spacing) * 3 }
+        }).sortedBy { it.lines[2] }
+        pad(complete, width, height)
+        chosen.forEachIndexed { index, region -> region.box = chosenBoxes[index] }
+        val measured = originalGray?.let { imageSupportedRegions(labels, it, width, height, complete) }.orEmpty()
+        val result = (complete + measured).sortedBy { it.lines[2] }
+        require(result.isNotEmpty()) { "未找到可信五线谱区域；请使用清晰、近水平谱页，不能生成假音符" }
+        require(result.size <= 64) { "单页谱表过多，请按区域分开导入" }
+        // Only new regions receive new padding; do not resample or resize established crops.
+        val establishedBoxes = complete.map { it.box.copyOf() }
+        pad(result, width, height)
+        complete.forEachIndexed { index, region -> region.box = establishedBoxes[index] }
+        return result
+    }
+
+    /**
+     * A segmentation miss does not license an inferred fifth line. Measure actual dark,
+     * narrow horizontal runs in the immutable original image, then require five tracked
+     * image lines AND at least four spatially agreeing model lines. Never draw pixels
+     * into the original image or the model mask, and never use pitch/meter/note counts.
+     */
+    private fun imageSupportedRegions(labels: ByteArray, gray: IntArray, width: Int, height: Int,
+        established: List<Region>): List<Region> {
+        val linePixels = ByteArray(labels.size)
+        val minimumRun = max(24, width / 50)
+        for (y in 3 until height - 3) {
+            var start = -1
+            for (x in 0..width) {
+                val p = y * width + min(x, width - 1)
+                val measured = x < width && gray[p] <= 220 &&
+                    min(gray[p - 3 * width], gray[p + 3 * width]) - gray[p] >= 20
+                if (measured && start < 0) start = x
+                if (!measured && start >= 0) {
+                    if (x - start >= minimumRun) for (column in start until x) linePixels[y * width + column] = 4
+                    start = -1
+                }
+            }
+        }
+        val image = localRegions(linePixels, width, height)
+        val distinctImage = image.regions + image.shortStaffs.filter { short ->
+            image.regions.none { abs(short.lines[2] - it.lines[2]) <= min(short.spacing, it.spacing) * 3 }
+        }
+        val candidates = distinctImage.filter { candidate ->
+            established.none { abs(candidate.lines[2] - it.lines[2]) <= min(candidate.spacing, it.spacing) * 3 }
+        }
+        return candidates.mapNotNull { candidate ->
+            val supported = candidate.trajectory.indices.filter { index ->
+                candidate.trajectory[index].matchedLines.count { it != null } >= 3
+            }
+            if (supported.size < 3) return@mapNotNull null
+            val span = supported.first()..supported.last()
+            if (supported.size.toDouble() / span.count() < .85) return@mapNotNull null
+            val bands = span.map { candidate.trajectory[it] }
+            val imageCoverage = (0..4).map { line -> bands.count { it.matchedLines[line] != null }.toDouble() / bands.size }
+            if (imageCoverage.any { it < .80 }) return@mapNotNull null
+            // A peak in every band is not a continuous line: dashed underlines can
+            // satisfy the band histogram. Count actual observed pixels once per x,
+            // along the measured trajectory, and separately bound the longest gap.
+            val continuity = pixelContinuity(linePixels, width, height, candidate)
+            val maximumGap = max(minimumRun * 2, ceil(candidate.spacing * 6).toInt())
+            if (continuity.coverage.any { it < .80 } || continuity.longestGaps.any { it > maximumGap })
+                return@mapNotNull null
+            val support = IntArray(5)
+            var left = candidate.lineBox[0]; var right = candidate.lineBox[2]
+            var top = candidate.lineBox[1]; var bottom = candidate.lineBox[3]
+            val tolerance = max(.8, candidate.spacing * .18)
+            bands.forEach { band ->
+                for (line in 0..4) {
+                    val expected = band.centerY + (line - 2) * candidate.spacing
+                    val y0 = max(0, floor(expected - tolerance).toInt())
+                    val y1 = min(height - 1, ceil(expected + tolerance).toInt())
+                    var columns = 0
+                    for (x in band.bandLeft until band.bandLeft + band.bandWidth) {
+                        var found = false
+                        for (y in y0..y1) if (labels[y * width + x].toInt() == 4) {
+                            found = true
+                            left = min(left, x); right = max(right, x + 1)
+                            top = min(top, y); bottom = max(bottom, y + 1)
+                        }
+                        if (found) columns++
+                    }
+                    if (columns >= max(16.0, band.bandWidth * .25)) support[line]++
+                }
+            }
+            val modelCoverage = support.map { it.toDouble() / bands.size }
+            if (modelCoverage.count { it >= .65 } < 4) return@mapNotNull null
+            val box = intArrayOf(left, top, right, bottom)
+            candidate.copy(lineBox = box, box = box.copyOf(), detectionMethod = "IMAGE_LINES_WITH_FOUR_MODEL_ANCHORS",
+                imageLineEvidence = ImageLineEvidence(imageCoverage, modelCoverage, continuity.coverage,
+                    continuity.longestGaps, continuity.spanPixels, minimumRun, maximumGap))
+        }
+    }
+
+    private data class PixelContinuity(val coverage: List<Double>, val longestGaps: List<Int>, val spanPixels: Int)
+    private fun pixelContinuity(observed: ByteArray, width: Int, height: Int, candidate: Region): PixelContinuity {
+        val left = candidate.lineBox[0]; val right = candidate.lineBox[2]
+        val span = right - left
+        val pixels = IntArray(5); val gaps = IntArray(5); val longest = IntArray(5)
+        val trajectory = candidate.trajectory
+        var band = 0
+        val tolerance = max(.8, candidate.spacing * .18)
+        for (x in left until right) {
+            while (band + 1 < trajectory.size && trajectory[band + 1].x <= x) band++
+            val a = trajectory[band]; val b = trajectory[min(band + 1, trajectory.lastIndex)]
+            val weight = if (a.x == b.x) 0.0 else ((x - a.x) / (b.x - a.x)).coerceIn(0.0, 1.0)
+            val center = a.centerY + (b.centerY - a.centerY) * weight
+            for (line in 0..4) {
+                val expected = center + (line - 2) * candidate.spacing
+                val y0 = max(0, floor(expected - tolerance).toInt())
+                val y1 = min(height - 1, ceil(expected + tolerance).toInt())
+                val present = (y0..y1).any { y -> observed[y * width + x].toInt() == 4 }
+                if (present) { pixels[line]++; gaps[line] = 0 }
+                else { gaps[line]++; longest[line] = max(longest[line], gaps[line]) }
+            }
+        }
+        return PixelContinuity(pixels.map { it.toDouble() / span }, longest.toList(), span)
     }
 
     /** Retained verbatim geometry calculations keep previously validated inference crops unchanged. */
@@ -115,38 +247,51 @@ internal object OmrStaffDetector {
             }
         }
         require(seeds.size <= 2048) { "谱线候选过多，无法可靠追踪，请按系统裁剪" }
-        val tracks = seeds.mapNotNull { track(it, bands) }
+        val allTracks = seeds.mapNotNull { track(it, bands) }
             .sortedWith(compareByDescending<Track> { it.minimumLineCoverage }.thenByDescending { it.quality }.thenByDescending { it.coverage })
-        val distinct = mutableListOf<Track>()
-        tracks.forEach { candidate ->
-            if (distinct.all { abs(candidate.center - it.center) > min(candidate.spacing, it.spacing) * 3 }) distinct += candidate
-        }
-        val regions = distinct.sortedBy { it.center }.mapNotNull { candidate ->
-            var left = width; var right = -1; var top = height; var bottom = -1
-            val tolerance = max(.8, candidate.spacing * .18)
-            bands.forEachIndexed { index, band ->
-                if (candidate.matches[index].count >= 3) {
-                    for (line in -2..2) {
-                        val y = candidate.centers[index] + line * candidate.spacing
-                        for (row in max(0, floor(y - tolerance).toInt())..min(height - 1, ceil(y + tolerance).toInt())) {
-                            for (x in band.x until band.x + band.width) if (labels[row * width + x].toInt() == 4) {
-                                left = min(left, x); right = max(right, x); top = min(top, row); bottom = max(bottom, row)
+        val tracks = allTracks.filterNot { it.shortStaff }
+        fun regionsFor(candidates: List<Track>): List<Region> {
+            val distinct = mutableListOf<Track>()
+            candidates.forEach { candidate ->
+                if (distinct.all { abs(candidate.center - it.center) > min(candidate.spacing, it.spacing) * 3 }) distinct += candidate
+            }
+            return distinct.sortedBy { it.center }.mapNotNull { candidate ->
+                var left = width; var right = -1; var top = height; var bottom = -1
+                val tolerance = max(.8, candidate.spacing * .18)
+                bands.forEachIndexed { index, band ->
+                    if (candidate.matches[index].count >= 3) {
+                        for (line in -2..2) {
+                            val y = candidate.centers[index] + line * candidate.spacing
+                            for (row in max(0, floor(y - tolerance).toInt())..min(height - 1, ceil(y + tolerance).toInt())) {
+                                for (x in band.x until band.x + band.width) if (labels[row * width + x].toInt() == 4) {
+                                    left = min(left, x); right = max(right, x); top = min(top, row); bottom = max(bottom, row)
+                                }
                             }
                         }
                     }
                 }
-            }
-            if (right - left < width * .35 || bottom < top) null else {
-                val box = intArrayOf(left, top, right + 1, bottom + 1)
-                Region(DoubleArray(5) { candidate.center + (it - 2) * candidate.spacing }, candidate.spacing,
-                    box, box.copyOf(), "LOCAL_FIVE_LINE_TRACKS",
-                    bands.mapIndexed { index, band ->
-                        TrajectoryPoint(band.x, band.width, band.x + (band.width - 1) / 2.0,
-                            candidate.centers[index], candidate.matches[index].rows.toList())
-                    })
+                val minimumWidth = if (candidate.shortStaff) max(160.0, candidate.spacing * 24) else width * .35
+                if (right - left < minimumWidth || bottom < top) null else {
+                    val box = intArrayOf(left, top, right + 1, bottom + 1)
+                    val region = Region(DoubleArray(5) { candidate.center + (it - 2) * candidate.spacing }, candidate.spacing,
+                        box, box.copyOf(), if (candidate.shortStaff) "LOCAL_SHORT_FIVE_LINE_TRACKS" else "LOCAL_FIVE_LINE_TRACKS",
+                        bands.mapIndexed { index, band ->
+                            TrajectoryPoint(band.x, band.width, band.x + (band.width - 1) / 2.0,
+                                candidate.centers[index], candidate.matches[index].rows.toList())
+                        })
+                    if (candidate.shortStaff) {
+                        // Band peaks alone also accept five dashed underlines. Require
+                        // continuous class-4 model pixels, not filtered original-image
+                        // runs: real short staffs can have image strokes occluded by notes.
+                        val continuity = pixelContinuity(labels, width, height, region)
+                        val maximumGap = max(max(24, width / 50) * 2, ceil(candidate.spacing * 6).toInt())
+                        if (continuity.coverage.any { it < .80 } || continuity.longestGaps.any { it > maximumGap }) null
+                        else region
+                    } else region
+                }
             }
         }
-        return LocalDetection(regions, tracks)
+        return LocalDetection(regionsFor(tracks), tracks, regionsFor(allTracks.filter { it.shortStaff }))
     }
 
     private fun scanBand(labels: ByteArray, width: Int, height: Int, x: Int, bandWidth: Int): Band {
@@ -200,9 +345,21 @@ internal object OmrStaffDetector {
         }
         val coverage = matches.count { it.count >= 3 }.toDouble() / bands.size
         val minimumLineCoverage = (0..4).minOf { line -> matches.count { it.rows[line] != null }.toDouble() / bands.size }
-        if (coverage < .65 || minimumLineCoverage < .38) return null
+        val pageSupported = coverage >= .65 && minimumLineCoverage >= .38
+        if (!pageSupported) {
+            // Short systems are measured against a contiguous supported span, not
+            // against blank page margins. Every one of the five lines must really
+            // occur in at least 80% of that span. Four lines never imply a fifth.
+            val supported = matches.indices.filter { matches[it].count >= 4 }
+            if (supported.size < 3) return null
+            val span = supported.first()..supported.last()
+            if (supported.size.toDouble() / span.count() < .85) return null
+            val measuredWidth = bands[span.last].x + bands[span.last].width - bands[span.first].x
+            if (measuredWidth < max(160.0, seed.spacing * 24)) return null
+            if ((0..4).any { line -> span.count { matches[it].rows[line] != null }.toDouble() / span.count() < .80 }) return null
+        }
         return Track(median(centers.toList()), seed.spacing, centers, matches, minimumLineCoverage,
-            coverage, matches.sumOf { it.support } / bands.size)
+            coverage, matches.sumOf { it.support } / bands.size, shortStaff = !pageSupported)
     }
 
     private fun match(band: Band, center: Double, spacing: Double, tolerance: Double): Match {

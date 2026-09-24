@@ -37,7 +37,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.xiuyin.app"
-VERSION = "0.3.0-octave.2-fieldtest.4"
+VERSION = "0.3.0-octave.2-fieldtest.5"
 KNOWN_SUITE = "TEST-dotiam-independent2.xml"
 KNOWN_CLASS = PACKAGE + ".practice.PracticePcmIntegrationTest"
 KNOWN_METHOD = "productionPcmToFollowerAndDurableReport"

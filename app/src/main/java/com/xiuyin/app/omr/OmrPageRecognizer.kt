@@ -22,7 +22,7 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
         val gray = grayscale(bitmap)
         val enhanced = clahe(gray, width, height)
         val labels = segment(enhanced, width, height, progress)
-        val regions = detectStaffs(labels, width, height)
+        val regions = detectStaffs(labels, width, height, gray)
         val staffs = JSONArray()
         regions.forEachIndexed { index, region ->
             NativeOmrModels.checkCancelled()
@@ -47,6 +47,20 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
                 .put("lines", JSONArray(region.lines.toList()))
                 .put("spacing", region.spacing)
                 .put("staffDetectionMethod", region.detectionMethod)
+                .put("imageLineEvidence", region.imageLineEvidence?.let { evidence ->
+                    JSONObject().put("source", "IMMUTABLE_ORIGINAL_GRAYSCALE_HORIZONTAL_RUNS")
+                        .put("modelMaskModified", false).put("sourceImageModified", false)
+                        .put("minimumDarkRunPixels", evidence.minimumDarkRunPixels)
+                        .put("maximumGray", 220).put("minimumVerticalContrast", 20).put("verticalProbeDistance", 3)
+                        .put("minimumRequiredModelLines", 4).put("minimumModelLineCoverage", .65)
+                        .put("minimumImageBandCoverage", .80).put("minimumBandSpanCoverage", .85)
+                        .put("minimumImagePixelCoverage", .80).put("maximumGapRule", "max(2*minimumDarkRunPixels,ceil(6*spacing))")
+                        .put("imageBandCoverage", JSONArray(evidence.imageBandCoverage))
+                        .put("imagePixelCoverage", JSONArray(evidence.imagePixelCoverage))
+                        .put("longestImageGapPixels", JSONArray(evidence.longestImageGapPixels))
+                        .put("imageSpanPixels", evidence.imageSpanPixels).put("maximumGapPixels", evidence.maximumGapPixels)
+                        .put("modelLineCoverage", JSONArray(evidence.modelLineCoverage))
+                } ?: JSONObject.NULL)
                 .put("geometryTransform", geometryDiagnostics(region, dewarp))
                 .put("tokens", selected.getJSONArray("tokens"))
                 .put("eos", selected.getBoolean("eos"))
@@ -98,8 +112,8 @@ internal class OmrPageRecognizer(private val models: NativeOmrModels) {
         }
     }
 
-    private fun detectStaffs(labels: ByteArray, width: Int, height: Int): List<OmrStaffDetector.Region> =
-        OmrStaffDetector.detect(labels, width, height)
+    private fun detectStaffs(labels: ByteArray, width: Int, height: Int, originalGray: IntArray): List<OmrStaffDetector.Region> =
+        OmrStaffDetector.detect(labels, width, height, originalGray)
 
     private fun canvasForRegion(gray: IntArray, width: Int, region: OmrStaffDetector.Region,
         dewarp: OmrStaffDewarp.Plan?): FloatArray =

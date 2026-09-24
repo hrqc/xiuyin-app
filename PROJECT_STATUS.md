@@ -1,3 +1,18 @@
+# 当前增量：0.3.0-octave.2-fieldtest.5（versionCode 10，工程 Field 候选）
+
+日期：2026-09-24。本轮对应 PRODUCT 第4/5/14节的真实 OMR 谱行补漏、来源证据与双谱表验证；不重建数据库，不改变音频模型或阈值，AGENTS/PRODUCT及已有功能保留。
+
+- 已实现原图像素五线复查和短谱行补查，保留旧可靠裁框、原图、Raw/Original和人工修订；补查不依赖预期音符、拍号或行数。短谱行必须逐列满足真实模型像素连续度，五条虚线反例拒绝；29项专项通过，随后294项JVM通过，两轮不重复计数。
+- 最新预提交完整复检 reports/20260924T064141345Z/report.json：506项505通过、1既有DotIAM2音乐失败、0跳过；294 JVM、210主Android全部通过，另2项DotIAM中1过1原失败。严格Lint、Debug/Release构建通过。默认真实trace896帧完整，Autopiano25/25、旧DotIAM18/18保持，DotIAM2仍23真/30接受/额外7。此报告为基础HEAD=9bf2732的dirty开发候选，不能替代后续干净提交、固定双APK与最终交付。
+- 第一轮全检 reports/20260924T055813672Z/report.json 为504/501/3、0跳过、整体FAILED：模拟器累积20个未确认导出的历史TEST DATA会话，保护上限阻断3项Field测试。全部原件90,457,088字节tar已备份；10个明确TEST DATA会话经实际App生成ZIP、Android系统保存、SHA读回、主机ZIP验证后，才在App确认清理。剩余10个会话、曲库和修订保留，未改容量限制或清库。维护及自动化定位失败原记录见reports/fieldtest5-development/storage-capacity-20260924/maintenance-result.json。
+- candidate2开发包真实完成S01/S02/S03三谱IMPORT→跨进程REOPEN，共六阶段通过。S02由5行55音恢复8行88音；S03由11/6行恢复12/8行、49个书写小节266音7休止。与冻结但未经教师认证的参考，在适用来源位置、音高、局部时值/起点和双手对应维度内零差异。candidate2早于最后短谱行连续度修复；最终同包必须重跑，不以阶段结果替代。证据见reports/fieldtest5-development/r/0924054813-9fcc50/及candidate2-s02/s03-comparison-r2/。
+- 上述未手动修改的S02仍有88项缺拍号ERROR；S03仍有4项反复顺序待确认ERROR，其4/4来源含时值推断而非图像直接识别。两份Current的practiceReadiness仍为BLOCKED_BY_RETAINED_ERRORS，不能声称自动导入后直接可陪练。S01仍177音/8休止，已知135项时值、13项8va及多出1音失败未解决。缺拍号和顺序须按原谱显式确认，不能随意填值或清除音乐错误。
+- 已加入真实三谱独立导入/冷重载测试及完整原件归档；第一轮测试复制继承0600导致证据拉取失败的记录保留，仅测试导出复制改为新建流拷贝，实际重跑通过。主Android全检另含实际S02导入和完整SHA归档，不污染旧58/59输入。
+- 音频既有D4/D5、D5/D6和网站多检/漏检失败保持；本版固定双APK还须完成完整prepare、15组真实音频防回归、三谱六阶段、实际工作台与Field系统保存、日志和回退验证。最终Commit、Tag、Push、APK/SHA及验收结果统一以 outputs/field-tests/v0.3.0-octave.2-fieldtest.5/fieldtest-manifest.json 实核；缺清单或关键工程失败即未交付。音乐FAILED时不得提升main或宣称完整准确版。
+- 上一Field .4已封存并实际Push/远端读回：9bf2732da5db3bca2a497e28b2d66a31638add5a / v0.3.0-octave.2-fieldtest.4；权威产物见对应manifest。稳定main仍v0.2.0 / dbe1a852d2609126f1688039110ec0187808af63。旧标签/APK保留，代码优先git revert；物理手机降级、琴房准确率、踏板、教师逐音复核和新的独立验收仍未验证。
+
+以下保留 .4 及以前的过程记录，历史未验证状态以对应最终产物清单补充。
+
 # 项目状态
 
 ## 当前版本：0.3.0-octave.2-fieldtest.4（versionCode 9，工程 Field 候选）

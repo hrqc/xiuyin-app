@@ -71,7 +71,7 @@ class OmrProblemPageTest {
                     .put("staffLineRowHistogram", JSONArray(histogram.toList()))
                     .put("legacyRowThreshold", maxOf(30.0, bitmap.width * .16))
                 try {
-                    val regions = method("detectStaffs").invoke(recognizer, labels, bitmap.width, bitmap.height) as List<*>
+                    val regions = method("detectStaffs").invoke(recognizer, labels, bitmap.width, bitmap.height, gray) as List<*>
                     report.put("detectedStaffCount", regions.size).put("regions", JSONArray(regions.map { region ->
                         requireNotNull(region)
                         fun value(name: String): Any = region.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(region)!!

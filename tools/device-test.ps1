@@ -141,6 +141,58 @@ function Get-ArtifactSha256([string]$Path) {
     finally { $hasher.Dispose(); $stream.Dispose() }
 }
 
+function Get-OmrIndependentManifestEntries($Manifest) {
+    if ($Manifest.schemaVersion -ne 1 -or $Manifest.musicalAcceptance -cne 'UNVERIFIED') { throw '独立OMR清单版本或音乐边界无效。' }
+    $entries = @($Manifest.files)
+    if ($entries.Count -eq 0) { throw '独立OMR清单没有真实文件。' }
+    $seen = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $entries) {
+        $name = [string]$entry.path
+        if ($name -notmatch '^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$' -or @($name.Split('/') | Where-Object { $_ -in @('.', '..') }).Count -gt 0 -or
+            -not $seen.Add($name) -or $name -eq 'evidence-manifest.json' -or [IO.Path]::GetFileName($name) -like 'TEST-*.xml') {
+            throw ('独立OMR清单有越界、重复或测试计数冲突路径：' + $name)
+        }
+        if (($entry.bytes -isnot [int] -and $entry.bytes -isnot [long]) -or $entry.bytes -lt 0 -or [string]$entry.sha256 -cnotmatch '^[a-f0-9]{64}$') {
+            throw ('独立OMR清单缺真实字节/SHA：' + $name)
+        }
+    }
+    return $entries
+}
+
+function Assert-OmrIndependentReport($Report, $Context, $Manifest) {
+    if ($Report.schemaVersion -ne 1 -or $Report.runId -cne $Context.runId -or $Report.phase -cne 'IMPORT' -or $Report.case -cne 'S02' -or
+        $Report.status -cne 'INFERENCE_AND_REPOSITORY_RELOAD_PASSED' -or $Report.musicalAcceptance -cne 'UNVERIFIED' -or
+        $Report.crossProcessReload -cne 'NOT_YET_RUN' -or $Report.teacherConfirmed -isnot [bool] -or $Report.teacherConfirmed -or
+        $Report.reusedExisting -isnot [bool] -or $Report.reusedExisting -or $Report.repositoryReloadEqual -isnot [bool] -or -not $Report.repositoryReloadEqual -or
+        $Report.revisionGeneration -ne 0 -or $Report.appSha256 -cne $Context.appSha256 -or $Report.testApkSha256 -cne $Context.testApkSha256 -or
+        $Report.gitCommitAtBuild -cne $Context.gitCommit -or $Report.sourceSha256 -cne $Context.inputSha256 -or $Report.referenceSha256 -cne $Context.referenceSha256 -or
+        $Report.sourceFile -cne $Context.inputFile -or $Report.referenceFile -cne $Context.referenceFile -or [string]$Report.sourceId -cnotmatch '^[a-f0-9]{64}$') {
+        throw '独立OMR默认报告不是本次S02真实IMPORT/仓库冷加载，或身份/音乐边界不一致。'
+    }
+    if ([string]$Report.startedAt -notmatch 'Z$' -or [string]$Report.finishedAt -notmatch 'Z$') { throw '独立OMR报告缺实际UTC运行时间。' }
+    $from = [DateTimeOffset]::Parse($Report.startedAt, [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds()
+    $until = [DateTimeOffset]::Parse($Report.finishedAt, [Globalization.CultureInfo]::InvariantCulture).ToUnixTimeMilliseconds()
+    if ($from -lt $Context.deviceStartedAtMillis -or $until -lt $from -or $until -gt $Context.deviceFinishedAtMillis) { throw '独立OMR报告不在本次设备运行窗口内。' }
+    $byName = @{}
+    foreach ($entry in @(Get-OmrIndependentManifestEntries -Manifest $Manifest)) { $byName[[string]$entry.path] = $entry }
+    $sourcePrefix = 'omr-sources/' + $Report.sourceId + '/'
+    foreach ($pair in @(@('reference.json', $Context.referenceSha256), @('current-score.json', $Report.currentSha256),
+        @('digital-score.json', $Report.currentSha256), @('metadata.json', $Report.metadataSha256),
+        @(($sourcePrefix + 'raw-result.json'), $Report.rawSha256), @(($sourcePrefix + 'original.json'), $Report.originalSha256),
+        @(($sourcePrefix + 'original-000.document'), $Context.inputSha256))) {
+        if (-not $byName.ContainsKey($pair[0]) -or [string]$pair[1] -cnotmatch '^[a-f0-9]{64}$' -or $byName[$pair[0]].sha256 -cne $pair[1]) {
+            throw ('独立OMR的Raw/Original/Current/原输入或元数据未完整绑定：' + $pair[0])
+        }
+    }
+    foreach ($name in @('report.json', 'metadata-database.db', 'model-manifest.json')) {
+        if (-not $byName.ContainsKey($name) -or $byName[$name].bytes -le 0) { throw ('独立OMR真实归档缺失：' + $name) }
+    }
+    if (@($byName.Keys | Where-Object { $_ -cmatch ('^' + [regex]::Escape($sourcePrefix) + 'page-\d{3}\.image$') }).Count -lt 1) { throw '独立OMR未保留Android真实渲染页。' }
+    if ($Report.actual.rawEventCount -ne $Report.actual.convertedEventCount -or $Report.actual.noteCount -lt 1 -or $Report.actual.pageCount -lt 1) {
+        throw '独立OMR模型未输出真实发声音符，或转换事件数量不守恒。'
+    }
+}
+
 function Invoke-AdbCapture([string[]]$AdbArguments, [string]$LogPath) {
     $lines = New-Object 'Collections.Generic.List[string]'
     $previousPreference = $ErrorActionPreference
@@ -168,6 +220,9 @@ $failure = $null
 $traceEvidence = $null
 $boundaryEvidence = $null
 $completionEvidence = $null
+$omrEvidence = $null
+$omrContext = $null
+$omrDirectory = $null
 $boundaryContext = $null
 $boundaryDirectory = $null
 try {
@@ -241,6 +296,41 @@ try {
             if ($identity.exitCode -ne 0 -or $identity.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -ne $entry[2]) { throw '边界测试实际安装 APK 与本次构建不同。' }
         }
     }
+    # The independent S02 input never enters the existing exact-two-page 58/59 directory.
+    $omrNonce = [guid]::NewGuid().ToString('N')
+    $omrRunId = 's02-default-' + $omrNonce
+    $omrInputDirectory = 'omr-independent-input-' + $omrNonce
+    # Keep the host directory short: ADB pulls one file to a short temporary name before native placement.
+    $omrDirectory = Join-Path $outputRoot ('omr\' + $omrNonce.Substring(0, 16))
+    if (Test-Path -LiteralPath $omrDirectory) { throw '拒绝复用独立OMR本轮归档目录。' }
+    New-Item -ItemType Directory -Path $omrDirectory | Out-Null
+    $omrContext = [ordered]@{
+        runId = $omrRunId; mainRunId = $traceRunId; device = $deviceSerial; gitCommit = $boundaryContext.gitCommit
+        phase = 'IMPORT'; case = 'S02'; inputDirectory = $omrInputDirectory
+        inputFile = 'score-02-treble-notes.jpg'; inputSha256 = 'ed68c9edeff8edfcfbab678559a4e3e110df1eeaa95d1a56fa9d8bfa86e3531a'
+        referenceFile = 's02-single-notes-1beat.json'; referenceSha256 = '9c17cc9075736db43ef5f8eb68a4570cf05ea39c5daf0bfbfa46ccf4bc9e775b'
+        appSha256 = $traceContext.appSha256; testApkSha256 = $traceContext.testApkSha256
+        commands = @(); files = @(); musicalAcceptance = 'UNVERIFIED'; crossProcessReload = 'NOT_YET_RUN'
+        scope = 'Default suite: real S02 IMPORT plus cold repository reload only; three-case cross-process gate must run separately.'
+    }
+    $omrEvidence = [ordered]@{ runId = $omrRunId; directory = $omrDirectory; status = 'NOT_VERIFIED'; musicalAcceptance = 'UNVERIFIED'; crossProcessReload = 'NOT_YET_RUN' }
+    $omrInputBase = Join-Path $projectRoot 'reports\onlinepianist-validation-20260923'
+    $omrInputs = @(@((Join-Path $omrInputBase ('inputs\' + $omrContext.inputFile)), $omrContext.inputFile, $omrContext.inputSha256),
+        @((Join-Path $omrInputBase ('references\' + $omrContext.referenceFile)), $omrContext.referenceFile, $omrContext.referenceSha256))
+    $makeInput = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'mkdir', ('files/' + $omrInputDirectory)) -Name 'input-mkdir.log' -Directory $omrDirectory -Context $omrContext
+    if ($makeInput.exitCode -ne 0) { throw '不能建立本次独立OMR输入目录；不复用历史目录。' }
+    $inputIndex = 0
+    foreach ($entry in $omrInputs) {
+        if (-not (Test-Path -LiteralPath $entry[0] -PathType Leaf) -or (Get-ArtifactSha256 -Path $entry[0]) -cne $entry[2]) { throw '真实S02原图/参照缺失或SHA不符，禁止替代输入。' }
+        $remoteTemporary = '/data/local/tmp/xiuyin-omr-' + $omrNonce + '-' + $entry[1]
+        $remotePrivate = 'files/' + $omrInputDirectory + '/' + $entry[1]
+        $pushed = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'push', $entry[0], $remoteTemporary) -Name ('input-' + $inputIndex + '-push.log') -Directory $omrDirectory -Context $omrContext
+        if ($pushed.exitCode -ne 0) { throw '本次独立OMR真实输入push失败。' }
+        $copied = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'cp', $remoteTemporary, $remotePrivate) -Name ('input-' + $inputIndex + '-copy.log') -Directory $omrDirectory -Context $omrContext
+        $checked = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'sha256sum', $remotePrivate) -Name ('input-' + $inputIndex + '-sha.log') -Directory $omrDirectory -Context $omrContext
+        if ($copied.exitCode -ne 0 -or $checked.exitCode -ne 0 -or $checked.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $entry[2]) { throw '设备真实S02输入原字节SHA不一致。' }
+        $inputIndex++
+    }
     Save-BoundaryInstalledIdentity -Phase 'before'
     $oldBoundary = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'if [ -f /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json ]; then sha256sum /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json; else echo ABSENT; fi') -Name 'before-report-sha.log'
     if ($oldBoundary.exitCode -ne 0) { throw '无法读取边界测试旧报告状态。' }
@@ -248,7 +338,7 @@ try {
     if ($beforeClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$') { throw '无法读取边界测试设备开始时间。' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $afterClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'after-clock.log'
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
@@ -331,6 +421,63 @@ try {
             $completionContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $completionDirectory 'completion-context.json') -Encoding utf8
         }
     }
+    # Pull the current run's complete manifest even when a test failed; do not lose failed .pending evidence.
+    $omrFailure = $null
+    try {
+        $omrContext.instrumentationExitCode = $instrumentation.exitCode
+        if ($beforeClock.exitCode -ne 0 -or $afterClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$' -or $afterClock.output.Trim() -notmatch '^\d{10,}$') { throw 'OMR本次设备时间窗口缺失。' }
+        $omrContext.deviceStartedAtMillis = [long]$beforeClock.output.Trim() * 1000
+        $omrContext.deviceFinishedAtMillis = [long]$afterClock.output.Trim() * 1000 + 999
+        foreach ($pair in @(@('instrumentation.log', 'instrumentation.log'), @('TEST-instrumentation.xml', 'instrumentation-result.xml'))) {
+            $destination = Join-Path $omrDirectory $pair[1]
+            if (Test-Path -LiteralPath $destination) { throw '拒绝覆盖独立OMR仪器证据。' }
+            Copy-Item -LiteralPath (Join-Path $outputRoot $pair[0]) -Destination $destination
+            $omrContext.files += [ordered]@{ file = $pair[1]; sha256 = (Get-ArtifactSha256 -Path $destination) }
+        }
+        $omrRemote = '/sdcard/Android/data/com.xiuyin.app/files/omr-independent-regression/' + $omrRunId
+        $manifestPath = Join-Path $omrDirectory 'evidence-manifest.json'
+        $pullManifest = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'pull', ($omrRemote + '/evidence-manifest.json'), $manifestPath) -Name 'manifest-pull.log' -Directory $omrDirectory -Context $omrContext
+        $manifestDevice = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', ($omrRemote + '/evidence-manifest.json')) -Name 'manifest-device-sha.log' -Directory $omrDirectory -Context $omrContext
+        if ($pullManifest.exitCode -ne 0 -or -not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or $manifestDevice.exitCode -ne 0 -or
+            $manifestDevice.output -notmatch '^([a-f0-9]{64})\s+' -or (Get-ArtifactSha256 -Path $manifestPath) -cne $Matches[1]) { throw '本次独立OMR清单拉取或原字节SHA验证失败。' }
+        $manifestSha = Get-ArtifactSha256 -Path $manifestPath
+        $omrManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $entries = @(Get-OmrIndependentManifestEntries -Manifest $omrManifest)
+        $pullFailures = @(); $fileIndex = 0
+        foreach ($entry in $entries) {
+            $stem = 'file-' + $fileIndex.ToString('D4')
+            $temporary = Join-Path $omrDirectory ($stem + '.pull')
+            $destination = [IO.Path]::GetFullPath((Join-Path $omrDirectory ($entry.path.Replace('/', '\'))))
+            if (-not $destination.StartsWith(([IO.Path]::GetFullPath($omrDirectory) + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
+                (Test-Path -LiteralPath $destination) -or (Test-Path -LiteralPath $temporary)) { throw '独立OMR文件越界或覆盖已有证据。' }
+            $remote = $omrRemote + '/' + $entry.path
+            $pulled = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'pull', $remote, $temporary) -Name ($stem + '-pull.log') -Directory $omrDirectory -Context $omrContext
+            $deviceHash = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', $remote) -Name ($stem + '-device-sha.log') -Directory $omrDirectory -Context $omrContext
+            if ($pulled.exitCode -ne 0 -or -not (Test-Path -LiteralPath $temporary -PathType Leaf)) { $pullFailures += ('文件未取回：' + $entry.path) }
+            elseif ($deviceHash.exitCode -ne 0 -or $deviceHash.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $entry.sha256 -or
+                (Get-Item -LiteralPath $temporary).Length -ne $entry.bytes -or (Get-ArtifactSha256 -Path $temporary) -cne $entry.sha256) { $pullFailures += ('清单/设备/主机原字节不符：' + $entry.path) }
+            else {
+                New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
+                Move-Item -LiteralPath $temporary -Destination $destination
+                $omrContext.files += [ordered]@{ file = $entry.path; bytes = $entry.bytes; sha256 = $entry.sha256 }
+            }
+            $fileIndex++
+        }
+        $manifestAfter = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', ($omrRemote + '/evidence-manifest.json')) -Name 'manifest-after-sha.log' -Directory $omrDirectory -Context $omrContext
+        if ($manifestAfter.exitCode -ne 0 -or $manifestAfter.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $manifestSha) { $pullFailures += '传输期间原始清单发生变化。' }
+        if ($pullFailures.Count -gt 0) { throw ($pullFailures -join '；') }
+        $omrContext.files += [ordered]@{ file = 'evidence-manifest.json'; sha256 = $manifestSha; bytes = (Get-Item -LiteralPath $manifestPath).Length }
+        $omrReport = Get-Content -LiteralPath (Join-Path $omrDirectory 'report.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        Assert-OmrIndependentReport -Report $omrReport -Context $omrContext -Manifest $omrManifest
+        $omrCase = @($result.cases | Where-Object { $_.className -ceq 'com.xiuyin.app.omr.OmrIndependentDatasetTest' -and $_.testName -ceq 'explicitPhaseUsesRealImportOrCrossProcessArchive' })
+        if ($omrCase.Count -ne 1 -or $omrCase[0].statusCode -ne 0) { throw '本次主仪器日志未确认唯一独立OMR测试真实通过。' }
+        $omrEvidence.status = 'PASSED'; $omrEvidence.report = Join-Path $omrDirectory 'report.json'; $omrEvidence.manifestSha256 = $manifestSha
+    } catch {
+        $omrFailure = $_.Exception.Message
+        $omrEvidence.status = 'FAILED'; $omrEvidence.failure = $omrFailure
+    } finally {
+        $omrContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $omrDirectory 'omr-context.json') -Encoding utf8
+    }
     # Preserve complete diagnostic bytes even if another main-suite assertion failed.
     $traceRemote = '/sdcard/Android/data/com.xiuyin.app/files/independent-pcm-traces/' + $traceRunId
     foreach ($name in @('metadata.json', 'frames.jsonl', 'engine-status.jsonl', 'practice-replay-result.json')) {
@@ -343,6 +490,7 @@ try {
     $traceEvidence.validation = Join-Path $traceDirectory 'trace-validation.json'
     if ($boundaryFailure) { throw $boundaryFailure }
     if ($completionFailure) { throw $completionFailure }
+    if ($omrFailure) { throw $omrFailure }
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
     $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
     # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
@@ -388,12 +536,15 @@ try {
     if ($boundaryContext -and $boundaryDirectory -and -not (Test-Path -LiteralPath (Join-Path $boundaryDirectory 'boundary-context.json'))) {
         $boundaryContext | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $boundaryDirectory 'boundary-context.json') -Encoding utf8
     }
+    if ($omrContext -and $omrDirectory -and -not (Test-Path -LiteralPath (Join-Path $omrDirectory 'omr-context.json'))) {
+        $omrContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $omrDirectory 'omr-context.json') -Encoding utf8
+    }
     if (Test-Path -LiteralPath $outputRoot -PathType Container) {
         [ordered]@{
             executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
             startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
             status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
-            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence
+            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence; omrIndependent = $omrEvidence
         } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
     }
 }
