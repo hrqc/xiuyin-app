@@ -42,7 +42,7 @@ class PracticeSession(
                 PracticeDecision.CORRECT -> correct++
                 PracticeDecision.WRONG -> { wrong++; passClean = false; consecutivePasses = 0 }
                 PracticeDecision.MISSED -> { missed++; passClean = false; consecutivePasses = 0 }
-                PracticeDecision.UNCERTAIN -> Unit
+                PracticeDecision.UNCERTAIN -> { passClean = false; consecutivePasses = 0 }
             }
             if (evidence.size == 2000) { evidence.removeFirst(); truncated = true }
             evidence.addLast(item)

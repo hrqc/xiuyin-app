@@ -94,6 +94,60 @@ class PracticePreparationUiTest {
         compose.onNodeWithTag("companion_review_acknowledgement").performScrollTo().assertIsOff()
         assertEquals(0, starts)
     }
+    @Test fun pausedModelFailureCanBeRetriedBesideContinueAndFinishRemainsAvailable() {
+        val score = score()
+        val state = mutableStateOf(CompanionState(scoreId = score.id, score = score,
+            timeline = ScoreTimelineCompiler.compile(score), phase = CompanionPhase.PAUSED))
+        val recognition = mutableStateOf(RecognitionEngineSnapshot(RecognitionEngineStatus.ERROR, "TEST DATA 本地模型加载失败"))
+        var retries = 0
+        var resumes = 0
+        var finishes = 0
+        compose.setContent { XiuyinTheme {
+            PracticeCompanionScreen(state.value, onStart = {}, onPause = {}, onResume = { resumes++ }, onSeekMeasure = {},
+                onFinish = { finishes++; state.value = state.value.copy(phase = CompanionPhase.READY) }, onBack = {},
+                recognition = recognition.value, onRetryModel = {
+                    retries++
+                    recognition.value = RecognitionEngineSnapshot(RecognitionEngineStatus.LOADING, "TEST DATA retry loading")
+                })
+        } }
+        compose.onNodeWithTag("companion_resume_preparation").performScrollTo().assertTextContains("TEST DATA 本地模型加载失败", substring = true)
+        compose.onNodeWithTag("companion_resume").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("companion_resume_prepare").performScrollTo().assertTextEquals("重试准备继续").assertIsEnabled().performClick()
+        assertEquals(1, retries)
+        compose.onNodeWithTag("companion_resume_prepare").assertDoesNotExist()
+        compose.onNodeWithTag("companion_resume").performScrollTo().assertIsNotEnabled()
+        assertEquals(0, resumes)
+        compose.onNodeWithTag("companion_finish").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(1, finishes)
+        compose.runOnIdle { recognition.value = RecognitionEngineSnapshot(RecognitionEngineStatus.READY) }
+        compose.onNodeWithTag("companion_resume").assertDoesNotExist()
+        assertEquals("结束后的迟到 READY 不能恢复", 0, resumes)
+    }
+
+    @Test fun pausedLoadingBlocksContinueAndReadyStillNeedsAnExplicitTap() {
+        val score = score()
+        val state = CompanionState(scoreId = score.id, score = score,
+            timeline = ScoreTimelineCompiler.compile(score), phase = CompanionPhase.PAUSED, locked = true)
+        val recognition = mutableStateOf(RecognitionEngineSnapshot(RecognitionEngineStatus.LOADING, "TEST DATA loading"))
+        val fieldBlocked = mutableStateOf(false)
+        var resumes = 0
+        compose.setContent { XiuyinTheme {
+            PracticeCompanionScreen(state, onStart = {}, onPause = {}, onResume = { resumes++ }, onSeekMeasure = {}, onFinish = {}, onBack = {},
+                recognition = recognition.value, fieldInputBlocked = fieldBlocked.value)
+        } }
+        compose.onNodeWithTag("companion_resume_preparation").performScrollTo().assertTextContains("麦克风保持停止", substring = true)
+        compose.onNodeWithTag("companion_resume").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("companion_resume_prepare").assertDoesNotExist()
+        compose.runOnIdle { recognition.value = RecognitionEngineSnapshot(RecognitionEngineStatus.READY) }
+        assertEquals("READY 状态变化不能调用继续", 0, resumes)
+        compose.onNodeWithTag("companion_resume").assertIsEnabled()
+        compose.runOnIdle { fieldBlocked.value = true }
+        compose.onNodeWithTag("companion_resume").assertIsNotEnabled()
+        compose.runOnIdle { fieldBlocked.value = false }
+        compose.onNodeWithTag("companion_resume").performScrollTo().assertIsEnabled().performClick()
+        assertEquals(1, resumes)
+        assertTrue("界面准备不能清除业务锁", state.locked)
+    }
     private fun score(): DigitalScore {
         val event = ScoreEvent("e1", BeatFraction.ZERO, BeatFraction.of(1), ScoreEditing.pitchFromMidi(60),
             1, "1", false, "quarter", 0, emptySet(), 0, 0)

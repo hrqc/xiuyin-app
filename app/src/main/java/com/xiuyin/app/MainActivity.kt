@@ -583,7 +583,13 @@ class MainActivity : ComponentActivity() {
                                         if (problem != null) fieldModel.reportError(problem)
                                         else requestReadyAudio { companionModel.start(config); if (companionModel.state.value.phase == CompanionPhase.RUNNING) beginFormalInput() }
                                     },
-                                    onPause = { companionModel.pause(); model.stopAudio("用户暂停陪练") },
+                                    onPause = {
+                                        companionModel.pause()
+                                        model.stopAudio("用户暂停陪练")
+                                        // Preparation alone never queues capture. READY still needs a new Continue tap.
+                                        if (companionPageVisible && appDataAvailable() && companionModel.hasActiveSession() &&
+                                            lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) prepareModel()
+                                    },
                                     onResume = { requestReadyAudio { companionModel.resume(); if (companionModel.state.value.phase in setOf(CompanionPhase.RUNNING, CompanionPhase.LOCKED)) beginFormalInput() } },
                                     onSeekMeasure = companionModel::seekMeasure,
                                     onFinish = { model.stopAudio("练习结束"); companionModel.finish() },

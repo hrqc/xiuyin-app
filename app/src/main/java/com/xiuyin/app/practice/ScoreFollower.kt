@@ -44,6 +44,7 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
     private var alignment: Alignment? = null
     private var lastConfirmedTime = -10.0
     private var lastConfirmedNotes: Set<Int> = emptySet()
+    private var positionUncertain = false
 
     init {
         require(config.startMeasure in timeline.measures.indices && (config.endMeasure ?: timeline.measures.lastIndex) in config.startMeasure..timeline.measures.lastIndex) { "练习小节范围无效" }
@@ -56,12 +57,12 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
     fun measureIndex(): Int = targets.getOrNull(cursor)?.let { timeline.measureAt(it.startBeat)?.index }
         ?: timeline.measureAt(targets.last().startBeat)!!.index
     fun resetInputStream() { lastFrame = -1L; lastTime = -1.0; clearPending() }
-    fun reset() { cursor = 0; locked = false; clearPending() }
+    fun reset() { cursor = 0; locked = false; positionUncertain = false; clearPending() }
     fun clearPending() { candidate = null; alignment = null; lastConfirmedTime = -10.0; lastConfirmedNotes = emptySet() }
     fun seekMeasure(index: Int) {
         val target = targets.indexOfFirst { (timeline.measureAt(it.startBeat)?.index ?: -1) >= index }
         require(index in config.startMeasure..(config.endMeasure ?: timeline.measures.lastIndex) && target >= 0) { "所选小节不在练习范围或没有起音" }
-        cursor = target; locked = false; clearPending()
+        cursor = target; locked = false; positionUncertain = false; clearPending()
     }
     fun accept(frame: RecognitionObservation): FollowerUpdate {
         require(frame.frameIndex >= 0 && frame.timeSeconds.isFinite() && frame.timeSeconds >= 0) { "识别帧时间无效" }
@@ -72,51 +73,96 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
         lastFrame = frame.frameIndex; lastTime = frame.timeSeconds
         if (!frame.usable || frame.clipped) { candidate = null; alignment = null; return uncertain("输入低证据、预热或削波，暂不判错") }
         require(frame.ambiguousOctaveMidi.all { it in 0..127 }) { "八度歧义音高范围无效" }
-        if (frame.ambiguousOctaveMidi.isNotEmpty()) {
-            candidate = null
-            alignment = null
-            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN,
-                (frame.onsetNotes + frame.activeNotes).map { it.midi }.toSet() + frame.ambiguousOctaveMidi,
-                reason = "AMBIGUOUS_OCTAVE：保留上下音候选，等待独立击键证据；不判对、不判错、不新增锁定")
-        }
         if (cursor >= targets.size) return uncertain("本段已结束")
         require(frame.uncertainMidi.all { it in 0..127 }) { "不确定音高范围无效" }
-        if (frame.uncertainMidi.any { it in expectedMidi() }) alignment = null
         val fresh = frame.onsetNotes.filter { it.onsetScore >= 0.60 && it.frameScore >= 0.50 }
-        var pending = candidate
+        if (candidate?.let { frame.timeSeconds - it.time > 0.21 } == true) {
+            candidate = null
+            alignment = null
+            positionUncertain = true
+        }
+        val previous = candidate
+        val separateAttack = previous != null && frame.timeSeconds - previous.time > 0.081 && fresh.isNotEmpty()
+        val newAttackAmbiguous = fresh.any { it.midi in frame.ambiguousOctaveMidi }
+        // A later attack belongs to its own bounded group. Settle the older group against
+        // its own evidence; a new ambiguous note cannot revoke an already supported attack.
+        val next = if (separateAttack && !newAttackAmbiguous) Candidate(frame.timeSeconds,
+            fresh.associateBy { it.midi }.toMutableMap()).also { pending ->
+                fresh.forEach { pending.support[it.midi] = ArrayDeque(listOf(it.frameScore)) }
+                pending.uncertain.addAll(frame.uncertainMidi)
+            } else null
+        val attackMidi = previous?.notes.orEmpty().keys + if (separateAttack) emptySet() else fresh.map { it.midi }.toSet()
+        if (frame.ambiguousOctaveMidi.any { it in attackMidi }) {
+            candidate = next
+            alignment = null
+            positionUncertain = true
+            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN,
+                (frame.onsetNotes + frame.activeNotes).map { it.midi }.toSet() + frame.ambiguousOctaveMidi,
+                reason = if (next != null) "前组起音含未决八度；下一独立起音已保留，等待多帧确认"
+                else "AMBIGUOUS_OCTAVE：本次起音含未决八度，保留候选并等待；不判对、不判错、不新增锁定")
+        }
+        var pending = previous
         if (pending == null && fresh.isNotEmpty()) {
             pending = Candidate(frame.timeSeconds, mutableMapOf())
             candidate = pending
         }
-        if (pending == null) return uncertain("没有新起音；持续余音不推进游标")
-        pending.uncertain.addAll(frame.uncertainMidi)
+        if (pending == null) return uncertain(if (frame.ambiguousOctaveMidi.isNotEmpty())
+            "AMBIGUOUS_OCTAVE：持续候选未决；没有新的独立起音" else "没有新起音；持续余音不推进游标")
         val elapsed = frame.timeSeconds - pending.time
-        if (elapsed > 0.21) { candidate = null; return uncertain("起音未获得连续帧确认") }
-        if (elapsed <= 0.081) fresh.forEach { note -> pending.notes.putIfAbsent(note.midi, note) }
-        val active = (frame.activeNotes + frame.onsetNotes).associateBy { it.midi }
-        pending.notes.keys.forEach { midi ->
-            val evidence = active[midi]
-            if (evidence == null || evidence.frameScore < 0.50) pending.support.remove(midi)
-            else pending.support.getOrPut(midi) { ArrayDeque() }.apply {
-                addLast(evidence.frameScore)
-                if (size > 2) removeFirst()
+        if (!separateAttack) {
+            pending.uncertain.addAll(frame.uncertainMidi)
+            if (elapsed <= 0.081) fresh.forEach { note -> pending.notes.putIfAbsent(note.midi, note) }
+            val active = (frame.activeNotes + frame.onsetNotes).associateBy { it.midi }
+            pending.notes.keys.forEach { midi ->
+                val evidence = active[midi]
+                if (evidence == null || evidence.frameScore < 0.50) pending.support.remove(midi)
+                else pending.support.getOrPut(midi) { ArrayDeque() }.apply {
+                    addLast(evidence.frameScore)
+                    if (size > 2) removeFirst()
+                }
             }
         }
-        if (elapsed < 0.079 || pending.notes.isEmpty() || pending.notes.keys.any { (pending.support[it]?.size ?: 0) < 2 }) return uncertain("汇总新起音并等待多帧确认")
-        candidate = if (elapsed > 0.081 && fresh.isNotEmpty()) Candidate(frame.timeSeconds,
-            fresh.associateBy { it.midi }.toMutableMap()).also { next ->
-                fresh.forEach { next.support[it.midi] = ArrayDeque(listOf(it.frameScore)) }
-                next.uncertain.addAll(frame.uncertainMidi)
-            } else null
+        // At a new group boundary use the older group's own consecutive support. The new
+        // frame must neither erase a released short note nor supply missing support to it.
+        if (elapsed < 0.079 || pending.notes.isEmpty() || pending.notes.keys.any { (pending.support[it]?.size ?: 0) < 2 }) {
+            if (separateAttack) {
+                // The older attack has not earned confirmation. Do not mark it correct or
+                // retain it at the expense of losing the measured onset of the next group.
+                candidate = next
+                alignment = null
+                positionUncertain = true
+            }
+            return uncertain(if (separateAttack) "前组起音支持不足，未判定；下一独立起音单独等待确认"
+                else "汇总新起音并等待多帧确认")
+        }
+        candidate = next
+        fun retainNextUncertainty(update: FollowerUpdate): FollowerUpdate {
+            if (separateAttack && newAttackAmbiguous) {
+                alignment = null
+                positionUncertain = true
+            }
+            return update
+        }
         val detected = pending.notes.keys.toSet()
-        if (detected == lastConfirmedNotes && pending.time - lastConfirmedTime < 0.096) return uncertain("忽略同次击键的重复证据")
+        // Preserve the 96 ms policy; tolerate only arithmetic rounding in source timestamps,
+        // far below one audio sample. An exact three-frame interval must not become a duplicate.
+        val repeatRounding = 2.0 * (Math.ulp(pending.time) + Math.ulp(lastConfirmedTime) + Math.ulp(0.096))
+        if (detected == lastConfirmedNotes && 0.096 - (pending.time - lastConfirmedTime) > repeatRounding)
+            return retainNextUncertainty(uncertain("忽略同次击键的重复证据"))
         lastConfirmedNotes = detected; lastConfirmedTime = pending.time
         // Preserve measured attack activation, but judge current support from the final two consecutive frames.
         val score = pending.notes.entries.minOf { (midi, note) -> minOf(note.onsetScore, pending.support.getValue(midi).min()) }
-        return align(detected, pending.time, score, pending.uncertain)
+        return retainNextUncertainty(align(detected, pending.time, score, pending.uncertain))
     }
     private fun align(detected: Set<Int>, time: Double, score: Double, uncertainMidi: Set<Int>): FollowerUpdate {
-        if (expectedMidi().any { it in uncertainMidi }) return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "目标音存在声学歧义，暂不判错或漏音")
+        val targetUncertain = expectedMidi().any { it in uncertainMidi }
+        if (targetUncertain) positionUncertain = true
+        if (detected.any { it in uncertainMidi }) {
+            alignment = null
+            positionUncertain = true
+            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true,
+                reason = "本次起音自身仍有声学歧义，不能用于判对或连续定位")
+        }
         val current = cursor
         val position = targets[current].startBeat
         val optionalGrace = timeline.notes.filter { note ->
@@ -125,29 +171,76 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
         }.map { it.midi }.toSet() - expectedMidi()
         val musicalInput = detected - optionalGrace
         if (musicalInput.isEmpty()) return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "当前位置的可选装饰音，不要求推进")
-        if (musicalInput == expectedMidi()) {
-            alignment = null; locked = false; cursor++
+        val repeatedCurrentWhileLost = !locked && positionUncertain &&
+            (alignment != null || (current + 1..minOf(current + 32, targets.lastIndex)).any { midiAt(it) == musicalInput })
+        if (musicalInput == expectedMidi() && !repeatedCurrentWhileLost) {
+            if (targetUncertain) {
+                positionUncertain = true
+                return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "目标起音存在声学歧义，暂不判对或判错")
+            }
+            alignment = null; locked = false; positionUncertain = false; cursor++
             return FollowerUpdate(cursor, false, PracticeDecision.CORRECT, detected, true, listOf(evidence(current, PracticeDecision.CORRECT, detected, time, score, "目标起音集合得到连续帧支持")))
         }
         val previousAlignment = alignment
-        if (previousAlignment != null && previousAlignment.next < targets.size && musicalInput == midiAt(previousAlignment.next)) {
-            val evidence = (current until previousAlignment.matched).map { index ->
-                evidence(index, PracticeDecision.MISSED, previousAlignment.detected, time, score, "连续两个后续起音支持前向定位；标记跳过位置")
-            } + evidence(previousAlignment.matched, PracticeDecision.CORRECT, previousAlignment.detected, previousAlignment.time, previousAlignment.score, "后续起音已确认定位") +
-                evidence(previousAlignment.next, PracticeDecision.CORRECT, detected, time, score, "第二个连续起音确认前向定位")
-            alignment = null
-            // Positional skip evidence is not Confirmed Wrong and must never cause a false stop.
-            locked = false
-            cursor = previousAlignment.next + 1
-            return FollowerUpdate(cursor, locked, PracticeDecision.MISSED, detected, true, evidence, "后续证据确认跳过位置")
+        if (!locked && previousAlignment != null) {
+            val offset = previousAlignment.attacks.size
+            val consistent = previousAlignment.starts.filter { start ->
+                start + offset < targets.size && midiAt(start + offset) == musicalInput
+            }
+            if (consistent.isNotEmpty()) {
+                val attacks = previousAlignment.attacks + AlignedAttack(detected, time, score)
+                if (consistent.size == 1) {
+                    val start = consistent.single()
+                    val skippedDecision = if (positionUncertain) PracticeDecision.UNCERTAIN else PracticeDecision.MISSED
+                    val evidence = (current until start).map { index ->
+                        evidence(index, skippedDecision, attacks.first().detected, time, score,
+                            if (positionUncertain) "此前起音或位置无法确认，不能断言用户漏弹；仅恢复后续定位"
+                            else "连续后续起音支持唯一前向定位；标记跳过位置")
+                    } + attacks.mapIndexed { index, attack ->
+                        evidence(start + index, PracticeDecision.CORRECT, attack.detected, attack.time, attack.score,
+                            "连续独立起音确认唯一后续位置")
+                    }
+                    alignment = null
+                    cursor = start + attacks.size
+                    positionUncertain = false
+                    return FollowerUpdate(cursor, false, if (start == current) PracticeDecision.CORRECT else skippedDecision, detected, true, evidence,
+                        "连续起音恢复唯一定位；未确认的位置单独保留")
+                }
+                // Repeated motifs require more evidence; never pick the first matching location.
+                alignment = if (attacks.size < 8) Alignment(consistent, attacks) else null
+                positionUncertain = true
+                return FollowerUpdate(cursor, false, PracticeDecision.UNCERTAIN, detected, true,
+                    reason = "多个片段含相同起音序列，继续等待唯一位置；不猜测游标")
+            }
         }
-        val future = (current + 1..minOf(current + 3, targets.lastIndex)).firstOrNull { midiAt(it) == musicalInput }
-        if (!locked && future != null && future + 1 < targets.size) {
-            alignment = Alignment(future, future + 1, detected, time, score)
-            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "可能已到后续位置，等待下一起音确认；暂不判漏音")
+        // Wider search only after a concrete input/position failure, with consecutive attacks.
+        // A locked wrong note still requires the original target to recover.
+        val searchAhead = if (positionUncertain && !locked) 32 else 3
+        val firstSearch = if (!locked && positionUncertain && musicalInput == expectedMidi()) current else current + 1
+        val future = (firstSearch..minOf(current + searchAhead, targets.lastIndex)).filter { midiAt(it) == musicalInput }
+        val extendable = future.filter { it + 1 < targets.size }
+        if (!locked && extendable.isNotEmpty()) {
+            alignment = Alignment(extendable, listOf(AlignedAttack(detected, time, score)))
+            return FollowerUpdate(cursor, false, PracticeDecision.UNCERTAIN, detected, true,
+                reason = "可能已到后续位置，等待连续起音确认唯一位置；暂不判漏音")
         }
         alignment = null
-        if (future != null) return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "邻近位置匹配尚无后续确认，保持不确定")
+        if (future.isNotEmpty()) return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true,
+            reason = "邻近位置匹配尚无后续确认，保持不确定")
+        val partialTarget = (current..minOf(current + 3, targets.lastIndex)).any { index ->
+            val notes = midiAt(index)
+            notes.size > musicalInput.size && notes.containsAll(musicalInput)
+        }
+        if (partialTarget) {
+            if (!locked) positionUncertain = true
+            return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true,
+                reason = "只确认了当前或邻近和弦的部分音，位置与缺音尚不能判定；不推进、不判错")
+        }
+        if (!locked && (positionUncertain || targetUncertain)) {
+            positionUncertain = true
+            return FollowerUpdate(cursor, false, PracticeDecision.UNCERTAIN, detected, true,
+                reason = "跟谱位置尚未恢复，不能用陈旧目标判错；等待连续起音重新定位")
+        }
         // A partial chord is not sufficient to accuse a missed note. Reappearing recent targets may be resonance.
         if (expectedMidi().containsAll(musicalInput) || (maxOf(0, current - 2) until current).any { midiAt(it) == musicalInput } || score < 0.80) {
             return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "缺音、近期余音或证据不足，保持当前位置")
@@ -166,7 +259,8 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
         val time: Double, val notes: MutableMap<Int, ObservedNote>,
         val support: MutableMap<Int, ArrayDeque<Double>> = mutableMapOf(), val uncertain: MutableSet<Int> = mutableSetOf(),
     )
-    private data class Alignment(val matched: Int, val next: Int, val detected: Set<Int>, val time: Double, val score: Double)
+    private data class AlignedAttack(val detected: Set<Int>, val time: Double, val score: Double)
+    private data class Alignment(val starts: List<Int>, val attacks: List<AlignedAttack>)
 }
 
 

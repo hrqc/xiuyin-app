@@ -168,10 +168,25 @@ fun PracticeCompanionScreen(
                     OutlinedButton(onClick = onDispute, enabled = !state.busy) { Text("我弹对了") }
                     Text("需要保留完整现场标签时，请开启实地测试会话。", style = MaterialTheme.typography.bodySmall)
                 }
+                if (state.phase == CompanionPhase.PAUSED) {
+                    Text(when (recognition.status) {
+                        RecognitionEngineStatus.LOADING -> "正在准备继续所需的模型，麦克风保持停止；就绪后请点“继续陪练”。"
+                        RecognitionEngineStatus.READY -> "模型已就绪，麦克风保持停止。点“继续陪练”恢复当前位置。"
+                        RecognitionEngineStatus.ERROR -> "准备失败：${recognition.message}。请在这里重试，就绪后再点“继续陪练”。"
+                        else -> "模型尚未就绪，麦克风保持停止。请先在这里准备模型，再点“继续陪练”。"
+                    }, modifier = Modifier.testTag("companion_resume_preparation"), style = MaterialTheme.typography.bodySmall,
+                        color = if (recognition.status == RecognitionEngineStatus.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (recognition.status in setOf(RecognitionEngineStatus.IDLE, RecognitionEngineStatus.ERROR, RecognitionEngineStatus.CLOSED)) {
+                        OutlinedButton(onClick = onRetryModel, enabled = !state.busy && !fieldInputBlocked,
+                            modifier = Modifier.testTag("companion_resume_prepare")) {
+                            Text(if (recognition.status == RecognitionEngineStatus.ERROR) "重试准备继续" else "准备模型以继续")
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (running) OutlinedButton(onClick = onPause, enabled = !state.busy) { Text("暂停陪练") }
+                    if (running) OutlinedButton(onClick = onPause, enabled = !state.busy, modifier = Modifier.testTag("companion_pause")) { Text("暂停陪练") }
                     if (state.phase == CompanionPhase.PAUSED) Button(onClick = onResume, enabled = !state.busy && recognition.status == RecognitionEngineStatus.READY && !fieldInputBlocked, modifier = Modifier.testTag("companion_resume")) { Text("继续陪练") }
-                    if (hasSession) OutlinedButton(onClick = onFinish, enabled = !state.busy) { Text("结束并保存报告") }
+                    if (hasSession) OutlinedButton(onClick = onFinish, enabled = !state.busy, modifier = Modifier.testTag("companion_finish")) { Text("结束并保存报告") }
                 }
             }
         }
@@ -205,6 +220,9 @@ fun PracticeCompanionScreen(
             Text("本机练习报告", style = MaterialTheme.typography.titleMedium)
             state.reports.take(5).forEach { report ->
                 Text("${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(report.endedAtMillis))} · ${report.config.mode.label} · ${report.config.hand.label}\n确认输入 ${report.confirmedInputs}，正确 ${report.correct}，错音证据 ${report.wrong}，跳过 ${report.missed}；修谱版本 ${report.revisionGeneration}", style = MaterialTheme.typography.bodySmall)
+                if (report.evidence.any { it.decision == PracticeDecision.UNCERTAIN }) {
+                    Text("本次有未能确认的位置，不计完整无错通过；可返回相应小节重练。", style = MaterialTheme.typography.bodySmall)
+                }
             }
             Text("以上是模型辅助练习记录，未换算为真实演奏准确率。", style = MaterialTheme.typography.bodySmall)
         }

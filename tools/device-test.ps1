@@ -132,6 +132,15 @@ function Write-InstrumentationXml($Result, [string]$Path, [string]$Raw, [datetim
     } finally { $writer.Dispose() }
 }
 
+function Get-ArtifactSha256([string]$Path) {
+    # Windows PowerShell may lack the Get-FileHash module in the host environment.
+    # Read exact artifact bytes without changing global module paths or loading extras.
+    $stream = [IO.File]::OpenRead($Path)
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+    finally { $hasher.Dispose(); $stream.Dispose() }
+}
+
 function Invoke-AdbCapture([string[]]$AdbArguments, [string]$LogPath) {
     $lines = New-Object 'Collections.Generic.List[string]'
     $previousPreference = $ErrorActionPreference
@@ -156,6 +165,7 @@ $exitCode = 1
 $deviceSerial = $null
 $result = $null
 $failure = $null
+$traceEvidence = $null
 try {
     New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
     $sdkLine = Get-Content -LiteralPath (Join-Path $projectRoot 'local.properties') | Where-Object { $_ -match '^sdk.dir=' } | Select-Object -First 1
@@ -184,12 +194,37 @@ try {
     }
     & 'C:\Python314\python.exe' (Join-Path $PSScriptRoot 'prepare_device_fixtures.py') --serial $deviceSerial --report (Join-Path $outputRoot 'input-manifest.json')
     if ($LASTEXITCODE -ne 0) { throw '真实测试素材准备失败，禁止用替代输入放行' }
+    # Every default @Test runs with explicit immutable Autopiano inputs; no test exclusion/skip.
+    $traceRunId = 'device-' + (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmss').ToLowerInvariant() + '-' + [guid]::NewGuid().ToString('N')
+    $traceDirectory = Join-Path $outputRoot ('full-trace\' + $traceRunId)
+    New-Item -ItemType Directory -Path $traceDirectory | Out-Null
+    $traceContext = [ordered]@{
+        runId = $traceRunId; device = $deviceSerial
+        appSha256 = (Get-ArtifactSha256 -Path $appApk)
+        testApkSha256 = (Get-ArtifactSha256 -Path $testApk)
+        wavSha256 = '7788b1af50d53349aa5a2874d830d45854cb7e2fd2a467a48f609d7fae39ce14'
+        timelineSha256 = '0fbe2047fa83c7b7773839f10e41d87f202fa68e21cc26b75eeca94ef8d49397'
+        modelSha256 = '69ac3567d8ee5fda620225a49c62839c3e82165e89d54d1af63caac877605dfc'
+        fixture = 'AUTOPIANO_REAL_FROZEN_PCM'; musicalAcceptance = 'NOT_CERTIFIED_BY_DIAGNOSTIC'
+    }
+    $traceContext | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $traceDirectory 'trace-context.json') -Encoding utf8
+    $traceEvidence = [ordered]@{ runId = $traceRunId; directory = $traceDirectory; status = 'NOT_VERIFIED' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
     Write-InstrumentationXml -Result $result -Path (Join-Path $outputRoot 'TEST-instrumentation.xml') -Raw $instrumentation.output -StartedAt $testStarted -Duration $duration
+    # Preserve complete diagnostic bytes even if another main-suite assertion failed.
+    $traceRemote = '/sdcard/Android/data/com.xiuyin.app/files/independent-pcm-traces/' + $traceRunId
+    foreach ($name in @('metadata.json', 'frames.jsonl', 'engine-status.jsonl', 'practice-replay-result.json')) {
+        $tracePull = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'pull', ($traceRemote + '/' + $name), (Join-Path $traceDirectory $name)) -LogPath (Join-Path $traceDirectory ($name + '-pull.log'))
+        if ($tracePull.exitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $traceDirectory $name) -PathType Leaf)) { throw ('完整默认诊断证据缺失：' + $name) }
+    }
+    & 'C:\Python314\python.exe' -B (Join-Path $PSScriptRoot 'check-fieldtest.py') --validate-default-trace $traceDirectory --output (Join-Path $traceDirectory 'trace-validation.json')
+    if ($LASTEXITCODE -ne 0) { throw '默认真实 Autopiano 完整 raw/跟谱诊断未通过身份或完整性门禁' }
+    $traceEvidence.status = 'PASSED'
+    $traceEvidence.validation = Join-Path $traceDirectory 'trace-validation.json'
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
     $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
     # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
@@ -237,7 +272,7 @@ try {
             executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
             startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
             status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
-            failure = $failure; result = $result
+            failure = $failure; result = $result; fullTrace = $traceEvidence
         } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
     }
 }
