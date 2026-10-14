@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Xiuyin"
 include(":app")
+include(":quicktest")
