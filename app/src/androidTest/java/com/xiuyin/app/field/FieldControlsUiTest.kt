@@ -317,13 +317,41 @@ class FieldControlsUiTest {
         assertEquals(listOf(legacy.id), exports)
     }
 
+    @Test fun busyOperationsShowTheirActualStageWithoutHidingErrorsOrShowingOldSuccess() {
+        val practice = practice()
+        val active = storedSession(practice)
+        val operation = mutableStateOf(FieldOperationState(busy = true,
+            progressMessage = "TEST DATA 正在结束实地测试并保存诊断记录",
+            error = "TEST DATA 操作错误仍需显示"))
+        val state = diagnostics.copy(activeSession = active, sessions = listOf(active),
+            error = "TEST DATA 诊断写入错误仍需显示", message = "TEST DATA 上一次导出成功")
+        compose.setContent { XiuyinTheme { TestScreen(state, RecognitionEngineSnapshot(RecognitionEngineStatus.READY), practice,
+            operation = operation.value) } }
+        listOf("TEST DATA 正在结束实地测试并保存诊断记录", "TEST DATA 正在整理并校验日志 ZIP", "TEST DATA 正在保存 ZIP 并读回校验").forEach { stage ->
+            compose.runOnIdle { operation.value = operation.value.copy(progressMessage = stage) }
+            compose.onNodeWithTag("field_operation_progress").performScrollTo().assertTextEquals(stage)
+            compose.onNodeWithTag("field_end").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("field_operation_error").performScrollTo().assertTextEquals("TEST DATA 操作错误仍需显示")
+            compose.onNodeWithText("TEST DATA 诊断写入错误仍需显示").performScrollTo().assertExists()
+            compose.onNodeWithTag("field_export_progress").performScrollTo().assertTextEquals(stage)
+            compose.onNodeWithTag("field_export_current").performScrollTo().assertIsNotEnabled()
+            compose.onNodeWithTag("field_message").assertDoesNotExist()
+        }
+        compose.runOnIdle { operation.value = operation.value.copy(busy = false, progressMessage = null) }
+        compose.onNodeWithTag("field_operation_progress").assertDoesNotExist()
+        compose.onNodeWithTag("field_export_progress").assertDoesNotExist()
+        compose.onNodeWithTag("field_operation_error").performScrollTo().assertTextEquals("TEST DATA 操作错误仍需显示")
+        compose.onNodeWithTag("field_export_current").performScrollTo().assertIsEnabled()
+    }
+
     @androidx.compose.runtime.Composable
     private fun TestScreen(state: FieldDiagnosticsState, engine: RecognitionEngineSnapshot, practice: CompanionState,
         onStart: (String, Boolean) -> Unit = { _, _ -> }, onRetry: () -> Unit = {},
         onFeedback: (FieldFeedbackLabel) -> Unit = {}, onExport: (String) -> Unit = {}, onClear: (Set<String>) -> Unit = {},
         appDataAvailable: Boolean = true, appDataError: String? = null,
-        onConfiguredStart: ((String, PracticeConfig) -> Unit)? = null, onPractice: () -> Unit = {}, onEndSession: () -> Unit = {}) {
-        FieldTestScreen(state, FieldOperationState(), AudioSnapshot(), engine, null, practice, true, true,
+        onConfiguredStart: ((String, PracticeConfig) -> Unit)? = null, onPractice: () -> Unit = {}, onEndSession: () -> Unit = {},
+        operation: FieldOperationState = FieldOperationState()) {
+        FieldTestScreen(state, operation, AudioSnapshot(), engine, null, practice, true, true,
             onStart, {}, onEndSession, onRetry, {}, onFeedback, onExport, {}, {}, onClear, {}, {}, onPractice, {}, {},
             appDataAvailable = appDataAvailable, appDataError = appDataError, onConfiguredStart = onConfiguredStart)
     }

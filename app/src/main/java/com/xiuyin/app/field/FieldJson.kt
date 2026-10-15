@@ -2,6 +2,8 @@ package com.xiuyin.app.field
 
 /** Small local JSON codec so storage and corruption checks run on the JVM without Android stubs. */
 internal object FieldJson {
+    private val numberPattern = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
+
     fun encode(value: Any?): String = when (value) {
         null -> "null"
         is String -> buildString {
@@ -42,7 +44,7 @@ internal object FieldJson {
                     if (take(']')) result else { do { result += value(); space() } while (take(',')); require(take(']')); result }
                 }
                 't' -> literal("true", true); 'f' -> literal("false", false); 'n' -> literal("null", null)
-                else -> { val start = index; while (index < text.length && text[index] in "-+0123456789.eE") index++; require(index > start); val token = text.substring(start, index); require(Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?").matches(token)); token.toLongOrNull() ?: token.toDouble().also { require(it.isFinite()) } }
+                else -> { val start = index; while (index < text.length && text[index] in "-+0123456789.eE") index++; require(index > start); val token = text.substring(start, index); require(numberPattern.matches(token)); token.toLongOrNull() ?: token.toDouble().also { require(it.isFinite()) } }
             }
         }
         private fun <T> literal(token: String, result: T): T { require(text.startsWith(token, index)); index += token.length; return result }

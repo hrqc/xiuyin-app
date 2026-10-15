@@ -18,6 +18,7 @@ data class FieldOperationState(
     val exportedSessionId: String? = null,
     val message: String? = null,
     val error: String? = null,
+    val progressMessage: String? = null,
 )
 
 class FieldTestViewModel(application: Application) : AndroidViewModel(application) {
@@ -29,13 +30,13 @@ class FieldTestViewModel(application: Application) : AndroidViewModel(applicatio
     init { refresh() }
 
     fun refresh() {
-        if (!mutableOperation.value.busy) operate { withContext(Dispatchers.IO) { diagnostics.refresh() } }
+        if (!mutableOperation.value.busy) operate("正在检查测试存储，请稍候。") { withContext(Dispatchers.IO) { diagnostics.refresh() } }
     }
     fun setClipConsent(value: Boolean) = diagnostics.setClipConsent(value)
     fun reportError(message: String) { mutableOperation.value = mutableOperation.value.copy(error = message, message = null) }
     fun reportMessage(message: String) { mutableOperation.value = mutableOperation.value.copy(message = message, error = null) }
 
-    fun start(label: String, metadata: Map<String, String>, scoreSnapshot: FieldScoreSnapshot.Request? = null, onStarted: () -> Boolean) = operate {
+    fun start(label: String, metadata: Map<String, String>, scoreSnapshot: FieldScoreSnapshot.Request? = null, onStarted: () -> Boolean) = operate("正在创建实地测试会话，请稍候。") {
         withContext(Dispatchers.IO) {
             val snapshot = scoreSnapshot?.let { FieldScoreSnapshot.capture(it) }
             diagnostics.refresh()
@@ -50,7 +51,7 @@ class FieldTestViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun finish(reason: String = "USER_ENDED") = operate {
+    fun finish(reason: String = "USER_ENDED") = operate("正在结束实地测试并保存诊断记录，请稍候；日志较多时可能需要几分钟。") {
         withContext(Dispatchers.IO) { diagnostics.endSession(reason) }
     }
 
@@ -60,14 +61,14 @@ class FieldTestViewModel(application: Application) : AndroidViewModel(applicatio
         diagnostics.recordFeedback(label, context, audioTimeSeconds)
     }
 
-    fun export(sessionId: String) = operate {
+    fun export(sessionId: String) = operate("正在整理并校验日志 ZIP，请稍候；日志较多时可能需要几分钟。") {
         val file = withContext(Dispatchers.IO) { diagnostics.exportSession(sessionId) }
         check(file.isFile && file.length() > 0) { "导出文件未生成或为空，请重试" }
         mutableOperation.value = mutableOperation.value.copy(exportedFile = file, exportedSessionId = sessionId,
             message = "ZIP 已在本机生成，请选择保存到文件或分享。尚未标记为已保存。")
     }
 
-    fun saveTo(uri: Uri, sessionId: String, path: String) = operate {
+    fun saveTo(uri: Uri, sessionId: String, path: String) = operate("正在保存 ZIP 并读回校验，请稍候。") {
         var completeSnapshot = false
         withContext(Dispatchers.IO) {
             val file = File(path).canonicalFile
@@ -97,21 +98,21 @@ class FieldTestViewModel(application: Application) : AndroidViewModel(applicatio
         else "测试包已保存并通过 SHA256 读回校验，会话已标记为已导出")
     }
 
-    fun clearConfirmed(ids: Set<String>) = operate {
+    fun clearConfirmed(ids: Set<String>) = operate("正在清理已确认的测试会话，请稍候。") {
         withContext(Dispatchers.IO) { diagnostics.clearSessions(ids) }
         if (mutableOperation.value.exportedSessionId in ids) {
             mutableOperation.value = mutableOperation.value.copy(exportedFile = null, exportedSessionId = null)
         }
     }
 
-    private fun operate(block: suspend () -> Unit) {
+    private fun operate(progressMessage: String, block: suspend () -> Unit) {
         if (mutableOperation.value.busy) { reportError("另一项测试包操作尚未完成，本次操作未执行；请稍后重试"); return }
-        mutableOperation.value = mutableOperation.value.copy(busy = true, error = null, message = null)
+        mutableOperation.value = mutableOperation.value.copy(busy = true, error = null, message = null, progressMessage = progressMessage)
         viewModelScope.launch {
             try { block() }
             catch (error: kotlinx.coroutines.CancellationException) { throw error }
             catch (error: Exception) { reportError(error.message ?: "实地测试操作失败，请查看诊断日志后重试") }
-            finally { mutableOperation.value = mutableOperation.value.copy(busy = false) }
+            finally { mutableOperation.value = mutableOperation.value.copy(busy = false, progressMessage = null) }
         }
     }
 }

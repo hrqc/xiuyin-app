@@ -187,6 +187,8 @@ fun FieldTestScreen(
             Row { Checkbox(reviewed, { reviewed = it }, modifier = Modifier.testTag("field_review_ack")); Text("我已校对当前谱面的来源和结构警告", Modifier.padding(top = 10.dp)) }
         }
         if (session != null && state.error != null) Text("当前会话记录故障，已禁止继续收音。请结束并导出已有记录，再开启新会话。", color = MaterialTheme.colorScheme.error)
+        if (operation.busy) Text(operation.progressMessage ?: "正在处理测试包操作，请稍候。",
+            modifier = Modifier.testTag("field_operation_progress"), color = MaterialTheme.colorScheme.primary)
         if (!listening) Button(onClick = {
             if (onConfiguredStart == null) onStart(label, reviewed)
             else {
@@ -233,8 +235,10 @@ fun FieldTestScreen(
         if (validScore) OutlinedButton(onPractice, enabled = !busy) { Text("查看实时陪练谱面") }
         operation.error?.let { Text(it, modifier = Modifier.testTag("field_operation_error"), color = MaterialTheme.colorScheme.error) }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        (operation.message ?: state.message)?.let { Text(it, modifier = Modifier.testTag("field_message"), color = MaterialTheme.colorScheme.primary) }
+        if (!busy) (operation.message ?: state.message)?.let { Text(it, modifier = Modifier.testTag("field_message"), color = MaterialTheme.colorScheme.primary) }
         Text("测试包与存储", style = MaterialTheme.typography.titleMedium)
+        if (operation.busy) Text(operation.progressMessage ?: "正在处理测试包操作，请稍候。",
+            modifier = Modifier.testTag("field_export_progress"), color = MaterialTheme.colorScheme.primary)
         Text("实际占用 ${bytes(state.totalBytes)} · ${state.clipCount} 个短片段 · ${state.sessions.size} 个会话")
         Text("上限 200 MiB / 300 个片段 / 20 个会话。只自动清理最旧且已保存导出的会话；未导出内容需要你确认。", style = MaterialTheme.typography.bodySmall)
         if (session != null) Button({ onExport(session.id) }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("field_export_current")) { Text("一键导出日志 ZIP") }

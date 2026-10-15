@@ -82,6 +82,7 @@ class FieldLifecycleUiTest {
                 .put("writerQueueCapacity", data.writerQueueCapacity).put("storageWritable", data.storageWritable)
                 .put("freeSpaceBytes", data.freeSpaceBytes).put("totalBytes", data.totalBytes).put("clipConsent", data.clipConsent))
             .put("operation", JSONObject().put("busy", operation.busy).put("error", operation.error ?: JSONObject.NULL)
+                .put("progressMessage", operation.progressMessage ?: JSONObject.NULL)
                 .put("message", operation.message ?: JSONObject.NULL)
                 .put("exportedSessionId", operation.exportedSessionId ?: JSONObject.NULL)
                 .put("exportedFile", operation.exportedFile?.absolutePath ?: JSONObject.NULL)
@@ -111,6 +112,7 @@ class FieldLifecycleUiTest {
             }
             val operation = activeField.operation.value
             assertFalse("导出操作必须实际结束", operation.busy)
+            assertNull("实际导出结束后必须清除进行中提示", operation.progressMessage)
             assertNull("导出错误不能放行", operation.error)
             assertNull("诊断错误不能放行", activeField.state.value.error)
             assertEquals("导出必须属于本次会话", sessionId, operation.exportedSessionId)
@@ -501,6 +503,7 @@ class FieldLifecycleUiTest {
             compose.onNodeWithTag("field_active_banner").performClick()
             scroll("field_end"); compose.onNodeWithTag("field_end").assertIsEnabled().performClick()
             compose.waitUntil(10_000) { field.state.value.activeSession == null && !field.operation.value.busy }
+            assertNull("结束会话后必须清除进行中提示", field.operation.value.progressMessage)
             val zip = exportWithBoundedCompletion(sessionId)
             ZipFile(zip).use { archive ->
                 listOf("manifest.json", "device.json", "app.log", "audio-events.jsonl", "octave-diagnostics.jsonl", "score-following.jsonl", "performance.json", "session-summary.json").forEach { assertNotNull(it, archive.getEntry(it)) }
@@ -521,15 +524,35 @@ class FieldLifecycleUiTest {
                 assertEquals(0, archive.entries().asSequence().count { it.name.endsWith(".wav") })
             }
             assertNull(field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
-            compose.runOnUiThread { field.saveTo(Uri.parse("content://com.xiuyin.app.unavailable-test-destination/target"), sessionId, zip.absolutePath) }
+            compose.runOnUiThread {
+                field.saveTo(Uri.parse("content://com.xiuyin.app.unavailable-test-destination/target"), sessionId, zip.absolutePath)
+                val operation = field.operation.value
+                if (operation.busy) {
+                    assertEquals("正在保存 ZIP 并读回校验，请稍候。", operation.progressMessage)
+                    assertNull("保存尚未完成不得提前提示成功", operation.message)
+                } else {
+                    assertNull("保存快速结束后必须清除进行中提示", operation.progressMessage)
+                }
+            }
             compose.waitUntil(10_000) { !field.operation.value.busy }
+            assertNull("保存失败后必须清除进行中提示", field.operation.value.progressMessage)
             assertNotNull("实际保存失败必须可见", field.operation.value.error)
             assertNull("保存失败不能标记为已导出", field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
             assertTrue("失败后保留源 ZIP 以便重试", zip.isFile)
             saved = File(context.filesDir, "field-exports/test-ui-save-${UUID.randomUUID()}.zip")
             val destination = FileProvider.getUriForFile(context, "${context.packageName}.field-files", saved)
-            compose.runOnUiThread { field.saveTo(destination, sessionId, zip.absolutePath) }
+            compose.runOnUiThread {
+                field.saveTo(destination, sessionId, zip.absolutePath)
+                val operation = field.operation.value
+                if (operation.busy) {
+                    assertEquals("正在保存 ZIP 并读回校验，请稍候。", operation.progressMessage)
+                    assertNull("保存重试尚未完成不得提前提示成功", operation.message)
+                } else {
+                    assertNull("保存重试快速结束后必须清除进行中提示", operation.progressMessage)
+                }
+            }
             compose.waitUntil(10_000) { !field.operation.value.busy }
+            assertNull("保存并读回校验结束后必须清除进行中提示", field.operation.value.progressMessage)
             assertNull(field.operation.value.error)
             assertArrayEquals(zip.readBytes(), saved.readBytes())
             assertNotNull(field.state.value.sessions.first { it.id == sessionId }.exportedAtMillis)
