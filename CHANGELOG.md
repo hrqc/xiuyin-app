@@ -1,5 +1,7 @@
 # 0.3.0-octave.2-fieldtest.6 · 单音参考、谱面证据与范围修谱 · 2026-10-15
 
+- 第三轮 `a29af23` / `reports/fieldtest-20261015T102123Z-cbd4c2bc/` 为PAUSE：342项App JVM、217项主Android测试全过，另跑DotIAM中旧集通过、DotIAM2既有音乐失败保留（561项，560通过、1失败、0跳过）。回退执行成功、现有数据保留，但App内部根目录 `files/omr-reanalyses/` 无实际记录，未满足回退数据覆盖门禁。后续双APK身份复核、运行日志总验收和APK/证据封存未执行，不能交付；随后经真实S01界面导入、二次识别并“保留原样”，生成 FINISHED 记录 a648b2e5-33fd-4b11-aa8a-23908f8d7353，原始与候选 SHA 校验通过；证据在 reports/app-integration-20261015/reanalysis-preparation-r4/。音乐状态仍为 NEEDS_REVIEW，回退保留须新prepare验证，原失败报告保留。
+
 - 首次候选 `700eedf` 的 prepare 因 `quicktest/build.gradle.kts` Git归档字节不一致而PAUSE，未执行设备门禁、未交付；原报告 `reports/fieldtest-20261015T095154Z-40e4b7c2/field-report.json` 保留。补齐quicktest、发布脚本和来源JSON的字节保留规则，重新暂存并核验归档；构建限定单worker缓解内存压力，测试与门禁要求不变。
 
 - 新增默认关闭的 Clavier 单音诊断参考，原始PCM、完整88候选、best/null和因果时钟均保留；使用固定Apache-2.0上游核心，未引入闭源实现。既有正式识音/跟谱/LOCK不依赖此参考；F7以上不验收、不裁剪。

@@ -1,5 +1,7 @@
 # 当前候选：0.3.0-octave.2-fieldtest.6（versionCode 11，2026-10-15）
 
+最新第三轮 `a29af23` / `reports/fieldtest-20261015T102123Z-cbd4c2bc/` 仍为 **PAUSE，不能交付**：342项App JVM、217项主Android测试全过，另跑DotIAM中旧集通过、DotIAM2既有音乐失败保留（总计561项，560通过、1失败、0跳过）。回退执行成功且现有数据完整保留，但App内部根目录 `files/omr-reanalyses/` 没有实际记录，回退覆盖门禁因此阻断；后续双APK身份复核、运行日志总验收与APK/证据封存均未执行。随后已通过真实S01界面导入、二次识别和“保留原样”生成本机记录 a648b2e5-33fd-4b11-aa8a-23908f8d7353，FINISHED 与原始/候选 SHA 实核通过，音乐状态仍为 NEEDS_REVIEW；证据见 reports/app-integration-20261015/reanalysis-preparation-r4/。须重新完整prepare验证其回退保留，不补写本轮失败报告为通过。
+
 本轮在现有完整 App 上合入可复查的单音参考、谱面辅助诊断和范围修谱，对应 PRODUCT 第4/5/8/9/12/14节。保留全部现有功能、原始乐谱、修订与数据库；AGENTS/PRODUCT未修改。闭源 DeepPiano 的代码和权重未引入，其研究只用于明确诊断边界；不存在按谱删除八度候选或强行判对。
 
 - Clavier 单音参考默认关闭，可在设置中手动开启；使用原始48kHz PCM、16384窗、2048步长、A440，在既有模型worker执行。全部88候选、best/null、耗时、因果窗口与错误均进入本地日志，不改变正式起音、判错或LOCK。F7及以上不参与本轮验收，不裁掉原输出。许可证和固定上游来源见 `docs/CLAVIER_SINGLE_PITCH_REFERENCE.md`。
