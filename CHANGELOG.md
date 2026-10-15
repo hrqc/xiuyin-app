@@ -1,5 +1,7 @@
 # 0.3.0-octave.2-fieldtest.6 · 单音参考、谱面证据与范围修谱 · 2026-10-15
 
+- 第四轮 ce6c02b / reports/fieldtest-20261015T104604Z-9c222995/ 仍为PAUSE：342 JVM通过，217主Android中216通过、1项Field生命周期导出等待超时，后续发布验收未执行。真实失败ZIP显示首代导出耗时5.467秒，生产代码为纳入成功事件还会再次完整导出；旧测试10秒边界不足，不能把首代成功当最终完成。仅测试改为30秒有界等待本UUID的真实非空最终ZIP、无错误且busy结束，补实际耗时和操作快照，所有原ZIP/反馈/保存断言保留；未改生产、识音阈值或自动重试。目标真实用例1/1通过，完整导出实测8.919秒。主机目录pull失败原输出保留，单文件exec-out读回及SHA核验成功，见 reports/app-integration-20261015/export-wait-targeted/；这不替代下一次干净提交后的完整prepare。
+
 - 第三轮 `a29af23` / `reports/fieldtest-20261015T102123Z-cbd4c2bc/` 为PAUSE：342项App JVM、217项主Android测试全过，另跑DotIAM中旧集通过、DotIAM2既有音乐失败保留（561项，560通过、1失败、0跳过）。回退执行成功、现有数据保留，但App内部根目录 `files/omr-reanalyses/` 无实际记录，未满足回退数据覆盖门禁。后续双APK身份复核、运行日志总验收和APK/证据封存未执行，不能交付；随后经真实S01界面导入、二次识别并“保留原样”，生成 FINISHED 记录 a648b2e5-33fd-4b11-aa8a-23908f8d7353，原始与候选 SHA 校验通过；证据在 reports/app-integration-20261015/reanalysis-preparation-r4/。音乐状态仍为 NEEDS_REVIEW，回退保留须新prepare验证，原失败报告保留。
 
 - 首次候选 `700eedf` 的 prepare 因 `quicktest/build.gradle.kts` Git归档字节不一致而PAUSE，未执行设备门禁、未交付；原报告 `reports/fieldtest-20261015T095154Z-40e4b7c2/field-report.json` 保留。补齐quicktest、发布脚本和来源JSON的字节保留规则，重新暂存并核验归档；构建限定单worker缓解内存压力，测试与门禁要求不变。

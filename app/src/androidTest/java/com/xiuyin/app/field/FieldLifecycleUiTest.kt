@@ -2,6 +2,7 @@ package com.xiuyin.app.field
 
 import android.Manifest
 import android.os.Build
+import android.os.SystemClock
 import android.net.Uri
 import android.view.WindowManager
 import androidx.compose.ui.test.*
@@ -62,6 +63,7 @@ class FieldLifecycleUiTest {
         val audio = app.audio.value
         val recognition = app.recognition.value
         val data = field.state.value
+        val operation = field.operation.value
         val practiceState = practice.state.value
         return JSONObject().put("point", point).put("timestampMillis", System.currentTimeMillis())
             .put("version", BuildConfig.VERSION_NAME).put("gitCommit", BuildConfig.GIT_COMMIT)
@@ -74,15 +76,74 @@ class FieldLifecycleUiTest {
                 .put("queueOccupancy", recognition.queueOccupancy).put("queueCapacity", recognition.queueCapacity)
                 .put("droppedFrames", recognition.droppedFrames).put("overflowCount", recognition.overflowCount))
             .put("field", JSONObject().put("activeSessionId", data.activeSession?.id ?: JSONObject.NULL)
+                .put("busy", data.busy)
                 .put("error", data.error ?: JSONObject.NULL).put("message", data.message ?: JSONObject.NULL)
-                .put("operationError", field.operation.value.error ?: JSONObject.NULL).put("writerQueue", data.writerQueueOccupancy)
+                .put("operationError", operation.error ?: JSONObject.NULL).put("writerQueue", data.writerQueueOccupancy)
                 .put("writerQueueCapacity", data.writerQueueCapacity).put("storageWritable", data.storageWritable)
                 .put("freeSpaceBytes", data.freeSpaceBytes).put("totalBytes", data.totalBytes).put("clipConsent", data.clipConsent))
+            .put("operation", JSONObject().put("busy", operation.busy).put("error", operation.error ?: JSONObject.NULL)
+                .put("message", operation.message ?: JSONObject.NULL)
+                .put("exportedSessionId", operation.exportedSessionId ?: JSONObject.NULL)
+                .put("exportedFile", operation.exportedFile?.absolutePath ?: JSONObject.NULL)
+                .put("exportedFileExists", operation.exportedFile?.isFile ?: JSONObject.NULL)
+                .put("exportedFileBytes", operation.exportedFile?.takeIf { it.isFile }?.length() ?: JSONObject.NULL))
             .put("practice", JSONObject().put("phase", practiceState.phase.name).put("locked", practiceState.locked)
                 .put("cursor", practiceState.cursor).put("decision", practiceState.decision.name)
                 .put("error", practiceState.error ?: JSONObject.NULL).put("reason", practiceState.reason)
                 .put("confirmedInputs", practiceState.confirmedInputs))
             .put("appError", app.state.value.error ?: JSONObject.NULL)
+    }
+    private fun exportWithBoundedCompletion(sessionId: String): File {
+        scroll("field_export_$sessionId")
+        val activeField = field
+        val startedAtMillis = System.currentTimeMillis()
+        val startedNanos = SystemClock.elapsedRealtimeNanos()
+        var outcome = "FAILED"
+        var originalFailure: Throwable? = null
+        try {
+            compose.onNodeWithTag("field_export_$sessionId").assertIsEnabled().performClick()
+            // The writer creates and verifies both ZIP generations before the UI operation completes.
+            // A first-generation ExportSuccess log is not completion, and this never retries the click.
+            compose.waitUntil(30_000) {
+                val operation = activeField.operation.value
+                !operation.busy && (operation.error != null || activeField.state.value.error != null ||
+                    (operation.exportedSessionId == sessionId && operation.exportedFile?.let { it.isFile && it.length() > 0L } == true))
+            }
+            val operation = activeField.operation.value
+            assertFalse("导出操作必须实际结束", operation.busy)
+            assertNull("导出错误不能放行", operation.error)
+            assertNull("诊断错误不能放行", activeField.state.value.error)
+            assertEquals("导出必须属于本次会话", sessionId, operation.exportedSessionId)
+            val zip = requireNotNull(operation.exportedFile)
+            assertEquals("必须返回本次会话的最终 ZIP", "field-$sessionId.zip", zip.name)
+            assertTrue("必须实际生成非空 ZIP", zip.isFile && zip.length() > 0L)
+            outcome = "EXPORT_OPERATION_COMPLETED_ONLY"
+            return zip
+        } catch (failure: Throwable) {
+            originalFailure = failure
+            throw failure
+        } finally {
+            val endedNanos = SystemClock.elapsedRealtimeNanos()
+            try {
+                val folder = File(context.getExternalFilesDir(null) ?: context.filesDir, "field-ui-export-timings")
+                check(folder.isDirectory || folder.mkdirs())
+                val evidence = JSONObject().put("sessionId", sessionId).put("version", BuildConfig.VERSION_NAME)
+                    .put("gitCommit", BuildConfig.GIT_COMMIT).put("buildNumber", BuildConfig.VERSION_CODE)
+                    .put("startedAtMillis", startedAtMillis).put("finishedAtMillis", System.currentTimeMillis())
+                    .put("startedElapsedRealtimeNanos", startedNanos).put("finishedElapsedRealtimeNanos", endedNanos)
+                    .put("elapsedMs", (endedNanos - startedNanos) / 1e6).put("waitTimeoutMillis", 30_000)
+                    .put("outcome", outcome).put("failure", originalFailure?.stackTraceToString() ?: JSONObject.NULL)
+                    .put("snapshot", diagnosticSnapshot("export-wait-terminal-before-failure-cleanup", sessionId))
+                    .put("musicAcceptance", "UNVERIFIED").put("physicalPhoneAcceptance", "UNVERIFIED")
+                    .put("scope", "One real UI export click and bounded operation wait; full ZIP assertions continue in the test. No musical or full-test pass claim.")
+                val target = File(folder, "field-export-$sessionId-$startedAtMillis-${UUID.randomUUID()}.json")
+                check(target.createNewFile()) { "导出计时证据已存在，不能覆盖" }
+                target.writeText(evidence.toString(2))
+            } catch (evidenceError: Throwable) {
+                val failure = originalFailure
+                if (failure != null) failure.addSuppressed(evidenceError) else throw evidenceError
+            }
+        }
     }
     private fun assertStillListening(point: String, sessionId: String) {
         compose.waitForIdle()
@@ -440,14 +501,12 @@ class FieldLifecycleUiTest {
             compose.onNodeWithTag("field_active_banner").performClick()
             scroll("field_end"); compose.onNodeWithTag("field_end").assertIsEnabled().performClick()
             compose.waitUntil(10_000) { field.state.value.activeSession == null && !field.operation.value.busy }
-            scroll("field_export_$sessionId"); compose.onNodeWithTag("field_export_$sessionId").performClick()
-            compose.waitUntil(10_000) { !field.operation.value.busy && (field.operation.value.exportedFile != null || field.operation.value.error != null) }
-            assertNull(field.operation.value.error)
-            val zip = requireNotNull(field.operation.value.exportedFile)
+            val zip = exportWithBoundedCompletion(sessionId)
             ZipFile(zip).use { archive ->
                 listOf("manifest.json", "device.json", "app.log", "audio-events.jsonl", "octave-diagnostics.jsonl", "score-following.jsonl", "performance.json", "session-summary.json").forEach { assertNotNull(it, archive.getEntry(it)) }
                 FieldScoreSnapshot.verifyArchive(archive, FieldJson.objectValue(archive.getInputStream(archive.getEntry("manifest.json")).reader().readText()))
                 val manifest = JSONObject(archive.getInputStream(archive.getEntry("manifest.json")).reader().readText())
+                assertEquals("ZIP 内容必须属于本次会话", sessionId, manifest.getString("sessionId"))
                 assertEquals("AVAILABLE", manifest.getJSONObject("scoreSnapshot").getString("status"))
                 val snapshot = ScoreJsonCodec.decode(archive.getInputStream(archive.getEntry("score.json")).use { it.readBytes() })
                 val config = JSONObject(archive.getInputStream(archive.getEntry("practice-context.json")).reader().readText())

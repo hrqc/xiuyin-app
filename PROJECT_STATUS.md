@@ -1,5 +1,7 @@
 # 当前候选：0.3.0-octave.2-fieldtest.6（versionCode 11，2026-10-15）
 
+第四轮 ce6c02b / reports/fieldtest-20261015T104604Z-9c222995/ 仍为PAUSE：342 JVM通过，217主Android中216通过、1项Field生命周期导出等待超时，后续发布验收未执行。真实失败ZIP显示首代导出耗时5.467秒，生产代码为纳入成功事件还会再次完整导出；旧测试10秒边界不足，不能把首代成功当最终完成。仅测试改为30秒有界等待本UUID的真实非空最终ZIP、无错误且busy结束，补实际耗时和操作快照，所有原ZIP/反馈/保存断言保留；未改生产、识音阈值或自动重试。目标真实用例1/1通过，完整导出实测8.919秒。主机目录pull失败原输出保留，单文件exec-out读回及SHA核验成功，见 reports/app-integration-20261015/export-wait-targeted/；这不替代下一次干净提交后的完整prepare。
+
 最新第三轮 `a29af23` / `reports/fieldtest-20261015T102123Z-cbd4c2bc/` 仍为 **PAUSE，不能交付**：342项App JVM、217项主Android测试全过，另跑DotIAM中旧集通过、DotIAM2既有音乐失败保留（总计561项，560通过、1失败、0跳过）。回退执行成功且现有数据完整保留，但App内部根目录 `files/omr-reanalyses/` 没有实际记录，回退覆盖门禁因此阻断；后续双APK身份复核、运行日志总验收与APK/证据封存均未执行。随后已通过真实S01界面导入、二次识别和“保留原样”生成本机记录 a648b2e5-33fd-4b11-aa8a-23908f8d7353，FINISHED 与原始/候选 SHA 实核通过，音乐状态仍为 NEEDS_REVIEW；证据见 reports/app-integration-20261015/reanalysis-preparation-r4/。须重新完整prepare验证其回退保留，不补写本轮失败报告为通过。
 
 本轮在现有完整 App 上合入可复查的单音参考、谱面辅助诊断和范围修谱，对应 PRODUCT 第4/5/8/9/12/14节。保留全部现有功能、原始乐谱、修订与数据库；AGENTS/PRODUCT未修改。闭源 DeepPiano 的代码和权重未引入，其研究只用于明确诊断边界；不存在按谱删除八度候选或强行判对。
