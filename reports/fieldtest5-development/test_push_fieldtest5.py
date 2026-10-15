@@ -23,7 +23,7 @@ class PathAndObjectTest(unittest.TestCase):
                      '.GITATTRIBUTES','outputs/.gitattributes'):
             with self.subTest(name=name),self.assertRaises(ValueError):push.source_path(name)
     def test_only_exact_report_tool_scripts_are_allowed_and_still_require_text_blobs(self):
-        self.assertEqual(len(push.REPORT_SOURCE_ALLOWLIST),17)
+        self.assertEqual(len(push.REPORT_SOURCE_ALLOWLIST),19)
         for name in push.REPORT_SOURCE_ALLOWLIST:
             with self.subTest(name=name):
                 self.assertEqual(push.source_path(name),name)

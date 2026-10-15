@@ -320,6 +320,30 @@ class CompleteTraceProtectionTest(unittest.TestCase):
     def test_complete_diagnostic_never_certifies_music(self):
         self.assertFalse(self.validate()['accuracyValidated'])
         self.assertEqual(self.validate()['frames'],2)
+    def test_legacy_and_explicitly_disabled_reference_configs_preserve_same_verdict(self):
+        original=self.validate()
+        for config in ('PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5)',
+                       'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5, singlePitchReferenceEnabled=false)'):
+            with self.subTest(config=config):
+                self.meta['pitchEvidenceConfig']=config;self.save()
+                self.assertEqual(self.validate(),original)
+    def test_enabled_reference_changed_thresholds_extra_fields_and_nonstrings_rejected(self):
+        invalid=[
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5, singlePitchReferenceEnabled=true)',
+            'PitchEvidenceConfig(onsetThreshold=0.7, frameThreshold=0.5)',
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.6)',
+            'PitchEvidenceConfig(onsetThreshold=0.7, frameThreshold=0.5, singlePitchReferenceEnabled=false)',
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.6, singlePitchReferenceEnabled=false)',
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5, extra=false)',
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5, singlePitchReferenceEnabled=false, extra=false)',
+            None, False, 0, [], {},
+        ]
+        for config in invalid:
+            with self.subTest(config=config):
+                self.meta['pitchEvidenceConfig']=config;self.save()
+                with self.assertRaisesRegex(ValueError,'frozen default thresholds'):self.validate()
+        del self.meta['pitchEvidenceConfig'];self.save()
+        with self.assertRaisesRegex(ValueError,'frozen default thresholds'):self.validate()
     def test_wrong_app_test_model_input_or_run_identity_rejected(self):
         for key in ('appSha256','testApkSha256','modelSha256','wavSha256','timelineSha256','runId'):
             with self.subTest(key=key):

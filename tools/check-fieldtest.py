@@ -359,8 +359,12 @@ def validate_independent_trace(output, case, expected_app, expected_test, expect
     meta=read(output/'metadata.json')
     require(meta['runId']==run_id and meta['traceComplete'] is True and meta['stage']=='TRACE_COMPLETE','Diagnostic test did not complete')
     require(meta['accuracyValidated'] is False,'Trace completion cannot certify accuracy')
+    config=meta.get('pitchEvidenceConfig')
+    # Retain original traces while accepting the same defaults with the new side channel explicitly off.
     require(meta.get('observationAdapter')=='legacy-three-field-ObservedNote' and
-        meta.get('pitchEvidenceConfig')=='PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5)',
+        type(config) is str and config in (
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5)',
+            'PitchEvidenceConfig(onsetThreshold=0.6, frameThreshold=0.5, singlePitchReferenceEnabled=false)'),
         'Full trace did not use the frozen default thresholds and actual observation adapter')
     for key,value in [('appSha256',expected_app),('testApkSha256',expected_test),('modelSha256',expected_model),
         ('wavSha256',case['input']['sha256']),('timelineSha256',case['timeline']['sha256'])]: require(meta[key]==value,'Trace identity mismatch: '+key)

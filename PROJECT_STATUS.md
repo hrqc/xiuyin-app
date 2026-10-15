@@ -16,6 +16,10 @@
 
 以下保留专项未发布阶段及历史证据。
 
+交付工具补齐正常桌面启动的采证入口和验证格式；每轮使用独立目录与封存APK身份，保留旧失败恢复分支。第二轮prepare运行期间工具变更，因此其结果仅作预检，最终交付须从新提交重新prepare，不能挪用第二轮结果。
+
+第二轮 `bbfe876` / `reports/fieldtest-20261015T100152Z-4065b04e/` 实际PAUSE：旧AVD有19个未确认导出的历史TEST DATA会话，本轮新增达到20个上限，导致会话相关设备测试失败；容量保护符合既有规范，不算通过。旧会话备份 `reports/app-integration-20261015/fieldtest2-preserved/field-sessions.tar` SHA-256 `6f8894dd29c3d34cae1eb13a34ecc3f7cb1634acaa4880d37bc20e8cf50e4404`；旧FieldTest2磁盘不删除。使用项目内全新FieldTest3重跑，无清数据、提高上限或修改自动识音算法。
+
 # 识音专项进行中：单音与多音（2026-10-15，未发布）
 
 - 用户确认主攻单音、多音识别，重点解决假八度、多检、漏音及重复音；具体目标、数据与顺序见 `docs/RECOGNITION_WORKSTREAM.md`。对应 PRODUCT 第8/9/12节，点评和评分扩展后置。

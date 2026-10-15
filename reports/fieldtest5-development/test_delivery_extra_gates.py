@@ -8,11 +8,14 @@ import ast
 from copy import deepcopy
 from datetime import datetime
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
@@ -426,6 +429,127 @@ class CliWiringAstTests(unittest.TestCase):
         self.assertEqual(len(push_calls), 1)
         for call in archive_calls + push_calls:
             self.assertEqual([ast.unparse(arg) for arg in call.args], ['registry', 'previous'])
+
+
+class SuccessfulLauncherEvidenceTest(unittest.TestCase):
+    """Entirely synthetic TEST DATA. This proves validator behavior, never UI acceptance."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='TEST-DATA-success-launch-', dir=HERE)
+        self.root = Path(self.temp.name).resolve()
+        self.assertTrue(self.root.is_relative_to(HERE.resolve()))
+        self.addCleanup(self.temp.cleanup)
+        spec = importlib.util.spec_from_file_location('TEST_DATA_success_assembler', HERE/'assemble_manual.py')
+        self.module = importlib.util.module_from_spec(spec);spec.loader.exec_module(self.module)
+        self.module.ROOT = self.root
+        self.module.DEVELOPMENT_DIRECTORY = self.root/'reports/fieldtest5-development'
+        self.module.DEVELOPMENT_DIRECTORY.mkdir(parents=True)
+        self.module.DEFAULT_DIRECTORY = self.module.DEVELOPMENT_DIRECTORY/'manual-final-ui'
+        helper = self.module.DEVELOPMENT_DIRECTORY/'manual_capture_launcher.py'
+        helper.write_bytes((HERE/'manual_capture_launcher.py').read_bytes())
+        self.directory = self.root/'reports/app-integration-20261015/manual-test-data'
+        self.directory.mkdir(parents=True)
+        self.begin = dict(startedAt='2026-10-15T01:00:00+00:00',device='emulator-5562',physicalPhone=False)
+        self.start = self.module.stamp(self.begin['startedAt'])
+        self.finish = self.module.stamp('2026-10-15T01:00:10+00:00')
+        self.identity = {'com.xiuyin.app':APP,'com.xiuyin.app.test':TESTS}
+        self.icon = {'package':'com.google.android.apps.nexuslauncher','text':'修音','content-desc':'修音',
+                     'clickable':'true','enabled':'true','bounds':'[10,20][40,60]'}
+        from xml.etree import ElementTree as ET
+        launcher = ET.Element('hierarchy');top=ET.SubElement(launcher,'node',{'package':self.icon['package'],'resource-id':self.icon['package']+':id/workspace'})
+        ET.SubElement(top,'node',self.icon)
+        self.files = {'started-at.json':self.json_bytes(self.begin),'00-launcher-before.xml':ET.tostring(launcher),
+                      '00-launch.xml':b'<hierarchy><node package="com.xiuyin.app"/></hierarchy>',
+                      '01-verify-open.xml':b'<hierarchy><node package="com.xiuyin.app"/></hierarchy>'}
+        for name in ('00-launcher-before.png','00-launch.png','01-verify-open.png'):
+            self.files[name]=b'\x89PNG\r\n\x1a\nTEST DATA ONLY'
+        intent='act=android.intent.action.MAIN cat=[android.intent.category.LAUNCHER]'
+        activities=('topResumedActivity=ActivityRecord{abc123 u0 com.xiuyin.app/.MainActivity t7}\n'
+            '* Hist #0: ActivityRecord{abc123 u0 com.xiuyin.app/.MainActivity t7}\n'
+            ' Intent {'+intent+'}\n rootOfTask=true\n app=ProcessRecord{abc 123:com.xiuyin.app/u0a1}\n'
+            ' launchedFromPackage=com.google.android.apps.nexuslauncher\n').encode()
+        self.files.update({'00-activities.txt':activities,'01-verify-activities.txt':activities,
+            'launcher-entry.json':self.json_bytes(dict(at='2026-10-15T01:00:01+00:00',launcherPackage=self.icon['package'],
+                icon=self.icon,beforeXml='00-launcher-before.xml',beforePng='00-launcher-before.png',action='input tap observed launcher icon'))})
+        for prefix in ('installed-identity-before','verify-open-installed-identity'):
+            self.files[prefix+'.json']=self.json_bytes(self.identity)
+            for package,value in self.identity.items():
+                apk='/data/app/TEST-DATA/'+package+'/base.apk'
+                self.files[prefix+'-'+package+'-path.txt']=('package:'+apk+'\n').encode()
+                self.files[prefix+'-'+package+'-sha.txt']=(value+'  '+apk+'\n').encode()
+        for name,raw in self.files.items():(self.directory/name).write_bytes(raw)
+        self.history=self.directory/'action-history.jsonl'
+        self.actions=[dict(at=self.begin['startedAt'],arguments=['begin'],phase='STARTED'),
+            dict(at='2026-10-15T01:00:01+00:00',arguments=['begin'],phase='ICON_CLICK_REQUESTED',bounds=self.icon['bounds'],package=self.icon['package']),
+            dict(at='2026-10-15T01:00:03+00:00',arguments=['begin'],phase='COMPLETED')]
+        self.opened=dict(schemaVersion=2,at='2026-10-15T01:00:02+00:00',entryMethod='OBSERVED_LAUNCHER_ICON',
+            verificationMethod='SUCCESSFUL_BEGIN_WITH_READ_ONLY_CONFIRMATION',originalBeginOutcome='COMPLETED',
+            repeatedLaunchExecuted=False,appPackage='com.xiuyin.app',activity=dict(activityToken='abc123',taskId=7,pid=123,intent=intent),
+            evidence=[dict(path=name,**self.module.record(self.directory/name)) for name in self.files])
+        self.opened_path=self.directory/'launcher-opened.json'
+        self.save_history(reseal=True)
+        for target in ('subprocess.run','subprocess.Popen','os.system'):
+            guard=patch(target,side_effect=AssertionError('External execution forbidden in TEST DATA'));guard.start();self.addCleanup(guard.stop)
+    @staticmethod
+    def json_bytes(value):return (json.dumps(value,ensure_ascii=False)+'\n').encode('utf8')
+    def save_opened(self):self.opened_path.write_bytes(self.json_bytes(self.opened))
+    def save_history(self,reseal=False):
+        raw=b''.join(self.json_bytes(row) for row in self.actions);self.history.write_bytes(raw)
+        if reseal:self.opened.update(originalActionHistoryPrefixBytes=len(raw),originalActionHistoryPrefixSha256=hashlib.sha256(raw).hexdigest())
+        self.save_opened()
+    def replace_sealed(self,name,raw):
+        (self.directory/name).write_bytes(raw)
+        next(row for row in self.opened['evidence'] if row['path']==name).update(self.module.record(self.directory/name));self.save_opened()
+    def verify(self):return self.module.validate_launcher_evidence(self.opened_path,self.directory,self.history,self.begin,self.start,self.finish,self.identity)
+    def test_immediate_success_is_valid_without_manufactured_failure(self):
+        result,paths=self.verify()
+        self.assertEqual(len(self.opened['evidence']),20)
+        self.assertEqual(result['originalBeginOutcome'],'COMPLETED');self.assertEqual(result['status'],'VERIFIED_ENTRY_ONLY')
+        self.assertNotIn('originalBeginFailure',result);self.assertNotIn('checks',result)
+        self.assertEqual(result['unresolvedActionFailures'],[]);self.assertIn(self.opened_path,paths)
+        args=SimpleNamespace(manual_directory=str(self.directory),action_history=None,output=None,launcher_evidence=str(self.opened_path))
+        self.assertEqual(self.module.select_manual_paths(args)[0],self.directory)
+    def test_all_later_actions_must_finish_and_no_failure_is_hidden(self):
+        self.actions.extend([dict(at='2026-10-15T01:00:04+00:00',arguments=['dump','dashboard'],phase='STARTED'),
+            dict(at='2026-10-15T01:00:05+00:00',arguments=['dump','dashboard'],phase='COMPLETED')]);self.save_history()
+        self.verify()
+        self.actions[-1]['phase']='FAILED';self.save_history()
+        with self.assertRaisesRegex(ValueError,'failed'):self.verify()
+        self.actions.pop();self.save_history()
+        with self.assertRaisesRegex(ValueError,'Unfinished'):self.verify()
+    def test_cannot_relabel_failure_as_success_or_repeat_begin(self):
+        self.actions[2]['phase']='FAILED';self.save_history(reseal=True)
+        with self.assertRaisesRegex(ValueError,'completed begin'):self.verify()
+        self.actions[2]['phase']='COMPLETED';self.save_history(reseal=True)
+        self.actions.append(dict(at='2026-10-15T01:00:04+00:00',arguments=['begin'],phase='STARTED'));self.save_history()
+        with self.assertRaisesRegex(ValueError,'repeated launcher'):self.verify()
+    def test_source_hash_inventory_and_prefix_tampering_fail(self):
+        self.opened['evidence'][0]['sha256']='0'*64;self.save_opened()
+        with self.assertRaisesRegex(ValueError,'bytes differ'):self.verify()
+        self.opened['evidence'][0].update(self.module.record(self.directory/self.opened['evidence'][0]['path']))
+        self.opened['evidence'].pop();self.save_opened()
+        with self.assertRaisesRegex(ValueError,'inventory'):self.verify()
+    def test_both_raw_package_identities_and_activity_must_match(self):
+        name='installed-identity-before-com.xiuyin.app-sha.txt'
+        self.replace_sealed(name,self.files[name].replace(APP.encode(),b'0'*64))
+        with self.assertRaisesRegex(ValueError,'SHA/path'):self.verify()
+        self.replace_sealed(name,self.files[name])
+        self.replace_sealed('01-verify-activities.txt',self.files['01-verify-activities.txt'].replace(b'123:com',b'999:com'))
+        with self.assertRaisesRegex(ValueError,'same one'):self.verify()
+    def test_foreign_ui_icon_or_component_launch_does_not_prove_launcher_entry(self):
+        self.replace_sealed('00-launch.xml',b'<hierarchy><node package="other.package"/></hierarchy>')
+        with self.assertRaisesRegex(ValueError,'not the App'):self.verify()
+        self.replace_sealed('00-launch.xml',self.files['00-launch.xml'])
+        self.replace_sealed('01-verify-activities.txt',self.files['01-verify-activities.txt'].replace(b'launchedFromPackage=com.google.android.apps.nexuslauncher',b'launchedFromPackage=com.android.shell'))
+        with self.assertRaisesRegex(ValueError,'not launched'):self.verify()
+    def test_missing_png_and_invalid_timing_are_rejected(self):
+        self.replace_sealed('00-launch.png',b'TEST DATA not PNG')
+        with self.assertRaisesRegex(ValueError,'PNG'):self.verify()
+        self.replace_sealed('00-launch.png',self.files['00-launch.png'])
+        self.opened['at']='2026-10-15T01:00:09+00:00';self.save_opened()
+        with self.assertRaisesRegex(ValueError,'chronology'):self.verify()
+    def test_completed_prefix_is_immutable_even_when_later_actions_are_valid(self):
+        self.actions[0]['at']='2026-10-15T01:00:00.100+00:00';self.save_history()
+        with self.assertRaisesRegex(ValueError,'prefix changed'):self.verify()
 
 
 if __name__ == '__main__':

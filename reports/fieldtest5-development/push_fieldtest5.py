@@ -38,6 +38,8 @@ ROOT_CONFIG_ALLOWLIST = frozenset({".gitattributes"})
 REPORT_SOURCE_ALLOWLIST = frozenset({
     "reports/app-integration-20261015/run_targeted.py",
     "reports/app-integration-20261015/compare_clavier_android.py",
+    "reports/app-integration-20261015/manual_capture.py",
+    "reports/app-integration-20261015/test_manual_capture.py",
     "reports/app-integration-20261015/run_post_prepare.py",
     "reports/app-integration-20261015/test_run_post_prepare.py",
     "reports/app-integration-20261015/test_release_helpers.py",

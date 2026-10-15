@@ -108,6 +108,8 @@ def validate_launcher_evidence(path, directory, history_path, begin, start, fini
     need(path.parent == directory and path.name == "launcher-opened.json", "Wrong launcher evidence directory/name")
     opened_record = record(path)
     opened = read(path)
+    if opened.get("originalBeginOutcome") == "COMPLETED":
+        return validate_successful_launcher_evidence(path, directory, history_path, begin, start, finish, identity)
     need(opened.get("entryMethod") == "OBSERVED_LAUNCHER_ICON" and
          opened.get("verificationMethod") == "LATER_READ_ONLY_OBSERVATION_OF_SAME_ACTIVITY" and
          opened.get("originalBeginOutcome") == "FAILED_PRESERVED" and opened.get("repeatedLaunchExecuted") is False and
@@ -214,6 +216,99 @@ def validate_launcher_evidence(path, directory, history_path, begin, start, fini
         "actionHistoryPrefixBytes": prefix_bytes, "actionHistoryPrefixSha256": opened["originalActionHistoryPrefixSha256"],
         "unresolvedActionFailures": [], "scope": "Delayed opening of the same launcher entry only; begin remains FAILED and later UI checks need independent actual observations."}, [path, helper_path, local(DEVELOPMENT_DIRECTORY / "manual_capture.py"),
             local(DEVELOPMENT_DIRECTORY / "adb_ui.py"), *references.values()]
+
+
+def validate_successful_launcher_evidence(path, directory, history_path, begin, start, finish, identity):
+    """A successful fresh entry never needs a manufactured historical failure."""
+    opened = read(path); opened_record = record(path)
+    need(opened.get("schemaVersion") == 2 and opened.get("entryMethod") == "OBSERVED_LAUNCHER_ICON" and
+         opened.get("verificationMethod") == "SUCCESSFUL_BEGIN_WITH_READ_ONLY_CONFIRMATION" and
+         opened.get("originalBeginOutcome") == "COMPLETED" and opened.get("repeatedLaunchExecuted") is False and
+         opened.get("appPackage") == PACKAGE, "Successful launcher entry has invalid schema or outcome")
+    opened_at = stamp(opened["at"])
+    need(start <= opened_at <= finish, "Successful launcher observation is outside the actual manual window")
+    names = {"started-at.json", "launcher-entry.json", "00-launcher-before.xml", "00-launcher-before.png",
+        "00-launch.xml", "00-launch.png", "00-activities.txt", "01-verify-open.xml", "01-verify-open.png",
+        "01-verify-activities.txt"}
+    for prefix in ("installed-identity-before", "verify-open-installed-identity"):
+        names.add(prefix + ".json")
+        names.update(prefix + "-" + package + suffix for package in (PACKAGE, PACKAGE + ".test") for suffix in ("-path.txt", "-sha.txt"))
+    references = {}
+    need(type(opened.get("evidence")) is list, "Successful launcher source evidence missing")
+    for item in opened["evidence"]:
+        name = item.get("path")
+        need(type(name) is str and name in names and name not in references, "Successful launcher evidence is duplicate or foreign")
+        source = local(directory / name)
+        need(source.parent == directory and type(item.get("bytes")) is int and item["bytes"] >= 0 and
+             re.fullmatch(r"[a-f0-9]{64}", item.get("sha256", "")) and
+             record(source) == {key:item[key] for key in ("bytes", "sha256")}, "Successful launcher source bytes differ: " + name)
+        references[name] = source
+    need(set(references) == names, "Successful launcher evidence inventory is incomplete")
+    need(read(references["started-at.json"]) == begin, "Successful launcher started-at differs")
+    need(set(identity) == {PACKAGE, PACKAGE + ".test"}, "Successful launcher needs the exact APK pair")
+    for prefix in ("installed-identity-before", "verify-open-installed-identity"):
+        need(read(references[prefix + ".json"]) == identity, "Successful launcher APK pair differs from prepare")
+        for package, expected in identity.items():
+            base = prefix + "-" + package
+            pm = references[base + "-path.txt"].read_text(encoding="utf-8-sig").strip()
+            found = re.fullmatch(r"package:(/data/app/[^\r\n]+/base\.apk)", pm)
+            need(found is not None and re.fullmatch(re.escape(expected) + r"\s+" + re.escape(found[1]),
+                 references[base + "-sha.txt"].read_text(encoding="utf-8-sig").strip()), "Successful launcher actual installed SHA/path differs")
+    helper_path = local(DEVELOPMENT_DIRECTORY / "manual_capture_launcher.py")
+    helper_record = record(helper_path)
+    spec = importlib.util.spec_from_file_location("successful_manual_launcher_pure_verifier", helper_path)
+    helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+    for name, source in references.items():
+        if name.endswith(".png"):
+            need(source.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "Invalid successful launcher source PNG")
+        if name.endswith(".xml"):
+            need(ET.parse(source).getroot().tag == "hierarchy", "Invalid successful launcher source XML")
+    launcher = helper.launcher_icon(ET.parse(references["00-launcher-before.xml"]).getroot())
+    entry = read(references["launcher-entry.json"])
+    need(entry.get("launcherPackage") == helper.LAUNCHER and entry.get("icon") == dict(launcher.attrib) and
+         entry.get("beforeXml") == "00-launcher-before.xml" and entry.get("beforePng") == "00-launcher-before.png" and
+         entry.get("action") == "input tap observed launcher icon" and start <= stamp(entry["at"]) <= opened_at,
+         "Successful launcher icon/source action differs")
+    activity = helper.verify_evidence(ET.parse(references["01-verify-open.xml"]).getroot(), identity,
+        references["01-verify-activities.txt"].read_text(encoding="utf-8-sig"), identity,
+        ET.parse(references["00-launch.xml"]).getroot(), references["00-activities.txt"].read_text(encoding="utf-8-sig"))
+    need(activity == opened.get("activity"), "Successful launcher Activity/task/PID differs")
+    history_raw = history_path.read_bytes(); prefix_bytes = opened.get("originalActionHistoryPrefixBytes")
+    need(type(prefix_bytes) is int and 0 < prefix_bytes <= len(history_raw) and history_raw[:prefix_bytes].endswith(b"\n") and
+         hashlib.sha256(history_raw[:prefix_bytes]).hexdigest() == opened.get("originalActionHistoryPrefixSha256"),
+         "Successful launcher completed history prefix changed")
+    prefix = [json.loads(row) for row in history_raw[:prefix_bytes].decode("utf8").splitlines() if row.strip()]
+    actions = [json.loads(row) for row in history_raw.decode("utf8").splitlines() if row.strip()]
+    need([(row.get("arguments"), row.get("phase")) for row in prefix] ==
+         [(["begin"], "STARTED"), (["begin"], "ICON_CLICK_REQUESTED"), (["begin"], "COMPLETED")] and actions[:3] == prefix,
+         "Successful launcher history must contain one completed begin without retries/failures")
+    need(prefix[1].get("bounds") == launcher.get("bounds") and prefix[1].get("package") == helper.LAUNCHER and
+         stamp(prefix[1]["at"]) <= opened_at <= stamp(prefix[2]["at"]), "Successful launcher click/confirmation chronology differs")
+    pending = None; last = start
+    for index, action in enumerate(actions):
+        at = stamp(action["at"]); args = action.get("arguments"); phase = action.get("phase")
+        need(last <= at <= finish and type(args) is list and args and all(type(x) is str for x in args), "Invalid successful launcher action chronology")
+        last = at
+        if phase == "STARTED":
+            need(pending is None and (index == 0 or args[0] not in ("begin", "verify-open")), "Unfinished action or repeated launcher entry")
+            pending = args
+        elif phase == "ICON_CLICK_REQUESTED":
+            need(index == 1 and pending == ["begin"], "Unexpected repeated launcher click")
+        elif phase == "COMPLETED":
+            same = pending == args or (pending and pending[0] in ("click", "scrollclick") and pending[-1:] == ["--contains"] and pending[:-1] == args)
+            need(same, "Successful launcher terminal action has no matching STARTED")
+            pending = None
+        else: raise ValueError("Unresolved failed or unknown successful launcher operation")
+    need(pending is None, "Unfinished successful launcher operation")
+    need(record(path) == opened_record and record(helper_path) == helper_record and history_path.read_bytes() == history_raw,
+         "Successful launcher report/helper/history changed during validation")
+    for item in opened["evidence"]:
+        need(record(references[item["path"]]) == {key:item[key] for key in ("bytes", "sha256")}, "Successful launcher source changed during validation")
+    return {"status": "VERIFIED_ENTRY_ONLY", "originalBeginOutcome": "COMPLETED",
+        "verificationMethod": opened["verificationMethod"], "repeatedLaunchExecuted": False, "activity": activity,
+        "verifiedAt": opened["at"], "actionHistoryPrefixBytes": prefix_bytes,
+        "actionHistoryPrefixSha256": opened["originalActionHistoryPrefixSha256"], "unresolvedActionFailures": [],
+        "scope": "Successful observed launcher entry only; lifecycle/restart, screen, system-save and ZIP checks still need their own actual evidence."}, [path, helper_path, *references.values()]
 
 
 def historical(row, start):
@@ -454,8 +549,11 @@ def assemble(args, *, expected_version=VERSION):
               "requiresFinalizeAfterActualManualFinishedAt": True}
     if launcher_validation is not None:
         result.update(launcherEvidence=relative(local(args.launcher_evidence)), launcherEntryValidation=launcher_validation,
-            actionHistory=relative(history_path), preservedActionFailures=[launcher_validation["originalBeginFailure"]],
+            actionHistory=relative(history_path), preservedActionFailures=([launcher_validation["originalBeginFailure"]]
+                if launcher_validation["originalBeginOutcome"] == "FAILED_PRESERVED" else []),
             allRecordedOperationsPassed=False)
+        if launcher_validation["originalBeginOutcome"] == "COMPLETED":
+            result["allRecordedOperationsPassed"] = True
     for key, expected in evidence.items():
         need(record(local(key)) == expected, "Evidence changed during assembly: " + key)
     with output.open("x", encoding="utf-8", newline="\n") as stream:
