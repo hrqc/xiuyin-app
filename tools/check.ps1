@@ -1,5 +1,6 @@
-﻿param([string]$PythonExecutable = 'C:\Python314\python.exe')
+﻿param([string]$PythonExecutable = 'C:\Python314\python.exe', [string]$Serial = $env:ANDROID_SERIAL)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'emulator-selection.ps1')
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $runId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffZ')
@@ -157,16 +158,15 @@ try {
     if (!(Test-Path -LiteralPath $adb)) { throw "缺少 ADB：$adb" }
     $env:ANDROID_USER_HOME = Join-Path $projectRoot 'tools\local\android'
     New-Item -ItemType Directory -Path $env:ANDROID_USER_HOME -Force | Out-Null
-    $devices = @(& $adb devices | Select-String '^\S+\s+device$' | ForEach-Object { ($_.Line -split '\s+')[0] })
-    if ($devices.Count -ne 1 -or $devices[0] -notmatch '^emulator-\d+$') {
-        throw '完整检测需要且仅允许一个在线模拟器；不会自动安装到物理手机。请准备模拟器后重试。'
-    }
-    $env:ANDROID_SERIAL = $devices[0]
+    $listing = & $adb devices | Out-String
+    if ($LASTEXITCODE -ne 0) { throw 'ADB devices 失败，未选择任何设备。' }
+    $selectedSerial = Select-XiuyinEmulator -Listing $listing -RequestedSerial $Serial
+    $env:ANDROID_SERIAL = $selectedSerial
     $device = [ordered]@{
-        serial = $devices[0]
-        model = (& $adb -s $devices[0] shell getprop ro.product.model | Out-String).Trim()
-        android = (& $adb -s $devices[0] shell getprop ro.build.version.release | Out-String).Trim()
-        api = (& $adb -s $devices[0] shell getprop ro.build.version.sdk | Out-String).Trim()
+        serial = $selectedSerial
+        model = (& $adb -s $selectedSerial shell getprop ro.product.model | Out-String).Trim()
+        android = (& $adb -s $selectedSerial shell getprop ro.build.version.release | Out-String).Trim()
+        api = (& $adb -s $selectedSerial shell getprop ro.build.version.sdk | Out-String).Trim()
     }
     foreach ($task in @(':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', ':app:assembleRelease', 'adb:instrumentation', 'rollback:emulator')) {
         $group = $null
@@ -188,7 +188,7 @@ try {
             & (Join-Path $projectRoot 'build.cmd') :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --no-daemon 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
             $code = $LASTEXITCODE
             if ($code -eq 0) {
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'device-test.ps1') 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log -Append
+                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'device-test.ps1') -Serial $selectedSerial 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log -Append
                 $code = $LASTEXITCODE
             }
         } elseif ($task -eq 'rollback:emulator') {

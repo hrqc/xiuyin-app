@@ -1,0 +1,11 @@
+Clavier Tuner FOSS — diagnostic-only single-note reference
+Upstream: https://github.com/clavierhaus/clavier-tuner-foss
+Pinned commit: abc2bb94902a6194c2b3df69f575cb73a7d8266f
+License: Apache-2.0 (original complete LICENSE included).
+Files: KeyIdentifier.kt, Notes.kt, Fft.kt, InharmonicityFit.kt.
+Modification: package/import namespace only; algorithm unchanged.
+No trained model or model weights are included by this integration.
+Original project author/provenance: clavierhaus; original code comments retained.
+This app uses the code only for optional monophonic diagnostic evidence.
+It is not a calibrated probability, a polyphonic replacement, or a passed field-accuracy claim.
+Source hashes and exact changes: docs/CLAVIER_SOURCE_PROVENANCE.json.

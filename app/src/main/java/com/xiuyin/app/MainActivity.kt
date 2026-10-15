@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
     private var calibrationPageVisible = false
     private var fieldPageVisible = false
     private var currentRoute = "home"
+    private var singlePitchReferenceEnabled by mutableStateOf(false)
     private val fieldModel: FieldTestViewModel by lazy { ViewModelProvider(this)[FieldTestViewModel::class.java] }
     private var pendingFieldSavePath: String? = null
     private var pendingFieldSaveSession: String? = null
@@ -144,6 +145,7 @@ class MainActivity : ComponentActivity() {
         } catch (error: Exception) { scoreModel.externalInputFailed("无法打开相机：${error.message}；可选择本地图片") }
     }
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("single_pitch_reference_enabled", singlePitchReferenceEnabled)
         outState.putInt("midi_export_bpm", exportBpm)
         pendingFieldSavePath?.let { outState.putString("field_save_path", it) }
         pendingFieldSaveSession?.let { outState.putString("field_save_session", it) }
@@ -177,7 +179,20 @@ class MainActivity : ComponentActivity() {
     private fun hasMicrophonePermission() = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private fun builtInMicrophoneAvailable(): Boolean = getSystemService(AudioManager::class.java)
         ?.getDevices(AudioManager.GET_DEVICES_INPUTS)?.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC } == true
-    private fun prepareModel() = appModel.prepareCompanionModel(calibrationModel.state.value.profile?.parameters ?: PitchEvidenceConfig())
+    private fun evidenceConfig() = (calibrationModel.state.value.profile?.parameters ?: PitchEvidenceConfig())
+        .copy(singlePitchReferenceEnabled = singlePitchReferenceEnabled)
+    private fun prepareModel() = appModel.prepareCompanionModel(evidenceConfig())
+    private fun canChangeSinglePitchReference() = fieldModel.state.value.activeSession == null &&
+        !fieldModel.operation.value.busy && !companionModel.hasActiveSession() &&
+        !calibrationModel.state.value.calibrating && !calibrationModel.state.value.busy &&
+        appModel.recognition.value.status != RecognitionEngineStatus.LOADING &&
+        appModel.audio.value.status !in setOf(AudioStatus.STARTING, AudioStatus.LISTENING, AudioStatus.STOPPING)
+
+    private fun changeSinglePitchReference(enabled: Boolean) {
+        if (!canChangeSinglePitchReference() || singlePitchReferenceEnabled == enabled) return
+        appModel.stopAudio("单音参考设置已改变，请重新准备模型")
+        singlePitchReferenceEnabled = enabled
+    }
 
     private fun allowFieldBoundInput(): Boolean {
         val practice = companionModel.state.value
@@ -226,7 +241,7 @@ class MainActivity : ComponentActivity() {
         if (!modelIsReady() || !hasMicrophonePermission() || !audioPageVisible) return false
         if (appModel.audio.value.status in setOf(AudioStatus.STARTING, AudioStatus.LISTENING, AudioStatus.STOPPING)) return false
         companionModel.invalidateInputFrames()
-        val started = appModel.startCompanionAudio(calibrationModel.state.value.profile?.parameters ?: PitchEvidenceConfig())
+        val started = appModel.startCompanionAudio(evidenceConfig())
         if (!started) {
             companionModel.inputUnavailable("识别模型未就绪，未启动麦克风")
             calibrationModel.inputUnavailable("识别模型未就绪，未启动麦克风")
@@ -253,6 +268,7 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        singlePitchReferenceEnabled = savedInstanceState?.getBoolean("single_pitch_reference_enabled", false) ?: false
         exportBpm = savedInstanceState?.getInt("midi_export_bpm", 80) ?: 80
         pendingFieldSavePath = savedInstanceState?.getString("field_save_path")
         pendingFieldSaveSession = savedInstanceState?.getString("field_save_session")
@@ -511,7 +527,10 @@ class MainActivity : ComponentActivity() {
                             onRetry = { model.initialize() }, onDiagnostics = { navigate("monitor") }) {
                             when (route) {
                                 "monitor" -> DashboardScreen(state, model::refreshLogs, model::clearLogs, audio = audio, scores = scores, recognition = recognition, pianoFrame = pianoFrame, companion = companion, calibration = calibration, onCalibration = { navigate("calibration") })
-                                "settings" -> FieldSettingsScreen(onOpenField = { navigate("field") }, onMonitor = { navigate("monitor") })
+                                "settings" -> FieldSettingsScreen(onOpenField = { navigate("field") }, onMonitor = { navigate("monitor") },
+                                    singlePitchReferenceEnabled = singlePitchReferenceEnabled,
+                                    canChangeSinglePitchReference = canChangeSinglePitchReference(),
+                                    onSinglePitchReferenceChange = ::changeSinglePitchReference)
                                 "field" -> FieldTestScreen(field, fieldOperation, audio, recognition, pianoFrame, companion,
                                     microphonePermission = hasMicrophonePermission(), builtInMicrophoneAvailable = builtInMicrophoneAvailable(),
                                     appDataAvailable = !state.loading && state.error == null, appDataError = state.error,
@@ -565,6 +584,7 @@ class MainActivity : ComponentActivity() {
                                     onFillMissingScoreTime = workbenchModel::fillMissingScoreTime,
                                     onConfirmLinearRepeat = workbenchModel::confirmLinearRepeat,
                                     onSelect = workbenchModel::select, onEdit = workbenchModel::edit,
+                                    onShiftOctaveRange = workbenchModel::shiftOctaveRange,
                                     onTranspose = workbenchModel::transpose, onUndo = workbenchModel::undo,
                                     onRedo = workbenchModel::redo, onVerify = workbenchModel::verifySelected,
                                     onRestoreEvent = workbenchModel::restoreSelected, onRestoreMeasure = workbenchModel::restoreMeasure,

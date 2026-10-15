@@ -9,6 +9,8 @@ class PianoRecognitionProcessor(private val model: PianoInferenceModel, config: 
     private val acoustic = PianoAcousticEvidence()
     private val residual = ResidualHarmonicEvidence()
     private val octaveSafety = OctaveSafetyLayer()
+    private val singlePitchReference = if (config.singlePitchReferenceEnabled) ClavierSinglePitchReferenceProcessor() else null
+    private val referenceInputScratch = singlePitchReference?.let { ShortArray(4096) }
     private val ring = FloatArray(PianoModel.INPUT_SAMPLES)
     private val clipRing = BooleanArray(PianoModel.INPUT_SAMPLES)
     private var nextWrite = 0
@@ -21,6 +23,7 @@ class PianoRecognitionProcessor(private val model: PianoInferenceModel, config: 
     var computeMs: Double? = null; private set
     var windowCount: Long = 0; private set
     var inputSampleCount: Long = 0; private set
+    internal val singlePitchReferenceWindowCount: Long get() = singlePitchReference?.windowCount ?: 0
 
     fun accept(samples: ShortArray, count: Int = samples.size, firstInputSample: Long = expectedInput) {
         require(count in 1..samples.size && firstInputSample >= 0)
@@ -29,7 +32,24 @@ class PianoRecognitionProcessor(private val model: PianoInferenceModel, config: 
         expectedInput += count
         inputSampleCount += count
         val sourceClipped = (0 until count).any { abs(samples[it].toInt()) >= 32760 }
-        val converted = resampler.accept(samples, count)
+        if (singlePitchReference == null) {
+            acceptConverted(resampler.accept(samples, count), sourceClipped)
+        } else {
+            // Still runs only on the existing inference worker. Interleave bounded chunks so even
+            // a large file replay block cannot evict evidence before its model frames are emitted.
+            val scratch = checkNotNull(referenceInputScratch)
+            var offset = 0
+            while (offset < count) {
+                val chunkCount = minOf(scratch.size, count - offset)
+                samples.copyInto(scratch, 0, offset, offset + chunkCount)
+                singlePitchReference.accept(scratch, chunkCount, firstInputSample + offset)
+                acceptConverted(resampler.accept(scratch, chunkCount), sourceClipped)
+                offset += chunkCount
+            }
+        }
+    }
+
+    private fun acceptConverted(converted: Streaming48kTo16k.Output, sourceClipped: Boolean) {
         for (sample in converted.samples) {
             ring[nextWrite] = sample
             clipRing[nextWrite] = sourceClipped || abs(sample) >= 1f
@@ -62,7 +82,9 @@ class PianoRecognitionProcessor(private val model: PianoInferenceModel, config: 
             val independentSupport = residual.analyze(input, index * PianoModel.HOP_SAMPLES, onsetScores, frameScores)
             val frame = tracker.accept(absoluteFrame, originSeconds + (firstSample16k + index * 512) / 16_000.0,
                 available, onsetScores, frameScores, overloaded, result.computeMs, support.rejected + independentSupport.rejected)
-            onFrame(octaveSafety.observe(frame, support.fundamentalAmplitude))
+            val observed = octaveSafety.observe(frame, support.fundamentalAmplitude)
+            onFrame(if (singlePitchReference == null) observed else
+                observed.copy(singlePitchReference = singlePitchReference.forFrame(observed.audioTimeSeconds)))
             lastPublishedFrame = absoluteFrame
             frameCount++
         }

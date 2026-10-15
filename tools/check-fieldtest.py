@@ -35,9 +35,16 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 
+# Historical evaluators load this gate by absolute filename from outside tools/.
+# Bind the adjacent selector explicitly instead of relying on the caller's PYTHONPATH.
+_selector_spec = importlib.util.spec_from_file_location("xiuyin_gate_emulator_selection", Path(__file__).with_name("emulator_selection.py"))
+_selector_module = importlib.util.module_from_spec(_selector_spec)
+_selector_spec.loader.exec_module(_selector_module)
+select_emulator = _selector_module.select_emulator
+
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.xiuyin.app"
-VERSION = "0.3.0-octave.2-fieldtest.5"
+VERSION = "0.3.0-octave.2-fieldtest.6"
 KNOWN_SUITE = "TEST-dotiam-independent2.xml"
 KNOWN_CLASS = PACKAGE + ".practice.PracticePcmIntegrationTest"
 KNOWN_METHOD = "productionPcmToFollowerAndDurableReport"
@@ -1130,6 +1137,7 @@ def finalize_prepared(args):
         sdk_line = next(line.split("=", 1)[1] for line in (ROOT / "local.properties").read_text().splitlines() if line.startswith("sdk.dir="))
         adb = Path(sdk_line.replace("\\:", ":").replace("\\\\", "\\")) / "platform-tools/adb.exe"
         def device(*command, global_command=False, raw_output=False, evidence_name=None):
+            require(not global_command or command == ("devices",), "Only the read-only ADB inventory may omit -s")
             values = [str(adb)] + ([] if global_command else ["-s", args.serial]) + list(command)
             if evidence_name is not None:
                 raw = capture_runtime_device(values, out, evidence_name, result.setdefault("runtimeLogCommands", []))
@@ -1142,7 +1150,7 @@ def finalize_prepared(args):
             require(child.returncode == 0, "Read-only device identity/log verification failed")
             return child.stdout if raw_output else child.stdout.decode("utf8", "replace").strip()
         listing = device("devices", global_command=True)
-        require(re.findall(r"^(\S+)\s+device$", listing, re.M) == [args.serial], "Exactly the selected emulator must be online")
+        select_emulator(listing, args.serial)
         for package, expected_sha in identity.items():
             locations = device("shell", "pm", "path", package).splitlines()
             require(len(locations) == 1 and re.fullmatch(r"package:/data/app/[A-Za-z0-9_./+=~\-]+/base\.apk", locations[0]), "Unexpected installed package location")
@@ -1311,7 +1319,7 @@ def main():
                 raw = subprocess.check_output(values, timeout=120)
             return raw if raw_output else raw.decode("utf8", "replace").strip()
         listing = subprocess.check_output([str(adb), "devices"], text=True)
-        require(re.findall(r"^(\S+)\s+device$", listing, re.M) == [args.serial], "Exactly one selected emulator required")
+        select_emulator(listing, args.serial)
         log_since = device("shell", "date", r"+%m-%d\ %H:%M:%S.000")
         device_start = int(device("shell", "date", "+%s")) * 1000
         result.update(deviceStartedAtMillis=device_start, deviceLogSince=log_since)

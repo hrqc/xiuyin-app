@@ -1,5 +1,7 @@
 package com.xiuyin.app.field
 
+import com.xiuyin.app.practice.ScoreAssistanceTrace
+
 /** Statistics describe system decisions; user feedback is never ground truth. */
 enum class FieldFeedbackLabel { UNLABELED, USER_SAYS_SYSTEM_WRONG, USER_CONFIRMS_WRONG_NOTE }
 enum class FieldSessionStatus { ACTIVE, COMPLETED, INCOMPLETE }
@@ -28,6 +30,7 @@ data class FieldFollowingTrace(
     val recoveryEvent: String? = null, val followingLatencyMs: Double? = null,
     val decisionEventId: String? = null, val confirmedDecision: Boolean = false, val evidenceAudioTimeSeconds: Double? = null,
     val fieldSessionId: String? = null, val audioStreamId: Long? = null, val engineSessionId: Long? = null,
+    val scoreAssistance: ScoreAssistanceTrace? = null,
 )
 internal data class FieldClip(val firstSample: Long, val samples: ShortArray, val sampleRate: Int = 48_000) {
     val endSample: Long get() = firstSample + samples.size

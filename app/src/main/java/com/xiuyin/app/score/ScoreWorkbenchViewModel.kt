@@ -196,6 +196,18 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
         accept(revisions.save(requireNotNull(mutableState.value.scoreId), prior.generation, score, prior.verifiedEventIds, prior.fingerings), "移调已同步到数字乐谱、两种谱式和试听")
     }
 
+    fun shiftOctaveRange(request: ScoreOctaveRangeRequest) = operation("保存手动八度范围修正") {
+        val current = mutableState.value
+        val prior = requireNotNull(current.revision) { "没有当前乐谱" }
+        request.requireCurrent(current.scoreId, prior.generation)
+        val result = ScoreRangeEditing.shiftOctave(prior.current, request.startEventId, request.endEventId, request.octaves)
+        player.stop("手动八度范围已更新，试听已停止")
+        // A batch operation changes pitch, but does not certify that every selected note is correct.
+        accept(revisions.save(request.scoreId, prior.generation, result.score,
+            prior.verifiedEventIds - result.changedEventIds, prior.fingerings),
+            "已手动${if (request.octaves > 0) "升" else "降"}一个八度，共 ${result.changedEventIds.size} 个音；时值、休止与原图保留，修改音符仍待复核，可一次撤销。结束旧练习后重新打开陪练以使用此修订")
+    }
+
     fun restoreSelected() = operation("恢复当前音符原始结果") {
         player.stop("原始音符已恢复，试听停止")
         val state = mutableState.value

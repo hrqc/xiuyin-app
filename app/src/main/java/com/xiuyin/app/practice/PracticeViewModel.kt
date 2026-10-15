@@ -45,6 +45,7 @@ data class CompanionState(
     val lastDecisionFrame: PianoRecognitionFrame? = null, val lastWrongFrame: PianoRecognitionFrame? = null,
     val error: String? = null, val message: String? = null,
     val preparationIssues: List<ScoreIssue> = emptyList(),
+    val scoreAssistance: ScoreAssistanceTrace? = null,
 )
 
 /** UI controller only. Root owns microphone permissions/lifecycle and supplies independent model frames. */
@@ -221,11 +222,15 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
             val target = active.follower.targets.getOrNull(previousPosition)
             val expectedBefore = active.follower.expectedMidi()
             val measureBefore = active.follower.measureIndex()
+            val assistance = ScoreAssistanceTrace.observe(frame, ScoreAssistanceContext(
+                active.scoreId, active.revisionGeneration, active.config.hand, active.config.startMeasure,
+                active.config.endMeasure, active.config.mode, active.follower.contextSnapshot()))
             val followingStart = SystemClock.elapsedRealtimeNanos()
             val update = active.accept(RecognitionObservation(frame.frameIndex, frame.audioTimeSeconds,
                 frame.onsetMidi.mapNotNull(::evidence), frame.activeMidi.mapNotNull(::evidence),
                 frame.state != RecognitionState.WARMING_UP, frame.clipped, frame.uncertainMidi, frame.ambiguousOctaveMidi))
             val followingMs = (SystemClock.elapsedRealtimeNanos() - followingStart) / 1_000_000.0
+            val assistanceWithDecision = assistance.withDecision(update)
             fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
                 expectedMeasure = (measureBefore + 1).toString(), expectedBeat = target?.startBeat?.toDouble(),
                 expectedNotes = expectedBefore, detectedNotes = update.detectedMidi,
@@ -233,7 +238,8 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                 decision = update.decision.name, practiceState = active.phase.name, locked = active.follower.locked,
                 reason = update.reason, recoveryEvent = if (previousLocked && !active.follower.locked) "UNLOCK_AFTER_RECOGNIZED_CORRECTION" else null,
                 followingLatencyMs = followingMs, fieldSessionId = frame.fieldSessionId,
-                audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
+                audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId,
+                scoreAssistance = assistanceWithDecision))
             followingRecorded = true
             update.evidence.forEach { item ->
                 fieldDiagnostics.recordFollowing(FieldFollowingTrace(frame.frameIndex, frame.audioTimeSeconds,
@@ -248,6 +254,7 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
                     audioStreamId = frame.audioStreamId, engineSessionId = frame.engineSessionId))
             }
             publish()
+            mutableState.value = mutableState.value.copy(scoreAssistance = assistanceWithDecision)
             if (update.evidence.isNotEmpty()) {
                 val decisionTime = update.evidence.last().audioTimeSeconds
                 val source = frameHistory.values.minByOrNull { kotlin.math.abs(it.audioTimeSeconds - decisionTime) } ?: frame
@@ -290,13 +297,13 @@ class PracticeViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             if (generation != inputGeneration.get()) return@launch
             frameHistory.clear()
-            mutableState.value = mutableState.value.copy(lastDecisionFrame = null, lastWrongFrame = null)
+            mutableState.value = mutableState.value.copy(lastDecisionFrame = null, lastWrongFrame = null, scoreAssistance = null)
         }
     }
     fun pause() { invalidateInputFrames(); session?.pause(); publish(); fieldDiagnostics.recordLog("INFO", "Practice", "Practice Stop", "PAUSED") }
     fun resume() { if (!mutableState.value.busy && pendingReport == null) { invalidateInputFrames(); session?.resume(); publish() } }
     fun seekMeasure(index: Int) {
-        try { session?.seekMeasure(index); publish() }
+        try { session?.seekMeasure(index); publish(); mutableState.value = mutableState.value.copy(scoreAssistance = null) }
         catch (error: Exception) {
                 if (error is CancellationException) throw error
                 mutableState.value = mutableState.value.copy(error = error.message) }

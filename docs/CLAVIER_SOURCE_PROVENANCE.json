@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/clavierhaus/clavier-tuner-foss",
+  "commit": "abc2bb94902a6194c2b3df69f575cb73a7d8266f",
+  "license": "Apache-2.0",
+  "licenseSha256": "18b52632162febebc6a20ffc2be488341aa024414167f9481784faf6c0cb241e",
+  "codeOnlyNoModelWeights": true,
+  "files": [
+    {
+      "sourcePath": "shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/tuning/KeyIdentifier.kt",
+      "sourceUrl": "https://raw.githubusercontent.com/clavierhaus/clavier-tuner-foss/abc2bb94902a6194c2b3df69f575cb73a7d8266f/shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/tuning/KeyIdentifier.kt",
+      "originalSha256": "aa0f152e8e4c6dabe15afe543ac0b0bbce8aa5747077d37040e91e7788369cdc",
+      "localPath": "app/src/main/java/com/xiuyin/app/pitch/clavier/tuning/KeyIdentifier.kt",
+      "localSha256": "2eb9fb34ca961fa698a94ad470dd97320cc3a8b99b4d4d57ab92c95b32760036",
+      "modification": "Namespace/import prefix only: at.clavierhaus.unisonmaster -> com.xiuyin.app.pitch.clavier"
+    },
+    {
+      "sourcePath": "shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/tuning/Notes.kt",
+      "sourceUrl": "https://raw.githubusercontent.com/clavierhaus/clavier-tuner-foss/abc2bb94902a6194c2b3df69f575cb73a7d8266f/shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/tuning/Notes.kt",
+      "originalSha256": "8d86f9598745e835525ab1691a8267d92a89f9c1595b4dff048c49285593694d",
+      "localPath": "app/src/main/java/com/xiuyin/app/pitch/clavier/tuning/Notes.kt",
+      "localSha256": "c156dd53ec7f57cf1293c514c435514bb6a9cd18ef057e15116d2c4d88f350cc",
+      "modification": "Namespace/import prefix only: at.clavierhaus.unisonmaster -> com.xiuyin.app.pitch.clavier"
+    },
+    {
+      "sourcePath": "shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/dsp/Fft.kt",
+      "sourceUrl": "https://raw.githubusercontent.com/clavierhaus/clavier-tuner-foss/abc2bb94902a6194c2b3df69f575cb73a7d8266f/shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/dsp/Fft.kt",
+      "originalSha256": "b3af463ff1c0af467c2606cdcf9dbc004dd8a584f79533b45afed8ab8d140ec4",
+      "localPath": "app/src/main/java/com/xiuyin/app/pitch/clavier/dsp/Fft.kt",
+      "localSha256": "5e4335f14561768b6ebaeaeadbd6c948bec4413546df8c05d49df06b299be643",
+      "modification": "Namespace/import prefix only: at.clavierhaus.unisonmaster -> com.xiuyin.app.pitch.clavier"
+    },
+    {
+      "sourcePath": "shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/dsp/InharmonicityFit.kt",
+      "sourceUrl": "https://raw.githubusercontent.com/clavierhaus/clavier-tuner-foss/abc2bb94902a6194c2b3df69f575cb73a7d8266f/shared/src/commonMain/kotlin/at/clavierhaus/unisonmaster/dsp/InharmonicityFit.kt",
+      "originalSha256": "3681e02d4222bc8145c2fd5b83dc85ae5a8d853270b348de3ddbfb5e3ef52f30",
+      "localPath": "app/src/main/java/com/xiuyin/app/pitch/clavier/dsp/InharmonicityFit.kt",
+      "localSha256": "d0871c1ea65f3a59de2e1375184a43edecbd3fc333225321b658a02ff4b465df",
+      "modification": "Namespace/import prefix only: at.clavierhaus.unisonmaster -> com.xiuyin.app.pitch.clavier"
+    }
+  ]
+}

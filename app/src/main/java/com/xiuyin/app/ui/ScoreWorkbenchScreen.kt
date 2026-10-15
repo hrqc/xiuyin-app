@@ -45,6 +45,7 @@ fun ScoreWorkbenchScreen(
     onConfirmLinearRepeat: () -> Unit = {},
     onRecognizeOmrAgain: () -> Unit = {},
     onFillMissingScoreTime: (String, Long, Int, Int) -> Unit = { _, _, _, _ -> },
+    onShiftOctaveRange: (ScoreOctaveRangeRequest) -> Unit = {},
 ) {
     val revision = state.revision
     val score = revision?.current
@@ -56,6 +57,7 @@ fun ScoreWorkbenchScreen(
     var wholeScoreTimeOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
     var linearRepeatOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
     var missingTimeTarget by remember(state.scoreId, revision?.generation) { mutableStateOf<MissingTimeTarget?>(null) }
+    var octaveRangeTarget by remember(state.scoreId, revision?.generation) { mutableStateOf<ScoreOctaveRangeRequest?>(null) }
     var restoreTarget by remember { mutableStateOf<String?>(null) }
     var reviewIndex by rememberSaveable { mutableStateOf(0) }
     var bpm by rememberSaveable { mutableStateOf(80) }
@@ -209,6 +211,13 @@ fun ScoreWorkbenchScreen(
                             Button(onClick = { editing = selected }, enabled = !state.busy, modifier = Modifier.testTag("edit_selected_note")) { Text("修改音符") }
                             TextButton(onClick = onVerify, enabled = !state.busy, modifier = Modifier.testTag("verify_selected_note")) { Text("确认无误") }
                         }
+                        OutlinedButton(onClick = {
+                            val id = state.scoreId
+                            val generation = revision.generation
+                            if (id != null) octaveRangeTarget =
+                                ScoreOctaveRangeRequest(id, generation, selected.id, selected.id, 1)
+                        }, enabled = !state.busy && !selected.isRest,
+                            modifier = Modifier.testTag("score_octave_range")) { Text("手动修正一段八度") }
                     }
                     if (selected != null) TextButton(onClick = { restoreTarget = "event" }, enabled = !state.busy,
                         modifier = Modifier.testTag("restore_original_note")) { Text("恢复此音符原始结果") }
@@ -259,6 +268,10 @@ fun ScoreWorkbenchScreen(
         onDismiss = { missingTimeTarget = null }, onApply = { beats, beatType ->
             onFillMissingScoreTime(target.scoreId, target.generation, beats, beatType)
             missingTimeTarget = null
+        }) }
+    octaveRangeTarget?.let { target -> if (score != null) OctaveRangeEditor(score, target, state.busy,
+        onDismiss = { octaveRangeTarget = null }, onApply = { request ->
+            onShiftOctaveRange(request); octaveRangeTarget = null
         }) }
     if (wholeScoreTimeOpen) WholeScoreTimeEditor(onDismiss = { wholeScoreTimeOpen = false }) { beats, beatType ->
         onSetWholeScoreTime(beats, beatType); wholeScoreTimeOpen = false
@@ -312,6 +325,42 @@ fun ScoreWorkbenchScreen(
 }
 
 private data class MissingTimeTarget(val scoreId: String, val generation: Long, val measureCount: Int)
+
+@Composable
+private fun OctaveRangeEditor(score: DigitalScore, target: ScoreOctaveRangeRequest, busy: Boolean,
+    onDismiss: () -> Unit, onApply: (ScoreOctaveRangeRequest) -> Unit) {
+    val all = remember(score) { ScoreRangeEditing.endpoints(score) }
+    val anchor = all.firstOrNull { it.eventId == target.startEventId }
+    val lane = all.filter { anchor != null && !it.event.isRest && it.partId == anchor.partId &&
+        it.event.staff == anchor.event.staff && it.event.voice == anchor.event.voice }
+    var startId by remember { mutableStateOf(target.startEventId) }
+    var endId by remember { mutableStateOf(target.endEventId) }
+    var octaves by remember { mutableStateOf<Int?>(null) }
+    val labels = lane.mapIndexed { index, event -> "${index + 1} · ${event.label}" }
+    fun label(id: String) = lane.indexOfFirst { it.eventId == id }.takeIf { it >= 0 }?.let { labels[it] } ?: "位置不可用"
+    val preview = octaves?.let { direction -> runCatching { ScoreRangeEditing.preview(score, startId, endId, direction) } }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("手动八度范围修正") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("请对照原图选择起止音符。这是你的手动修订，不是自动识别八度线。")
+            anchor?.let { Text("${it.partName} · 谱表 ${it.event.staff} · 声部 ${it.event.voice}") }
+            ChoiceField("起始音符", label(startId), labels, { startId = lane[labels.indexOf(it)].eventId }, "octave_range_start")
+            ChoiceField("结束音符", label(endId), labels, { endId = lane[labels.indexOf(it)].eventId }, "octave_range_end")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(octaves == 1, { octaves = 1 }, { Text("升一个八度") }, modifier = Modifier.testTag("octave_range_up"))
+                FilterChip(octaves == -1, { octaves = -1 }, { Text("降一个八度") }, modifier = Modifier.testTag("octave_range_down"))
+            }
+            preview?.getOrNull()?.let { plan ->
+                Text("预览：修改 ${plan.changedEventIds.size} 个音，保留 ${plan.skippedRests} 个休止符。\n从 ${plan.start.label}\n至 ${plan.end.label}",
+                    modifier = Modifier.testTag("octave_range_preview"))
+            }
+            preview?.exceptionOrNull()?.let { Text(it.message ?: "范围不可用", color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("octave_range_error")) }
+            Text("包含起止处同声部的整个和弦；只改这条声部的音高，时值与其他声部不变。保留原图与原始结果，可一次撤销；修改音符的旧确认会清除，需要重新核对。跨范围延音线可能需要继续修正。", style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = { Button(onClick = { onApply(target.copy(startEventId = startId, endEventId = endId, octaves = requireNotNull(octaves))) },
+        enabled = !busy && preview?.isSuccess == true, modifier = Modifier.testTag("octave_range_apply")) { Text("保存这次范围修正") } },
+        dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.testTag("octave_range_cancel")) { Text("取消") } })
+}
 
 @Composable
 private fun MissingTimeEditor(measureCount: Int, busy: Boolean, onDismiss: () -> Unit, onApply: (Int, Int) -> Unit) {
@@ -374,7 +423,8 @@ internal fun ChoiceField(label: String, value: String, options: List<String>, on
     var expanded by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag(tag)) { Text("$label：$value") }
-        DropdownMenu(expanded, { expanded = false }) { options.forEach { item -> DropdownMenuItem(text = { Text(item) }, onClick = { onChange(item); expanded = false }) } }
+        DropdownMenu(expanded, { expanded = false }) { options.forEach { item -> DropdownMenuItem(text = { Text(item) },
+            onClick = { onChange(item); expanded = false }, modifier = Modifier.testTag("${tag}_option_$item")) } }
     }
 }
 
@@ -405,6 +455,14 @@ private fun EventEditor(event: ScoreEvent, fingering: Int?, insert: Boolean, onD
     var tieStop by remember { mutableStateOf("stop" in event.ties) }
     var error by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf(false) }
+    fun recomputeDuration() {
+        try {
+            val actual = tupletActual.trim().takeIf { it.isNotEmpty() }?.toInt()
+            val normal = tupletNormal.trim().takeIf { it.isNotEmpty() }?.toInt()
+            duration = ScoreEditing.notatedDuration(type, dots.toInt(), actual, normal, grace).toString()
+            error = null
+        } catch (exception: IllegalArgumentException) { error = exception.message ?: "请填写完整连音比例，或将两项同时清空" }
+    }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (insert) "添加音符" else "修正音符") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -415,16 +473,17 @@ private fun EventEditor(event: ScoreEvent, fingering: Int?, insert: Boolean, onD
                     ChoiceField("升降号半音", alter, (-2..2).map(Int::toString), { alter = it }, "edit_pitch_alter")
                     OutlinedTextField(octave, { octave = it }, label = { Text("八度（中央 C 为 4）") }, singleLine = true, modifier = Modifier.testTag("edit_pitch_octave"))
                 }
-                ChoiceField("时值符号", type, listOf("whole", "half", "quarter", "eighth", "16th", "32nd", "64th", "128th"), { type = it; duration = ScoreEditing.writtenDuration(it, dots.toInt()).toString() }, "edit_note_type")
-                ChoiceField("附点", dots, (0..4).map(Int::toString), { dots = it; duration = ScoreEditing.writtenDuration(type, it.toInt()).toString() }, "edit_note_dots")
+                ChoiceField("时值符号", type, listOf("whole", "half", "quarter", "eighth", "16th", "32nd", "64th", "128th"), { type = it; recomputeDuration() }, "edit_note_type")
+                ChoiceField("附点", dots, (0..4).map(Int::toString), { dots = it; recomputeDuration() }, "edit_note_dots")
                 OutlinedTextField(offset, { offset = it }, label = { Text("小节内起点（0 起算）") }, singleLine = true, modifier = Modifier.testTag("edit_note_offset"))
                 OutlinedTextField(duration, { duration = it }, label = { Text("实际时长（可填 1/3 等连音分数）") }, singleLine = true, modifier = Modifier.testTag("edit_note_duration"))
                 OutlinedTextField(staff, { staff = it }, label = { Text("谱表编号") }, singleLine = true, modifier = Modifier.testTag("edit_note_staff"))
                 OutlinedTextField(voice, { voice = it }, label = { Text("声部") }, singleLine = true, modifier = Modifier.testTag("edit_note_voice"))
                 OutlinedTextField(finger, { finger = it }, label = { Text("指法 1–5，留空清除") }, singleLine = true, modifier = Modifier.testTag("edit_note_finger"))
-                FilterChip(grace, { grace = !grace; if (grace) { duration = "0"; rest = false; tieStart = false; tieStop = false } else duration = ScoreEditing.writtenDuration(type, dots.toInt()).toString() }, { Text("装饰音（记谱时值为零）") })
-                OutlinedTextField(tupletActual, { tupletActual = it }, label = { Text("连音实际数量，普通音符留空") }, singleLine = true)
-                OutlinedTextField(tupletNormal, { tupletNormal = it }, label = { Text("连音正常数量，如三连音 3:2") }, singleLine = true)
+                FilterChip(grace, { grace = !grace; if (grace) { rest = false; tieStart = false; tieStop = false }; recomputeDuration() }, { Text("装饰音（记谱时值为零）") })
+                OutlinedTextField(tupletActual, { tupletActual = it; recomputeDuration() }, label = { Text("连音实际数量，普通音符留空") }, singleLine = true, modifier = Modifier.testTag("edit_tuplet_actual"))
+                OutlinedTextField(tupletNormal, { tupletNormal = it; recomputeDuration() }, label = { Text("连音正常数量，如三连音 3:2") }, singleLine = true, modifier = Modifier.testTag("edit_tuplet_normal"))
+                TextButton(onClick = { recomputeDuration() }, modifier = Modifier.testTag("edit_recompute_duration")) { Text("按记谱与连音比例重算时长") }
                 FilterChip(chord, { chord = !chord }, { Text("和弦成员（与前音同时）") })
                 Row { FilterChip(tieStart, { tieStart = !tieStart }, { Text("延音线开始") }); Spacer(Modifier.width(4.dp)); FilterChip(tieStop, { tieStop = !tieStop }, { Text("延音线结束") }) }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }

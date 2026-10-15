@@ -39,6 +39,10 @@ data class PianoRecognitionFrame(
     val ambiguousOctaveMidi: Set<Int> = emptySet(),
     /** Bound at delivery under the input lifecycle guard; never inferred from expected score. */
     val fieldSessionId: String? = null, val audioStreamId: Long? = null, val engineSessionId: Long? = null,
+    /** Live tracker candidates awaiting confirmation; neither accepted notes nor musical truth. */
+    val pendingOnsetMidi: Set<Int> = emptySet(),
+    /** Optional raw-PCM single-pitch side evidence; never changes production note decisions. */
+    val singlePitchReference: ClavierSinglePitchReference? = null,
 )
 enum class RecognitionEngineStatus { IDLE, LOADING, READY, WARMING_UP, RUNNING, ERROR, CLOSED }
 data class RecognitionEngineSnapshot(

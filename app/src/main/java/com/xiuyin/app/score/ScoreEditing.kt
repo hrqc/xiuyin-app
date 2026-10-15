@@ -75,6 +75,18 @@ object ScoreEditing {
         return result
     }
 
+    /** One source of truth for editor recomputation and validation; units are quarter notes. */
+    fun notatedDuration(type: String, dots: Int, tupletActual: Int? = null,
+        tupletNormal: Int? = null, grace: Boolean = false): BeatFraction {
+        require((tupletActual == null) == (tupletNormal == null)) { "连音比例必须同时提供；普通音符请同时清空" }
+        require(tupletActual == null || tupletActual in 1..32) { "连音实际数量必须为 1–32" }
+        require(tupletNormal == null || tupletNormal in 1..32) { "连音正常数量必须为 1–32" }
+        val base = writtenDuration(type, dots)
+        if (grace) return BeatFraction.ZERO
+        return if (tupletActual != null && tupletNormal != null)
+            BeatFraction.of(base.numerator * tupletNormal, base.denominator * tupletActual) else base
+    }
+
     fun pitchFromMidi(midi: Int, preferFlats: Boolean = false): ScorePitch {
         require(midi in 0..127) { "音高超出 MIDI 0–127 范围" }
         val names = if (preferFlats) listOf("C", "D", "D", "E", "E", "F", "G", "G", "A", "A", "B", "B")
@@ -168,8 +180,7 @@ object ScoreEditing {
                     if (measure.clefs.none { it.staff == event.staff }) issue("clef", "音符所在谱表没有谱号", measure, event, warning = true)
                     if (event.type != null && valid && !event.grace) {
                         val written = runCatching {
-                            val basic = writtenDuration(event.type, event.dots)
-                            if (event.tupletActual != null && event.tupletNormal != null) BeatFraction.of(basic.numerator * event.tupletNormal, basic.denominator * event.tupletActual) else basic
+                            notatedDuration(event.type, event.dots, event.tupletActual, event.tupletNormal)
                         }.getOrNull()
                         if (written == null || written != event.duration) issue("written", "记谱类型/附点与实际时值不一致", measure, event)
                     }

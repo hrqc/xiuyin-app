@@ -11,7 +11,8 @@ interface AudioRecognitionEngine : AutoCloseable {
 }
 
 /** Profiles may make confirmation more conservative; they cannot weaken baseline evidence gates. */
-data class PitchEvidenceConfig(val onsetThreshold: Float = .60f, val frameThreshold: Float = .50f) {
+data class PitchEvidenceConfig(val onsetThreshold: Float = .60f, val frameThreshold: Float = .50f,
+    val singlePitchReferenceEnabled: Boolean = false) {
     init {
         require(onsetThreshold.isFinite() && onsetThreshold in .60f..0.85f)
         require(frameThreshold.isFinite() && frameThreshold in .50f..0.75f)

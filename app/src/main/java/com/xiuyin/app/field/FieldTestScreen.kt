@@ -46,11 +46,29 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun FieldSettingsScreen(onOpenField: () -> Unit, onMonitor: () -> Unit) {
+fun FieldSettingsScreen(
+    onOpenField: () -> Unit,
+    onMonitor: () -> Unit,
+    singlePitchReferenceEnabled: Boolean = false,
+    canChangeSinglePitchReference: Boolean = true,
+    onSinglePitchReferenceChange: (Boolean) -> Unit = {},
+) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("设置", style = MaterialTheme.typography.headlineMedium)
         Text("在琴房里留下可复查的证据", style = MaterialTheme.typography.titleMedium)
         BuildIdentity()
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row {
+                    Checkbox(singlePitchReferenceEnabled, onSinglePitchReferenceChange,
+                        enabled = canChangeSinglePitchReference, modifier = Modifier.testTag("single_pitch_reference_toggle"))
+                    Text("Clavier 单音参考（实验）", Modifier.padding(top = 10.dp))
+                }
+                Text("帮助复查单音音名和八度，不改变陪练判对、判错或解锁。和弦、现场实时开销与 F7 以上尚未验证；默认关闭。", style = MaterialTheme.typography.bodySmall)
+                Text("仅供短时诊断：完整拟合证据每分钟约增加 16 MiB 日志，另有原始模型和跟谱日志。容量不足会暂停，请分段结束并导出；不会自动丢弃未导出证据。更改后需要重新准备模型。", style = MaterialTheme.typography.bodySmall)
+                if (!canChangeSinglePitchReference) Text("请先结束练习与实地测试，再修改此设置。", style = MaterialTheme.typography.bodySmall)
+            }
+        }
         Button(onOpenField, modifier = Modifier.fillMaxWidth().testTag("open_field_test")) { Text("开发 / 实地测试") }
         OutlinedButton(onMonitor, modifier = Modifier.fillMaxWidth()) { Text("开发者监控与日志") }
         Text("所有测试数据保存在本机。只有你选择分享或保存时，才交给所选应用或位置。", style = MaterialTheme.typography.bodySmall)
@@ -196,6 +214,12 @@ fun FieldTestScreen(
                 Text("模型会话：${recognition.sessionId} · 实际推理帧 ${recognition.frameCount} · 队列 ${recognition.queueOccupancy}/${recognition.queueCapacity}")
                 Text("丢弃 PCM 块 ${recognition.droppedFrames} · 溢出 ${recognition.overflowCount} · 推理耗时 ${number(recognition.computeMs)} ms")
                 frame?.octaveDiagnostics?.take(4)?.forEach { item -> Text("八度 ${item.lowerMidi}/${item.upperMidi}：${item.finalState.name}\n${item.reason}", style = MaterialTheme.typography.bodySmall) }
+                frame?.singlePitchReference?.let { reference ->
+                    Text("Clavier 单音参考 · ${reference.status.name}", modifier = Modifier.testTag("field_single_pitch_reference"))
+                    Text("候选 MIDI：${reference.best?.midi ?: "暂无"} · 拟合分数 ${number(reference.best?.score)} · 计算 ${number(reference.computeMs)} ms", style = MaterialTheme.typography.bodySmall)
+                    Text("窗口 ${number(reference.windowStartSeconds)}–${number(reference.windowEndSeconds)} 秒 · 与当前音频帧相差 ${number(reference.ageSeconds)} 秒。时间对齐不代表音符正确；此参考不改变正式判定。", style = MaterialTheme.typography.bodySmall)
+                    reference.error?.let { Text("单音参考错误：$it", color = MaterialTheme.colorScheme.error) }
+                }
                 Text("模型 SHA256：${recognition.modelSha256}", style = MaterialTheme.typography.bodySmall)
                 Text("现场演奏准确率、误停率：尚未完成真人琴房验证。", style = MaterialTheme.typography.bodySmall)
             }

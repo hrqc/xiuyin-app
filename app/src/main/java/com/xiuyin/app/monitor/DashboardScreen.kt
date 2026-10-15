@@ -38,6 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.xiuyin.app.pitch.PianoRecognitionFrame
+import com.xiuyin.app.pitch.RecognitionEngineStatus
 import com.xiuyin.app.pitch.RecognitionEngineSnapshot
 import com.xiuyin.app.practice.CompanionState
 import com.xiuyin.app.calibration.CalibrationState
@@ -161,6 +162,9 @@ fun DashboardScreen(state: AppState, onRefresh: () -> Unit, onClearLogs: () -> U
                 )
                 MetricRow("Audio Engine", audioStatusLabel(audio))
                 MetricRow("Pitch Engine", "${recognition.status} · ${recognition.message}")
+                MetricRow("Clavier 单音参考", pianoFrame?.singlePitchReference?.let {
+                    "${if (recognition.status == RecognitionEngineStatus.RUNNING) "最近参考" else "⚪ 未运行 · 上次参考"} ${it.status.name} · MIDI ${it.best?.midi ?: "暂无"} · ${it.computeMs ?: "未测得"} ms · 仅独立参考\n${it.error.orEmpty()}"
+                } ?: "⚪ 未运行 · 尚无参考帧（默认关闭）")
                 MetricRow("OMR Engine", if (scores.importing) scores.progress ?: "本地处理中" else if (scores.selectedScore?.source?.format != null && scores.selectedScore.source.format != "MusicXML") "已载入本地识谱结果 · 待人工校对" else "本地模型可用 · 尚无当前图像识别运行")
                 MetricRow("Score Engine", when {
                     scores.importing -> "🟡 正在处理 · ${scores.progress.orEmpty()}"

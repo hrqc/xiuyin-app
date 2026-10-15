@@ -317,6 +317,8 @@ class FieldDiagnostics private constructor(context: Context) {
                 "sustainState" to retained.state.name, "pedalState" to retained.pedalState, "offsetSupported" to retained.offsetSupported,
                 "noiseFloor" to currentAudio.noiseFloorDbfs, "inputLevel" to currentAudio.inputLevelDbfs, "clipped" to retained.clipped,
                 "finalCandidates" to retained.onsetMidi.sorted(), "activeMidi" to retained.activeMidi.sorted(), "uncertainMidi" to retained.uncertainMidi.sorted(),
+                "pendingOnsetMidi" to retained.pendingOnsetMidi.sorted(),
+                "singlePitchReference" to retained.singlePitchReference?.toFieldLogRecord(),
                 "candidateRejections" to retained.candidateRejections.mapKeys { it.key.toString() }, "ambiguousOctaveMidi" to retained.ambiguousOctaveMidi.sorted(),
                 "finalDecision" to "UNDECIDED_BY_RECOGNIZER", "decisionSource" to "See score-following.jsonl with matching audioStreamId/frameIndex",
                 "modelComputeMs" to retained.computeMs, "modelWindowMs" to retained.modelWindowMs,
@@ -341,6 +343,12 @@ class FieldDiagnostics private constructor(context: Context) {
             recordLog("WARNING", "Field", "StaleFollowingRejected", "跟谱记录来源与当前流不一致，未重新归属到新流")
             return
         }
+        trace.scoreAssistance?.let { assistance ->
+            require(assistance.frameIndex == trace.frameIndex && assistance.fieldSessionId == trace.fieldSessionId &&
+                assistance.audioStreamId == trace.audioStreamId && assistance.engineSessionId == trace.engineSessionId) {
+                "谱面辅助证据必须绑定同一识音帧与会话"
+            }
+        }
         lastFollowing = trace
         val streamId = trace.audioStreamId
         val engineId = trace.engineSessionId
@@ -361,7 +369,8 @@ class FieldDiagnostics private constructor(context: Context) {
                 "decision" to trace.decision, "practiceState" to trace.practiceState, "lockState" to trace.locked,
                 "reason" to trace.reason, "recoveryEvent" to trace.recoveryEvent,
                 "followingLatencyMs" to trace.followingLatencyMs, "confirmedDecision" to trace.confirmedDecision,
-                "decisionEventId" to trace.decisionEventId, "evidenceAudioTimeSeconds" to trace.evidenceAudioTimeSeconds))
+                "decisionEventId" to trace.decisionEventId, "evidenceAudioTimeSeconds" to trace.evidenceAudioTimeSeconds,
+                "scoreAssistance" to trace.scoreAssistance?.toLogRecord()))
         }
     }
     /** A lifecycle disposition, never a note judgment or a reuse of the follower's last decision. */

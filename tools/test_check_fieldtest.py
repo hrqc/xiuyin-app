@@ -727,7 +727,7 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
                 self.reseal();self.report['evidenceSeal']=[row for row in self.report['evidenceSeal'] if not row['path'].endswith(suffix)]
                 gate.write(self.report_path,self.report);self.report_sha=gate.sha(self.report_path)
                 with self.assertRaisesRegex(ValueError,'not sealed'):self.validate()
-    def test_mocked_finalize_calls_only_read_only_adb_and_preserves_prepared_report(self):
+    def test_mocked_finalize_ignores_other_online_devices_and_binds_read_only_adb(self):
         from unittest.mock import patch
         from types import SimpleNamespace
         from contextlib import ExitStack,redirect_stdout
@@ -740,7 +740,7 @@ class PreparedEvidenceProtectionTest(unittest.TestCase):
             raise AssertionError('Unexpected Git operation in finalize')
         def fake_device(command,**kwargs):
             calls.append(command)
-            if command[1:]==['devices']:output='List of devices attached\nemulator-5562\tdevice\n'
+            if command[1:]==['devices']:output='List of devices attached\nemulator-5582\tdevice\nPHONE_TEST_DATA\tdevice\nemulator-5562\tdevice\n'
             else:
                 self.assertEqual(command[1:3],['-s','emulator-5562'])
                 operation=command[3:]

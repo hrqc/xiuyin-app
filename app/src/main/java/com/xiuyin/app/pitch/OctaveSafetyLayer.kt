@@ -10,6 +10,7 @@ class OctaveSafetyLayer {
     private val lastAttack = LongArray(PianoModel.PIANO_KEYS) { -1L }
     private val previousAmplitude = arrayOfNulls<Double>(PianoModel.PIANO_KEYS)
     private val independentAttacks = mutableMapOf<Pair<Int, Int>, Pair<Long, Long>>()
+    private var previousPendingOnsets: Set<Int> = emptySet()
     private var lastFrame = -1L
 
     fun observe(frame: PianoRecognitionFrame, fundamentalAmplitude: Map<Int, Double>): PianoRecognitionFrame {
@@ -22,9 +23,11 @@ class OctaveSafetyLayer {
         val fresh = mutableSetOf<Int>()
         for (key in 0 until 88) {
             val midi = key + PianoModel.MIDI_MIN
-            // The production tracker cancels an acoustic rejection or clipped candidate. Such a
-            // rejected attack must not survive here and later promote frame-only residue to a key.
-            if (frame.clipped || midi in frame.candidateRejections) {
+            val canceledPending = midi in previousPendingOnsets && midi !in frame.pendingOnsetMidi && midi !in frame.onsetMidi
+            val startedPending = midi in frame.pendingOnsetMidi && midi !in previousPendingOnsets
+            // Respect tracker cancellation even when raw scores still exceed this layer's
+            // looser gates; a canceled attack must not keep or recreate an independent witness.
+            if (frame.clipped || midi in frame.candidateRejections || canceledPending) {
                 lastAttack[key] = -1L
                 armed[key] = false
                 continue
@@ -36,7 +39,9 @@ class OctaveSafetyLayer {
                 lastAttack[key] = -1L
             }
             if (frame.rawOnsetScores[key] < REARM_SCORE) armed[key] = true
-            if (armed[key] && frame.rawOnsetScores[key] >= ATTACK_SCORE) {
+            // A new real tracker candidate can follow a cancellation immediately, including
+            // with stricter tracker thresholds and no intervening low neural onset score.
+            if (startedPending && lastAttack[key] < 0 || armed[key] && frame.rawOnsetScores[key] >= ATTACK_SCORE) {
                 lastAttack[key] = frame.frameIndex
                 fresh += key + PianoModel.MIDI_MIN
                 armed[key] = false
@@ -48,7 +53,16 @@ class OctaveSafetyLayer {
             val upper = lower + 12
             val lowerKey = lower - 21
             val upperKey = upper - 21
+            val attacks = lastAttack[lowerKey] to lastAttack[upperKey]
+            // A confirmed independent attack witness may outlive its neural onset spike.
+            // Pending alone must not add a new ambiguity gate: canceling it later could
+            // otherwise discard an already delivered, genuine upper attack downstream.
+            val witnessedPendingLower = lower in frame.pendingOnsetMidi && !frame.clipped &&
+                lower !in frame.candidateRejections && upper !in frame.candidateRejections &&
+                attacks.first >= 0 && attacks.second >= 0 && independentAttacks[lower to upper] == attacks &&
+                frame.rawFrameScores[lowerKey] >= CANDIDATE_SCORE
             val lowerPresent = lower !in frame.candidateRejections && (lower in frame.activeMidi || lower in frame.onsetMidi ||
+                witnessedPendingLower ||
                 frame.rawOnsetScores[lowerKey] >= ATTACK_SCORE && frame.rawFrameScores[lowerKey] >= CANDIDATE_SCORE)
             val upperPresent = frame.rawFrameScores[upperKey] >= CANDIDATE_SCORE || upper in frame.activeMidi
             if (!lowerPresent || !upperPresent) {
@@ -82,7 +96,6 @@ class OctaveSafetyLayer {
                 lowerRise >= upperRise * MIN_RELATIVE_POWER_RISE && upperRise <= MAX_LOWER_POWER_RISE &&
                 lower !in frame.candidateRejections && upper !in frame.candidateRejections &&
                 lowerAmplitude != null && lowerAmplitude >= PianoAcousticEvidence.MIN_AMPLITUDE
-            val attacks = lastAttack[lowerKey] to lastAttack[upperKey]
             if (upper in fresh || lower in fresh || lastAttack[lowerKey] < 0 || lastAttack[upperKey] < 0)
                 independentAttacks.remove(lower to upper)
             if (upperSeparatelyRising || lowerSeparatelyRising) independentAttacks[lower to upper] = attacks
@@ -108,6 +121,7 @@ class OctaveSafetyLayer {
         }
         for (key in 0 until 88) previousAmplitude[key] = fundamentalAmplitude[key + 21]
         lastFrame = frame.frameIndex
+        previousPendingOnsets = frame.pendingOnsetMidi.toSet()
         if (diagnostics.isEmpty()) return frame
         return frame.copy(
             state = if (ambiguous.isEmpty()) frame.state else RecognitionState.UNCERTAIN,
@@ -120,6 +134,7 @@ class OctaveSafetyLayer {
     fun reset() {
         armed.fill(true); lastAttack.fill(-1); previousAmplitude.fill(null)
         independentAttacks.clear(); lastFrame = -1
+        previousPendingOnsets = emptySet()
     }
 
     companion object {

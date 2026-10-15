@@ -190,6 +190,43 @@ fun PracticeCompanionScreen(
                 }
             }
         }
+        state.scoreAssistance?.let { trace ->
+            var expanded by rememberSaveable(state.scoreId, state.revisionGeneration) { mutableStateOf(false) }
+            Card(Modifier.fillMaxWidth().testTag("companion_assistance")) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("companion_assistance_expand")) {
+                        Text(if (expanded) "收起声学与谱面说明" else "查看声学与谱面说明")
+                    }
+                    Text("辅助说明只展示证据，不改变判对、判错或锁定。", style = MaterialTheme.typography.bodySmall)
+                    if (expanded) {
+                        Text("本帧独立起音：${noteNames(trace.independent.onsetMidi)}；持续候选：${noteNames(trace.independent.activeMidi)}")
+                        Text("等待确认：${noteNames(trace.independent.pendingOnsetMidi)}；声学未决：${noteNames(trace.independent.uncertainMidi)}")
+                        Text("本帧目标重合：${noteNames(trace.assisted.observedTargetIntersection)}；目标以外候选：${noteNames(trace.assisted.observedExtraMidi)}")
+                        Text("本帧未确认的目标：${noteNames(trace.assisted.expectedWithoutConfirmedOnsetThisFrame)}（不能据此判漏弹）")
+                        val position = when (trace.context.follower.positionState) {
+                            FollowerPositionState.INITIAL_UNLOCATED -> "尚未由连续音频确认位置"
+                            FollowerPositionState.RELIABLE -> "现有跟谱证据支持当前位置；谱面仍可能不匹配"
+                            FollowerPositionState.AMBIGUOUS -> "位置存在歧义"
+                            FollowerPositionState.LOCKED -> "等待纠正锁定目标"
+                            FollowerPositionState.COMPLETED -> "本段已结束"
+                        }
+                        Text("跟谱位置：$position")
+                        Text(if (trace.assisted.positionPriorEligible) "位置条件可供辅助比较；本版仍不据此调整识音。"
+                            else "当前禁用谱面先验建议，等待可靠的位置和声学证据。")
+                        trace.assisted.octaveRelations.forEach { relation ->
+                            Text("八度关系 ${noteNames(setOf(relation.lowerMidi, relation.upperMidi))}：" +
+                                when (relation.independentState) {
+                                    "REAL_OCTAVE" -> "独立攻击启发证据支持；未等同现场真值"
+                                    "HARMONIC_LIKELY" -> "疑似谐波，仍未决"
+                                    "AMBIGUOUS_OCTAVE" -> "声学八度歧义"
+                                    else -> "仅展示候选与谱面关系，尚无独立八度结论"
+                                }, style = MaterialTheme.typography.bodySmall)
+                        }
+                        trace.finalDecision?.let { result -> Text("原跟谱判定：${result.decision.name} · ${result.reason}") }
+                    }
+                }
+            }
+        }
         if (state.score != null && state.timeline != null) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { ScoreDisplayMode.entries.forEach { item ->
                 FilterChip(display == item.name, { display = item.name }, label = { Text(item.label) })

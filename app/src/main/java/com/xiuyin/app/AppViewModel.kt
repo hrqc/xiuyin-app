@@ -62,12 +62,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     @Volatile private var inputFailureListener: ((String) -> Unit)? = null
     @Volatile private var companionCaptureRequested = false
     private var preparedConfig = PitchEvidenceConfig()
+    private var lastReferenceStatus: ClavierReferenceStatus? = null
 
     private val pianoEngine: AudioRecognitionEngine = PianoRecognitionEngine(application, onFrame = { frame ->
         synchronized(pcmGuard) {
             if (companionCaptureRequested) {
                 val bound = fieldDiagnostics.bindFrameContext(frame)
                 fieldDiagnostics.recordRecognition(bound)
+                val reference = bound.singlePitchReference
+                if (reference?.status != lastReferenceStatus) {
+                    val previous = lastReferenceStatus
+                    lastReferenceStatus = reference?.status
+                    if (reference != null && (reference.status == ClavierReferenceStatus.ERROR || reference.status == ClavierReferenceStatus.NO_ALIGNED_WINDOW ||
+                        (reference.status == ClavierReferenceStatus.ALIGNED && previous in setOf(ClavierReferenceStatus.ERROR, ClavierReferenceStatus.NO_ALIGNED_WINDOW)))) {
+                        operation("保存单音参考诊断") {
+                            database.appendLog(if (reference.status == ClavierReferenceStatus.ERROR) "ERROR"
+                                else if (reference.status == ClavierReferenceStatus.NO_ALIGNED_WINDOW) "WARNING" else "INFO",
+                                "ClavierReference", "单音参考状态 ${reference.status}；未改变正式识音判定",
+                                reference.error ?: "frame=${bound.frameIndex}; audioTime=${bound.audioTimeSeconds}; status describes timing only")
+                            refresh()
+                        }
+                    }
+                }
                 mutablePianoFrame.value = bound
                 recognitionListener?.invoke(bound)
             }

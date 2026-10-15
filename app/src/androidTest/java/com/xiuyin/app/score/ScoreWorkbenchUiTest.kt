@@ -111,6 +111,41 @@ class ScoreWorkbenchUiTest {
         assertEquals(original, imports.state.value.selectedOriginal)
     }
 
+    @Test fun octaveRangeIsOnePersistentUndoableRevisionAndRejectsStaleRequests() {
+        val (id, original) = openTestScore()
+        val lane = ScoreRangeEditing.endpoints(original).filter { it.event.staff == 1 && it.event.voice == "1" && !it.event.isRest }
+        compose.runOnUiThread { workbench.verifySelected() }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        val before = workbench.state.value.revision!!
+        val request = ScoreOctaveRangeRequest(id, 1, lane.first().eventId, lane.last().eventId, 1)
+        scroll("score_octave_range"); compose.onNodeWithTag("score_octave_range").performClick()
+        compose.onNodeWithTag("octave_range_end").performScrollTo().performClick()
+        compose.onNodeWithTag("octave_range_end_option_${lane.size} · ${lane.last().label}").performClick()
+        compose.onNodeWithTag("octave_range_up").performScrollTo().performClick()
+        compose.onNodeWithTag("octave_range_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 2L }
+        assertNull(workbench.state.value.error)
+        val changed = workbench.state.value.revision!!
+        val expected = ScoreRangeEditing.shiftOctave(original, request.startEventId, request.endEventId, 1)
+        assertEquals(expected.score, changed.current)
+        assertTrue(changed.verifiedEventIds.intersect(expected.changedEventIds).isEmpty())
+        assertEquals(before.fingerings, changed.fingerings)
+        assertEquals(changed.current, ScoreRevisionStore(File(context.filesDir, "score-revisions")).load(id, original).current)
+        compose.runOnUiThread { workbench.shiftOctaveRange(request) }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.error != null }
+        assertEquals(2L, workbench.state.value.revision!!.generation)
+        assertEquals(changed.current, workbench.state.value.revision!!.current)
+        assertTrue(workbench.state.value.error!!.contains("修订已变化"))
+        compose.runOnUiThread { workbench.undo() }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 3L }
+        assertEquals(original, workbench.state.value.revision!!.current)
+        assertEquals(before.verifiedEventIds, workbench.state.value.revision!!.verifiedEventIds)
+        compose.runOnUiThread { workbench.redo() }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 4L }
+        assertEquals(changed.current, workbench.state.value.revision!!.current)
+        assertEquals(original, imports.state.value.selectedOriginal)
+    }
+
     @Test fun transposeChangesSoundingPitchesAndBothScoreDisplays() {
         val (_, original) = openTestScore()
         scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()

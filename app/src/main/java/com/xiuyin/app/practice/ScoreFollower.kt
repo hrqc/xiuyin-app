@@ -7,6 +7,13 @@ enum class CompanionMode(val label: String) { FREE("自由跟弹"), STOP_ON_ERRO
 enum class PracticeHand(val label: String) { BOTH("双手"), RIGHT("右手（谱表1）"), LEFT("左手（谱表2）") }
 enum class CompanionPhase { READY, RUNNING, PAUSED, LOCKED, COMPLETED }
 enum class PracticeDecision { CORRECT, WRONG, MISSED, UNCERTAIN }
+/** Describes the follower's evidence, not whether the score or performance is objectively correct. */
+enum class FollowerPositionState { INITIAL_UNLOCATED, RELIABLE, AMBIGUOUS, LOCKED, COMPLETED }
+data class FollowerContextSnapshot(
+    val targetIndex: Int, val positionState: FollowerPositionState,
+    val expectedMidi: Set<Int>, val eventIds: List<String>, val measureIndex: Int?, val startBeat: Double?,
+    val lastInputFrameIndex: Long? = null, val lastInputTimeSeconds: Double? = null,
+)
 data class PracticeConfig(val mode: CompanionMode = CompanionMode.FREE, val startMeasure: Int = 0, val endMeasure: Int? = null, val repeatTarget: Int = 3, val reviewAcknowledged: Boolean = false, val hand: PracticeHand = PracticeHand.BOTH)
 
 /** Model evidence, never a probability of musical correctness. No score enters this interface. */
@@ -45,6 +52,9 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
     private var lastConfirmedTime = -10.0
     private var lastConfirmedNotes: Set<Int> = emptySet()
     private var positionUncertain = false
+    // Diagnostic-only state. Never read by the matching, recovery or locking policy.
+    private var positionObserved = false
+    private var positionEvidenceInterrupted = false
 
     init {
         require(config.startMeasure in timeline.measures.indices && (config.endMeasure ?: timeline.measures.lastIndex) in config.startMeasure..timeline.measures.lastIndex) { "练习小节范围无效" }
@@ -54,24 +64,37 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
         require(targets.isNotEmpty()) { "所选片段没有可跟随的起音" }
     }
     fun expectedMidi(): Set<Int> = targets.getOrNull(cursor)?.notes?.map { it.midi }?.toSet().orEmpty()
+    fun contextSnapshot(): FollowerContextSnapshot {
+        val target = targets.getOrNull(cursor)
+        val state = when {
+            target == null -> FollowerPositionState.COMPLETED
+            locked -> FollowerPositionState.LOCKED
+            positionUncertain || alignment != null || positionEvidenceInterrupted -> FollowerPositionState.AMBIGUOUS
+            positionObserved -> FollowerPositionState.RELIABLE
+            else -> FollowerPositionState.INITIAL_UNLOCATED
+        }
+        return FollowerContextSnapshot(cursor, state, expectedMidi(), target?.notes?.flatMap { it.eventIds }.orEmpty(),
+            target?.let { timeline.measureAt(it.startBeat)?.index }, target?.startBeat?.toDouble(),
+            lastFrame.takeIf { it >= 0 }, lastTime.takeIf { it >= 0 })
+    }
     fun measureIndex(): Int = targets.getOrNull(cursor)?.let { timeline.measureAt(it.startBeat)?.index }
         ?: timeline.measureAt(targets.last().startBeat)!!.index
-    fun resetInputStream() { lastFrame = -1L; lastTime = -1.0; clearPending() }
-    fun reset() { cursor = 0; locked = false; positionUncertain = false; clearPending() }
-    fun clearPending() { candidate = null; alignment = null; lastConfirmedTime = -10.0; lastConfirmedNotes = emptySet() }
+    fun resetInputStream() { lastFrame = -1L; lastTime = -1.0; clearPending(); positionEvidenceInterrupted = false }
+    fun reset() { cursor = 0; locked = false; positionUncertain = false; clearPending(); positionEvidenceInterrupted = false }
+    fun clearPending() { candidate = null; alignment = null; lastConfirmedTime = -10.0; lastConfirmedNotes = emptySet(); positionObserved = false }
     fun seekMeasure(index: Int) {
         val target = targets.indexOfFirst { (timeline.measureAt(it.startBeat)?.index ?: -1) >= index }
         require(index in config.startMeasure..(config.endMeasure ?: timeline.measures.lastIndex) && target >= 0) { "所选小节不在练习范围或没有起音" }
-        cursor = target; locked = false; positionUncertain = false; clearPending()
+        cursor = target; locked = false; positionUncertain = false; clearPending(); positionEvidenceInterrupted = false
     }
     fun accept(frame: RecognitionObservation): FollowerUpdate {
         require(frame.frameIndex >= 0 && frame.timeSeconds.isFinite() && frame.timeSeconds >= 0) { "识别帧时间无效" }
         require((frame.onsetNotes + frame.activeNotes).all { it.midi in 0..127 && it.onsetScore.isFinite() && it.onsetScore in 0.0..1.0 && it.frameScore.isFinite() && it.frameScore in 0.0..1.0 }) { "识别音符证据无效" }
         if (frame.frameIndex <= lastFrame || frame.timeSeconds <= lastTime) return uncertain("忽略重复或时间回退的识别帧")
-        if (lastTime >= 0 && frame.timeSeconds - lastTime > 0.25) clearPending()
-        if (lastFrame >= 0 && frame.frameIndex != lastFrame + 1) candidate?.support?.clear()
+        if (lastTime >= 0 && frame.timeSeconds - lastTime > 0.25) { clearPending(); positionEvidenceInterrupted = true }
+        if (lastFrame >= 0 && frame.frameIndex != lastFrame + 1) { candidate?.support?.clear(); positionEvidenceInterrupted = true }
         lastFrame = frame.frameIndex; lastTime = frame.timeSeconds
-        if (!frame.usable || frame.clipped) { candidate = null; alignment = null; return uncertain("输入低证据、预热或削波，暂不判错") }
+        if (!frame.usable || frame.clipped) { candidate = null; alignment = null; positionEvidenceInterrupted = true; return uncertain("输入低证据、预热或削波，暂不判错") }
         require(frame.ambiguousOctaveMidi.all { it in 0..127 }) { "八度歧义音高范围无效" }
         if (cursor >= targets.size) return uncertain("本段已结束")
         require(frame.uncertainMidi.all { it in 0..127 }) { "不确定音高范围无效" }
@@ -179,6 +202,7 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
                 return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "目标起音存在声学歧义，暂不判对或判错")
             }
             alignment = null; locked = false; positionUncertain = false; cursor++
+            positionObserved = true; positionEvidenceInterrupted = false
             return FollowerUpdate(cursor, false, PracticeDecision.CORRECT, detected, true, listOf(evidence(current, PracticeDecision.CORRECT, detected, time, score, "目标起音集合得到连续帧支持")))
         }
         val previousAlignment = alignment
@@ -203,6 +227,7 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
                     alignment = null
                     cursor = start + attacks.size
                     positionUncertain = false
+                    positionObserved = true; positionEvidenceInterrupted = false
                     return FollowerUpdate(cursor, false, if (start == current) PracticeDecision.CORRECT else skippedDecision, detected, true, evidence,
                         "连续起音恢复唯一定位；未确认的位置单独保留")
                 }

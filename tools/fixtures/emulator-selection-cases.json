@@ -1,0 +1,22 @@
+[
+  {"name":"explicit_target_second_with_other_emulator","listing":"List of devices attached\nemulator-5582\tdevice\nemulator-5562\tdevice\n","requested":"emulator-5562","expected":"emulator-5562"},
+  {"name":"explicit_target_first_with_phone_and_other","listing":"List of devices attached\nemulator-5562\tdevice\nPHONE123\tdevice\nemulator-5582\tdevice\n","requested":"emulator-5562","expected":"emulator-5562"},
+  {"name":"explicit_missing_never_falls_back","listing":"List of devices attached\nemulator-5582\tdevice\n","requested":"emulator-5562","expected":null},
+  {"name":"explicit_offline_never_falls_back","listing":"List of devices attached\nemulator-5582\tdevice\nemulator-5562\toffline\n","requested":"emulator-5562","expected":null},
+  {"name":"explicit_unauthorized","listing":"emulator-5562\tunauthorized\n","requested":"emulator-5562","expected":null},
+  {"name":"explicit_physical_rejected","listing":"PHONE123\tdevice\nemulator-5562\tdevice\n","requested":"PHONE123","expected":null},
+  {"name":"explicit_duplicate_online_rejected","listing":"emulator-5562\tdevice\nemulator-5562\tdevice\n","requested":"emulator-5562","expected":null},
+  {"name":"explicit_duplicate_states_rejected","listing":"emulator-5562\tdevice\nemulator-5562\toffline\n","requested":"emulator-5562","expected":null},
+  {"name":"explicit_whitespace_typo_rejected","listing":"emulator-5562\tdevice\n","requested":" emulator-5562 ","expected":null},
+  {"name":"explicit_command_injection_rejected","listing":"emulator-5562\tdevice\n","requested":"emulator-5562 -s emulator-5582","expected":null},
+  {"name":"explicit_extended_inventory_crlf","listing":"List of devices attached\r\nemulator-5582 device product:other transport_id:1\r\nemulator-5562 device product:test transport_id:2\r\n","requested":"emulator-5562","expected":"emulator-5562"},
+  {"name":"explicit_daemon_noise_ignored","listing":"* daemon not running; starting now at tcp:5037\n* daemon started successfully\nList of devices attached\nemulator-5562 device\n","requested":"emulator-5562","expected":"emulator-5562"},
+  {"name":"implicit_only_online_emulator","listing":"List of devices attached\nemulator-5562\tdevice\n","requested":null,"expected":"emulator-5562"},
+  {"name":"implicit_multiple_online_emulators_rejected","listing":"emulator-5562 device\nemulator-5582 device\n","requested":null,"expected":null},
+  {"name":"implicit_only_phone_rejected","listing":"PHONE123 device\n","requested":null,"expected":null},
+  {"name":"implicit_empty_rejected","listing":"List of devices attached\n\n","requested":null,"expected":null},
+  {"name":"implicit_offline_only_rejected","listing":"emulator-5562 offline\n","requested":null,"expected":null},
+  {"name":"implicit_phone_not_a_target","listing":"PHONE123 device\nemulator-5562 device\nemulator-5582 offline\n","requested":null,"expected":"emulator-5562"},
+  {"name":"implicit_duplicate_states_rejected","listing":"emulator-5562 device\nemulator-5562 offline\n","requested":null,"expected":null},
+  {"name":"explicit_bad_device_state_rejected","listing":"emulator-5562 deviceX\n","requested":"emulator-5562","expected":null}
+]

@@ -17,6 +17,7 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
         lastIndex = frameIndex
         val attacks = linkedSetOf<Int>()
         val sounding = linkedSetOf<Int>()
+        val pending = linkedSetOf<Int>()
         val evidence = ArrayList<PianoNoteEvidence>()
         var uncertain = clipped || acousticRejections.isNotEmpty()
         for (key in 0 until 88) {
@@ -63,6 +64,7 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
                 if (!active[key] && (sustain >= RELEASE_THRESHOLD || onset >= REARM_THRESHOLD)) uncertain = true
             }
             if (active[key]) sounding.add(key + 21)
+            if (candidates[key] > 0f) pending.add(key + 21)
             if (active[key] || onset >= REARM_THRESHOLD || sustain >= RELEASE_THRESHOLD || confirmed > 0f) {
                 evidence.add(PianoNoteEvidence(key + 21, maxOf(onset, confirmed), sustain, confirmed > 0f, active[key]))
             }
@@ -75,7 +77,8 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
             else -> RecognitionState.SILENCE
         }
         return PianoRecognitionFrame(frameIndex, audioTimeSeconds, availableAudioTimeSeconds, attacks, sounding,
-            evidence, state, clipped, computeMs, onsetScores.copyOf(), frameScores.copyOf(), uncertainMidi = acousticRejections.keys.toSet(), candidateRejections = acousticRejections.toMap())
+            evidence, state, clipped, computeMs, onsetScores.copyOf(), frameScores.copyOf(), uncertainMidi = acousticRejections.keys.toSet(),
+            candidateRejections = acousticRejections.toMap(), pendingOnsetMidi = pending)
     }
     fun reset() {
         active.fill(false); releaseFrames.fill(0); candidates.fill(0f); candidateFrames.fill(0); armed.fill(true); lastAttack.fill(-10_000); lastIndex = -1

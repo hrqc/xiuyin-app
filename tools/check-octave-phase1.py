@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import math
+import os
 from pathlib import Path
 import re
 import struct
@@ -15,6 +16,7 @@ import time
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
+from emulator_selection import select_emulator
 
 ROOT = Path(__file__).resolve().parents[1]
 FROZEN = ROOT / "outputs/baselines/octave-v030-20260921"
@@ -145,7 +147,7 @@ def main():
     def run(command, name, expected=0, timeout=600):
         start=time.monotonic()
         with (out/(name+'.log')).open('wb') as log:
-            child=subprocess.run([str(x) for x in command],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
+            child=subprocess.run([str(x) for x in command],cwd=ROOT,env=dict(os.environ, ANDROID_SERIAL=args.serial),stdout=log,stderr=subprocess.STDOUT,timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
         result['steps'].append({'name':name,'exitCode':child.returncode,'seconds':round(time.monotonic()-start,3),'log':name+'.log'})
         require(child.returncode == expected, name+' exited '+str(child.returncode)+'; expected '+str(expected))
         return (out/(name+'.log')).read_text(encoding='utf8',errors='replace')
@@ -179,7 +181,7 @@ def main():
         adb=Path(sdk_line.replace('\\:',':').replace('\\\\','\\'))/'platform-tools/adb.exe'
         def adb_run(*command):
             return subprocess.check_output([str(adb),'-s',args.serial,*command],timeout=120).decode('utf8','replace').strip()
-        require(re.findall(r'^(\S+)\s+device$',subprocess.check_output([str(adb),'devices'],text=True),re.M)==[args.serial],'Exactly one authorized emulator required')
+        select_emulator(subprocess.check_output([str(adb),'devices'],text=True), args.serial)
         # Do not clear device logs or user data; filter logs from this actual start timestamp.
         log_since=adb_run('shell','date',r'+%m-%d\ %H:%M:%S.000')
         gate_before=set((ROOT/'reports').glob('*/report.json'))

@@ -1,5 +1,6 @@
-﻿param()
+﻿param([string]$Serial = $env:ANDROID_SERIAL)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'emulator-selection.ps1')
 
 function ConvertFrom-InstrumentationOutput([string]$Output, [int]$ExitCode) {
     $cases = @()
@@ -141,6 +142,39 @@ function Get-ArtifactSha256([string]$Path) {
     finally { $hasher.Dispose(); $stream.Dispose() }
 }
 
+function Get-ClavierPcmSampleCount([string]$Path) {
+    $stream = [IO.File]::OpenRead($Path)
+    $reader = New-Object IO.BinaryReader($stream)
+    try {
+        if ($stream.Length -lt 44 -or [Text.Encoding]::ASCII.GetString($reader.ReadBytes(4)) -cne 'RIFF') { throw 'Clavier 输入缺少 WAV RIFF。' }
+        $riffBytes = [long]$reader.ReadUInt32()
+        if ($riffBytes + 8 -ne $stream.Length -or [Text.Encoding]::ASCII.GetString($reader.ReadBytes(4)) -cne 'WAVE') { throw 'Clavier WAV 长度或类型错误。' }
+        $formatValid = $false
+        $samples = $null
+        while ($stream.Position + 8 -le $stream.Length) {
+            $chunk = [Text.Encoding]::ASCII.GetString($reader.ReadBytes(4))
+            $length = [long]$reader.ReadUInt32()
+            $offset = $stream.Position
+            if ($length -gt $stream.Length - $offset) { throw 'Clavier WAV 区块越界。' }
+            if ($chunk -ceq 'fmt ') {
+                if ($length -lt 16) { throw 'Clavier WAV fmt 长度错误。' }
+                $pcm = $reader.ReadUInt16(); $channels = $reader.ReadUInt16(); $rate = $reader.ReadUInt32()
+                $bytesPerSecond = $reader.ReadUInt32(); $alignment = $reader.ReadUInt16(); $bits = $reader.ReadUInt16()
+                $formatValid = $pcm -eq 1 -and $channels -eq 1 -and $rate -eq 48000 -and $bytesPerSecond -eq 96000 -and $alignment -eq 2 -and $bits -eq 16
+                if (-not $formatValid) { throw 'Clavier 输入必须为真实 48kHz 单声道 PCM16。' }
+            } elseif ($chunk -ceq 'data') {
+                if (-not $formatValid -or $length -le 0 -or $length % 2 -ne 0 -or $null -ne $samples) { throw 'Clavier WAV data 区块无效或重复。' }
+                $samples = [long]($length / 2)
+            }
+            $next = $offset + $length + ($length % 2)
+            if ($next -gt $stream.Length) { throw 'Clavier WAV 填充区块越界。' }
+            $stream.Position = $next
+        }
+        if ($null -eq $samples) { throw 'Clavier WAV 缺少真实 PCM data。' }
+        return $samples
+    } finally { $reader.Dispose(); $stream.Dispose() }
+}
+
 function Get-OmrIndependentManifestEntries($Manifest) {
     if ($Manifest.schemaVersion -ne 1 -or $Manifest.musicalAcceptance -cne 'UNVERIFIED') { throw '独立OMR清单版本或音乐边界无效。' }
     $entries = @($Manifest.files)
@@ -194,6 +228,7 @@ function Assert-OmrIndependentReport($Report, $Context, $Manifest) {
 }
 
 function Invoke-AdbCapture([string[]]$AdbArguments, [string]$LogPath) {
+    Assert-XiuyinAdbTargetArguments -Arguments $AdbArguments -Serial $deviceSerial
     $lines = New-Object 'Collections.Generic.List[string]'
     $previousPreference = $ErrorActionPreference
     try {
@@ -240,12 +275,7 @@ try {
     New-Item -ItemType Directory -Path $env:ANDROID_USER_HOME -Force | Out-Null
     $listing = Invoke-AdbCapture -AdbArguments @('devices') -LogPath (Join-Path $outputRoot 'devices.log')
     if ($listing.exitCode -ne 0) { throw "ADB devices 失败：$($listing.exitCode)" }
-    $devices = @($listing.output -split '\r?\n' | Where-Object { $_ -match '^\S+\s+device\s*$' } | ForEach-Object { ($_ -split '\s+')[0] })
-    if ($devices.Count -ne 1 -or $devices[0] -notmatch '^emulator-\d+$') {
-        throw '只允许恰好一台在线模拟器；不会安装到物理手机。'
-    }
-    $deviceSerial = $devices[0]
-    if ($env:ANDROID_SERIAL -and $env:ANDROID_SERIAL -ne $deviceSerial) { throw '当前模拟器与调用方指定的 ANDROID_SERIAL 不一致。' }
+    $deviceSerial = Select-XiuyinEmulator -Listing $listing.output -RequestedSerial $Serial
     foreach ($apk in @($appApk, $testApk)) {
         Write-Host ('安装测试所需 APK：' + [IO.Path]::GetFileName($apk))
         $install = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'install', '-r', $apk) -LogPath (Join-Path $outputRoot ([IO.Path]::GetFileNameWithoutExtension($apk) + '-install.log'))
@@ -268,6 +298,38 @@ try {
     }
     $traceContext | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $traceDirectory 'trace-context.json') -Encoding utf8
     $traceEvidence = [ordered]@{ runId = $traceRunId; directory = $traceDirectory; status = 'NOT_VERIFIED' }
+    # Supply the frozen real recording to the default suite, preserving its no-skipped gate.
+    # Every remote path is unique to this invocation and all ADB calls use the selected serial.
+    $clavierSource = Join-Path $projectRoot 'reports\calibration-873c4d39-20261015\original\audio.wav'
+    $clavierExpectedSha = '753c59bc3005d6c37cbb4a2078938c46d4293b690ae15a61d75203bf2b75280d'
+    if (-not (Test-Path -LiteralPath $clavierSource -PathType Leaf) -or (Get-ArtifactSha256 -Path $clavierSource) -cne $clavierExpectedSha) { throw 'Clavier 第一份真实输入缺失或冻结 SHA 不符；禁止替代音频或跳过。' }
+    $clavierSamples = Get-ClavierPcmSampleCount -Path $clavierSource
+    if ($clavierSamples -ne 1995776) { throw 'Clavier 第一份真实输入样本数不等于冻结的 1,995,776。' }
+    $clavierDirectory = Join-Path $traceDirectory 'clavier-input'
+    New-Item -ItemType Directory -Path $clavierDirectory | Out-Null
+    $clavierRemoteDirectory = 'files/clavier-input-' + $traceRunId
+    $clavierRemotePrivate = $clavierRemoteDirectory + '/audio.wav'
+    $clavierRemoteTemporary = '/data/local/tmp/xiuyin-clavier-' + $traceRunId + '.wav'
+    $clavierWav = '/data/user/0/com.xiuyin.app/' + $clavierRemotePrivate
+    $clavierContext = [ordered]@{
+        runId = $traceRunId; device = $deviceSerial; sourcePath = $clavierSource
+        sourceSha256 = $clavierExpectedSha; samples = $clavierSamples; sampleRateHz = 48000; channels = 1; pcmBits = 16
+        temporaryPath = $clavierRemoteTemporary; targetPath = $clavierWav
+        appSha256 = $traceContext.appSha256; testApkSha256 = $traceContext.testApkSha256
+        prepared = $false; musicalAcceptance = 'UNVERIFIED'; realTimePerformanceValidated = $false
+    }
+    $clavierContextPath = Join-Path $clavierDirectory 'input-context.json'
+    $clavierContext | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $clavierContextPath -Encoding utf8
+    $clavierMkdir = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'mkdir', $clavierRemoteDirectory) -LogPath (Join-Path $clavierDirectory 'mkdir.log')
+    if ($clavierMkdir.exitCode -ne 0) { throw '不能建立 Clavier 本轮私有输入目录；不复用历史目录。' }
+    $clavierPush = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'push', $clavierSource, $clavierRemoteTemporary) -LogPath (Join-Path $clavierDirectory 'push.log')
+    if ($clavierPush.exitCode -ne 0) { throw 'Clavier 本轮真实输入 push 失败。' }
+    $clavierCopy = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'cp', $clavierRemoteTemporary, $clavierRemotePrivate) -LogPath (Join-Path $clavierDirectory 'copy.log')
+    if ($clavierCopy.exitCode -ne 0) { throw 'Clavier 本轮真实输入复制到 App 私有目录失败。' }
+    $clavierDeviceSha = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'sha256sum', $clavierRemotePrivate) -LogPath (Join-Path $clavierDirectory 'device-sha.log')
+    if ($clavierDeviceSha.exitCode -ne 0 -or $clavierDeviceSha.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $clavierExpectedSha) { throw 'Clavier 设备私有输入字节 SHA 与本轮源文件不一致。' }
+    $clavierContext.prepared = $true
+    $clavierContext | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $clavierContextPath -Encoding utf8
     # Fixed device filenames must be bound to THIS invocation, never trusted as fresh by name.
     $boundaryDirectory = Join-Path $outputRoot ('field-frame-boundary\' + $traceRunId)
     New-Item -ItemType Directory -Path $boundaryDirectory | Out-Null
@@ -338,7 +400,7 @@ try {
     if ($beforeClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$') { throw '无法读取边界测试设备开始时间。' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'clavierWav', $clavierWav, '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $afterClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'after-clock.log'
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
