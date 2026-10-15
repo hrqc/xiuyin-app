@@ -1,4 +1,6 @@
-# 0.3.0-octave.2-fieldtest.6 ·单音参考、谱面证据与范围修谱 · 2026-10-15
+# 0.3.0-octave.2-fieldtest.6 · 单音参考、谱面证据与范围修谱 · 2026-10-15
+
+- 首次候选 `700eedf` 的 prepare 因 `quicktest/build.gradle.kts` Git归档字节不一致而PAUSE，未执行设备门禁、未交付；原报告 `reports/fieldtest-20261015T095154Z-40e4b7c2/field-report.json` 保留。补齐quicktest、发布脚本和来源JSON的字节保留规则，重新暂存并核验归档；构建限定单worker缓解内存压力，测试与门禁要求不变。
 
 - 新增默认关闭的 Clavier 单音诊断参考，原始PCM、完整88候选、best/null和因果时钟均保留；使用固定Apache-2.0上游核心，未引入闭源实现。既有正式识音/跟谱/LOCK不依赖此参考；F7以上不验收、不裁剪。
 - 新增原始音频／谱面关系／最终判定的只读诊断，定位不可信、时间断档、低证据或八度歧义不启用位置先验说明；日志补pending和可选schema2完整拟合矩阵。紧凑序列化仅减少重复字段，不删数值，旧日志兼容。

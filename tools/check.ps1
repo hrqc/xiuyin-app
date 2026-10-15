@@ -175,7 +175,7 @@ try {
         $taskStart = Get-Date
         $name = $task.Trim(':').Replace(':', '-')
         $log = Join-Path $reportDir "$name.log"
-        $taskArguments = @($task, '--console=plain', '--no-daemon')
+        $taskArguments = @($task, '--console=plain', '--no-daemon', '--max-workers=1')
         if ($null -ne $group) {
             $group.status = 'running'
             $group.startedAt = $taskStart.ToUniversalTime().ToString('o')
@@ -185,7 +185,7 @@ try {
         $ErrorActionPreference = 'Continue'
         if ($task -eq 'adb:instrumentation') {
             # Compile the unchanged Android test set, then run the native runner.
-            & (Join-Path $projectRoot 'build.cmd') :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --no-daemon 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
+            & (Join-Path $projectRoot 'build.cmd') :app:assembleDebug :app:assembleDebugAndroidTest --console=plain --no-daemon --max-workers=1 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log
             $code = $LASTEXITCODE
             if ($code -eq 0) {
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'device-test.ps1') -Serial $selectedSerial 2>&1 | ForEach-Object { $_.ToString() } | Tee-Object -FilePath $log -Append

@@ -25,6 +25,15 @@ PREVIOUS_TAG = "v0.3.0-octave.2-fieldtest.4"
 SOURCE_SUFFIXES = {".md", ".kt", ".kts", ".py", ".ps1", ".cmd", ".bat"}
 FORBIDDEN_PARTS = {"reports", "outputs", ".git", ".gradle", "build", "node_modules"}
 VERSIONS = ("0.3.0-octave.2-fieldtest.5", "0.3.0-octave.2-fieldtest.6")
+SOURCE_BASELINES = {
+    "0.3.0-octave.2-fieldtest.6": {
+        "sha": "5225ecd1e7a8bb1bd2ccb35fca0431d4e02e3550",
+        "tag": "v0.1.0-quicktest.1",
+        "previousFieldSha": "801c2cd5c38b42140694a091f616a795471f7510",
+        "previousFieldTag": "v0.3.0-octave.2-fieldtest.5",
+    },
+}
+ROOT_CONFIG_ALLOWLIST = frozenset({".gitattributes"})
 # Exact reviewed source scripts only. No wildcard, report JSON, user media or ZIP.
 REPORT_SOURCE_ALLOWLIST = frozenset({
     "reports/app-integration-20261015/run_targeted.py",
@@ -79,7 +88,7 @@ def source_path(name):
     need(not path.is_absolute() and str(path) == name and ":" not in name and all(part not in (".", "..") for part in path.parts) and
          (not any(part.lower() in FORBIDDEN_PARTS for part in path.parts) or name in REPORT_SOURCE_ALLOWLIST) and
          not name.lower().startswith("tools/local/") and
-         (path.suffix.lower() in SOURCE_SUFFIXES or name in REVIEWED_METADATA_ALLOWLIST),
+         (path.suffix.lower() in SOURCE_SUFFIXES or name in REVIEWED_METADATA_ALLOWLIST or name in ROOT_CONFIG_ALLOWLIST),
          "Non-source/document path would be published: " + name)
     return name
 
@@ -128,12 +137,31 @@ def validate_origin(fetch, push):
 
 
 def validate_remote_before(refs, previous, *, tag=TAG, previous_tag=PREVIOUS_TAG):
+    source_baseline = SOURCE_BASELINES.get(tag.removeprefix("v"))
     tag = "refs/tags/" + tag
     need(tag not in refs and tag + "^{}" not in refs, "Remote selected tag already exists; refusing replacement or implicit resume")
     need(refs.get("refs/heads/main") == previous["rollback"]["baselineSha"], "Remote main changed from the stable baseline")
     old = "refs/tags/" + previous_tag
     need(refs.get(old + "^{}", refs.get(old)) == previous["sha"] and "refs/heads/dev" in refs,
          "Remote previous Field baseline or dev is missing/different")
+    if source_baseline is not None:
+        need(previous["sha"] == source_baseline["previousFieldSha"] and previous_tag == source_baseline["previousFieldTag"],
+             "Previous Field identity differs from the fixed source-baseline history")
+        need(refs.get("refs/heads/dev") == source_baseline["sha"], "Remote dev differs from the fixed source baseline; no force push permitted")
+        source_tag = "refs/tags/" + source_baseline["tag"]
+        need(refs.get(source_tag + "^{}", refs.get(source_tag)) == source_baseline["sha"], "Remote source-baseline tag differs")
+
+
+def validate_source_baseline(commands, version, previous):
+    need(version in VERSIONS, "Unsupported source-baseline release")
+    baseline = SOURCE_BASELINES.get(version)
+    if baseline is None: return None  # .5 retains its existing previous-Field source audit.
+    need(previous["sha"] == baseline["previousFieldSha"] and previous["tag"] == baseline["previousFieldTag"],
+         "Previous Field identity differs from the fixed source-baseline history")
+    need(text(commands.git("local-source-baseline-tag", "rev-parse", "refs/tags/" + baseline["tag"] + "^{commit}")) == baseline["sha"],
+         "Local source-baseline tag differs")
+    commands.git("previous-field-source-ancestor", "merge-base", "--is-ancestor", previous["sha"], baseline["sha"])
+    return dict(baseline)
 
 
 def validate_remote_after(refs, commit, tag_object, main, *, tag=TAG):
@@ -270,7 +298,7 @@ def audit_source(commands, base, commit):
     return dict(status="PASSED", baseline=base, commit=commit, scope="All intermediate commits and newly reachable blobs; source plus exact report-tool and reviewed license/provenance/test-data allowlists only, no user evidence/outputs/media",
                 changedSourceFileCount=len(touched), changedPaths=sorted(touched), commits=records, newObjects=metadata,
                 textBlobsVerified=len(blobs), allowedSuffixes=sorted(SOURCE_SUFFIXES), reportToolAllowlist=sorted(REPORT_SOURCE_ALLOWLIST),
-                reviewedMetadataAllowlist=sorted(REVIEWED_METADATA_ALLOWLIST))
+                reviewedMetadataAllowlist=sorted(REVIEWED_METADATA_ALLOWLIST), rootConfigAllowlist=sorted(ROOT_CONFIG_ALLOWLIST))
 
 
 def main(argv=None):
@@ -279,7 +307,7 @@ def main(argv=None):
     parser.add_argument("--omr-validation", required=True); parser.add_argument("--audio-comparison", required=True)
     parser.add_argument("--output", help="New directory under reports/fieldtest5-development; existing directories are refused")
     parser.add_argument("--version", choices=VERSIONS, default="0.3.0-octave.2-fieldtest.5",
-        help="Exact verified release; .6 selects previous Field .5, never stable main")
+        help="Exact verified release; .6 keeps previous Field .5 and the fixed existing quicktest source baseline")
     args = parser.parse_args(argv)
     archive = load(HERE / "archive_fieldtest5.py", "archive_for_field5_push")
     release = archive.release_config(args.version)
@@ -323,19 +351,24 @@ def main(argv=None):
             archive.register(registry, path.resolve())
         need(text(commands.git("local-main", "rev-parse", "refs/heads/main")) == result["mainExpected"], "Local stable main changed")
         need(text(commands.git("local-baseline", "rev-parse", "refs/tags/" + PREVIOUS_TAG + "^{commit}")) == previous["sha"], "Local previous Field tag differs")
+        source_baseline = validate_source_baseline(commands, release["version"], previous)
+        source_audit_base = source_baseline["sha"] if source_baseline is not None else previous["sha"]
+        result.update(previousField=dict(sha=previous["sha"], tag=PREVIOUS_TAG), sourceBaseline=source_baseline,
+                      sourceAuditBaselineSha=source_audit_base)
         need(text(commands.git("existing-local-tag", "tag", "--list", TAG)) == "", "Local selected tag already exists; refusing replacement or implicit resume")
         validate_origin(commands.git("origin-fetch-url", "remote", "get-url", "--all", "origin"),
                         commands.git("origin-push-urls", "remote", "get-url", "--push", "--all", "origin"))
         result["remote"] = REMOTE
-        audit = audit_source(commands, previous["sha"], final["sha"])
+        audit = audit_source(commands, source_audit_base, final["sha"])
         audit_path = folder / "source-only-audit.json"; archive.write(audit_path, audit)
         archive.register(registry, audit_path)
         result.update(sourceOnly=True, changedSourceFileCount=audit["changedSourceFileCount"], sourceAudit=str(audit_path))
         need(GH.is_file(), "Installed GitHub CLI is missing; no install attempted")
         private_repo(commands.run([str(GH), "repo", "view", REPO, "--json", "isPrivate,nameWithOwner,url"], "github-private-repository"))
         result["isPrivateVerified"] = True
+        source_refs = [] if source_baseline is None else ["refs/tags/" + source_baseline["tag"], "refs/tags/" + source_baseline["tag"] + "^{}"]
         refs = archive.parse_remote_refs(text(commands.git("remote-before", "ls-remote", "origin", "refs/heads/dev", "refs/heads/main",
-            "refs/tags/" + PREVIOUS_TAG, "refs/tags/" + PREVIOUS_TAG + "^{}", "refs/tags/" + TAG, "refs/tags/" + TAG + "^{}")))
+            "refs/tags/" + PREVIOUS_TAG, "refs/tags/" + PREVIOUS_TAG + "^{}", "refs/tags/" + TAG, "refs/tags/" + TAG + "^{}", *source_refs)))
         validate_remote_before(refs, previous, tag=TAG, previous_tag=PREVIOUS_TAG)
         commands.git("remote-dev-ancestor", "merge-base", "--is-ancestor", refs["refs/heads/dev"], final["sha"])
         clean_identity("before-tag")
@@ -346,6 +379,7 @@ def main(argv=None):
         result["tagCreatedAt"] = now()
         need(archive.stamp(result["tagCreatedAt"]) >= archive.stamp(final["finishedAt"]), "Tag would predate final verification")
         annotation = dict(role="Field Test engineering candidate; not stable; main is not promoted", gitCommit=final["sha"],
+                          previousField=result["previousField"], sourceBaseline=source_baseline, sourceAuditBaselineSha=source_audit_base,
                           finalReportSha256=registry[final_path]["sha256"], manualUiReportSha256=registry[manual_path]["sha256"],
                           apkSha256=result["apkSha256"], testApkSha256=result["testApkSha256"],
                           engineeringAcceptance=final["engineeringAcceptance"], musicAcceptance=final["musicAcceptance"],

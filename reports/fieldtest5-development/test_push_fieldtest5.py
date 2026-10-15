@@ -15,6 +15,13 @@ COMMIT="a"*40;TAG_OBJECT="b"*40;BASE="c"*40;MAIN="d"*40;BLOB="e"*40;TREE="f"*40
 
 
 class PathAndObjectTest(unittest.TestCase):
+    def test_only_root_gitattributes_is_allowed_as_extensionless_configuration(self):
+        self.assertEqual(push.ROOT_CONFIG_ALLOWLIST,frozenset({'.gitattributes'}))
+        self.assertEqual(push.source_path('.gitattributes'),'.gitattributes')
+        for name in ('.gitignore','.env','README','recording','docs/.gitattributes',
+                     './.gitattributes','.gitattributes.wav','.gitattributes.bak',
+                     '.GITATTRIBUTES','outputs/.gitattributes'):
+            with self.subTest(name=name),self.assertRaises(ValueError):push.source_path(name)
     def test_only_exact_report_tool_scripts_are_allowed_and_still_require_text_blobs(self):
         self.assertEqual(len(push.REPORT_SOURCE_ALLOWLIST),17)
         for name in push.REPORT_SOURCE_ALLOWLIST:
@@ -70,8 +77,12 @@ class PathAndObjectTest(unittest.TestCase):
 class RemoteBoundaryTest(unittest.TestCase):
     def test_explicit_new_tag_uses_previous_field5_and_cannot_overwrite_it(self):
         release=archive.release_config('0.3.0-octave.2-fieldtest.6');tag=release['tag'];previous=release['previousTag']
-        before={'refs/heads/dev':BASE,'refs/heads/main':MAIN,'refs/tags/'+previous:TAG_OBJECT,'refs/tags/'+previous+'^{}':BASE}
-        push.validate_remote_before(before,{'sha':BASE,'rollback':{'baselineSha':MAIN}},tag=tag,previous_tag=previous)
+        source=push.SOURCE_BASELINES[release['version']]
+        before={'refs/heads/dev':source['sha'],'refs/heads/main':MAIN,'refs/tags/'+previous:TAG_OBJECT,
+                'refs/tags/'+previous+'^{}':source['previousFieldSha'],
+                'refs/tags/'+source['tag']:TREE,'refs/tags/'+source['tag']+'^{}':source['sha']}
+        old={'sha':source['previousFieldSha'],'rollback':{'baselineSha':MAIN}}
+        push.validate_remote_before(before,old,tag=tag,previous_tag=previous)
         after={'refs/heads/dev':COMMIT,'refs/heads/main':MAIN,'refs/tags/'+tag:TAG_OBJECT,'refs/tags/'+tag+'^{}':COMMIT}
         push.validate_remote_after(after,COMMIT,TAG_OBJECT,MAIN,tag=tag)
         args=push.atomic_push_arguments(COMMIT,TAG_OBJECT,tag=tag)
@@ -80,7 +91,24 @@ class RemoteBoundaryTest(unittest.TestCase):
         with self.assertRaises(ValueError):push.validate_remote_after(after,COMMIT,TAG_OBJECT,MAIN)
         before['refs/tags/'+tag]=TAG_OBJECT
         with self.assertRaisesRegex(ValueError,'already exists'):
-            push.validate_remote_before(before,{'sha':BASE,'rollback':{'baselineSha':MAIN}},tag=tag,previous_tag=previous)
+            push.validate_remote_before(before,old,tag=tag,previous_tag=previous)
+    def test_field6_requires_exact_remote_source_dev_and_quicktest_tag(self):
+        version='0.3.0-octave.2-fieldtest.6';source=push.SOURCE_BASELINES[version]
+        old={'sha':source['previousFieldSha'],'rollback':{'baselineSha':MAIN}}
+        refs={'refs/heads/dev':source['sha'],'refs/heads/main':MAIN,
+              'refs/tags/'+source['previousFieldTag']:source['previousFieldSha'],
+              'refs/tags/'+source['tag']:source['sha']}
+        for ref in ('refs/heads/dev','refs/tags/'+source['tag']):
+            for value in (None,source['previousFieldSha'],COMMIT):
+                changed=dict(refs)
+                if value is None:del changed[ref]
+                else:changed[ref]=value
+                with self.subTest(ref=ref,value=value),self.assertRaises(ValueError):
+                    push.validate_remote_before(changed,old,tag='v'+version,previous_tag=source['previousFieldTag'])
+        changed=dict(refs);changed['refs/tags/'+source['previousFieldTag']]=BASE
+        with self.assertRaisesRegex(ValueError,'Previous Field identity'):
+            push.validate_remote_before(changed,{'sha':BASE,'rollback':{'baselineSha':MAIN}},
+                                        tag='v'+version,previous_tag=source['previousFieldTag'])
 
     def setUp(self):
         self.previous={"sha":BASE,"rollback":{"baselineSha":MAIN}}
@@ -163,6 +191,23 @@ class SourceHistoryAuditTest(unittest.TestCase):
     def test_complete_source_history_and_new_text_blob_pass(self):
         result=push.audit_source(self.fake(),BASE,COMMIT)
         self.assertEqual(result["textBlobsVerified"],1);self.assertEqual(result["changedSourceFileCount"],1)
+    def test_root_attributes_are_text_audited_and_reject_disguised_binary(self):
+        entries={'commit-paths-0':b'.gitattributes\0',
+                 'commit-tree-0':('100644 blob '+BLOB+'\t.gitattributes\0').encode()}
+        result=push.audit_source(self.fake(entries),BASE,COMMIT)
+        self.assertEqual(result['rootConfigAllowlist'],['.gitattributes'])
+        entries.update({'source-blob-0':b'\0',
+            'new-object-types':(COMMIT+' commit 100\n'+TREE+' tree 50\n'+BLOB+' blob 1\n').encode()})
+        with self.assertRaisesRegex(ValueError,'Binary/NUL'):push.audit_source(self.fake(entries),BASE,COMMIT)
+    def test_field6_audit_excludes_existing_quicktest_history_but_audits_every_new_commit(self):
+        source=push.SOURCE_BASELINES['0.3.0-octave.2-fieldtest.6'];calls=[];fake=self.fake()
+        def recording(label,*args,**kwargs):
+            calls.append((label,args));return fake.git(label,*args,**kwargs)
+        result=push.audit_source(SimpleNamespace(git=recording),source['sha'],COMMIT)
+        self.assertEqual(result['baseline'],source['sha'])
+        self.assertIn(('baseline-ancestor',('merge-base','--is-ancestor',source['sha'],COMMIT)),calls)
+        self.assertIn(('new-commits',('rev-list','--reverse',source['sha']+'..'+COMMIT)),calls)
+        self.assertIn(('new-object-ids',('rev-list','--objects','--no-object-names',COMMIT,'^'+source['sha'])),calls)
     def test_reviewed_metadata_is_still_audited_as_utf8_text_and_recorded_explicitly(self):
         for name in push.REVIEWED_METADATA_ALLOWLIST:
             entries={"commit-paths-0":(name+'\0').encode(),
@@ -193,6 +238,38 @@ class FinalizationBoundaryTest(unittest.TestCase):
         self.assertEqual(actual["phase"],"PREPARE");self.assertEqual(actual["status"],"PAUSE")
         with patch.object(subprocess,"run",side_effect=AssertionError("External process forbidden")):
             with self.assertRaisesRegex(ValueError,"not a completed successful"):archive.require_finalized(actual)
+
+
+class SourceBaselineBoundaryTest(unittest.TestCase):
+    VERSION='0.3.0-octave.2-fieldtest.6'
+    def test_field5_keeps_previous_field_behavior_without_new_git_calls(self):
+        commands=SimpleNamespace(git=lambda *args,**kwargs:self.fail('Unexpected new legacy command'))
+        self.assertIsNone(push.validate_source_baseline(commands,'0.3.0-octave.2-fieldtest.5',{'sha':BASE}))
+    def test_field6_requires_pinned_local_tag_and_previous_field_ancestor(self):
+        source=push.SOURCE_BASELINES[self.VERSION];calls=[]
+        def fake(label,*args,**kwargs):
+            calls.append((label,args))
+            return (source['sha']+'\n').encode() if label=='local-source-baseline-tag' else b''
+        old={'sha':source['previousFieldSha'],'tag':source['previousFieldTag']}
+        result=push.validate_source_baseline(SimpleNamespace(git=fake),self.VERSION,old)
+        self.assertEqual(result,source);self.assertIsNot(result,source)
+        self.assertEqual(calls,[('local-source-baseline-tag',('rev-parse','refs/tags/'+source['tag']+'^{commit}')),
+            ('previous-field-source-ancestor',('merge-base','--is-ancestor',old['sha'],source['sha']))])
+    def test_changed_field_manifest_or_local_tag_stops_before_audit(self):
+        source=push.SOURCE_BASELINES[self.VERSION];old={'sha':source['previousFieldSha'],'tag':source['previousFieldTag']}
+        for key in old:
+            wrong=dict(old);wrong[key]=BASE
+            with self.subTest(key=key),self.assertRaisesRegex(ValueError,'Previous Field identity'):
+                push.validate_source_baseline(SimpleNamespace(git=lambda *a,**k:self.fail('No Git expected')),self.VERSION,wrong)
+        with self.assertRaisesRegex(ValueError,'Local source-baseline tag'):
+            push.validate_source_baseline(SimpleNamespace(git=lambda *a,**k:(BASE+'\n').encode()),self.VERSION,old)
+    def test_non_ancestor_is_not_silently_accepted(self):
+        source=push.SOURCE_BASELINES[self.VERSION];old={'sha':source['previousFieldSha'],'tag':source['previousFieldTag']}
+        def fake(label,*args,**kwargs):
+            if label=='previous-field-source-ancestor':raise ValueError('TEST DATA: ancestor check failed')
+            return (source['sha']+'\n').encode()
+        with self.assertRaisesRegex(ValueError,'ancestor check failed'):
+            push.validate_source_baseline(SimpleNamespace(git=fake),self.VERSION,old)
 
 
 if __name__=="__main__":unittest.main(verbosity=2)

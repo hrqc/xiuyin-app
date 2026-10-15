@@ -1,6 +1,9 @@
 # Frozen source/config bytes must survive checkout with any core.autocrlf setting.
 # Instruction/product Markdown is deliberately outside these source-only rules.
 /app/** -text
+/quicktest/** -text
+/reports/**/*.py -text
+/docs/CLAVIER_SOURCE_PROVENANCE.json -text
 /tools/** -text
 /gradle/** -text
 /*.cmd -text
