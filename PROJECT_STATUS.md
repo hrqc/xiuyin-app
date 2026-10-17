@@ -1,3 +1,17 @@
+# 当前状态：0.3.0-octave.2-fieldtest.7（versionCode 12，2026-10-17）
+
+当前 APK 源码 Commit 为 `48cc97a8cc7f49c2cd502cea1628607e8000edea`，已经完成干净提交后的 PREPARE、同包 post-final-c、实际手动 manual-final-d 及 FINALIZE；最终状态 FIELD_TEST_ONLY，工程通过、产品/音乐验收 FAILED，物理手机琴房仍未验证。候选 Tag `v0.3.0-octave.2-fieldtest.7` 与 dev 已实际原子 Push 并读回核对到 48cc，main 未移动；本地交付目录为 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/`，manifest SHA-256 为 `5aaf3e71616a61b9d04b0e7b976934fc7bc57f7637b0ba9d4606e461ad74ff52`。本段为交付后文档补记，文档 Commit 不替换 APK 构建 Commit，不重建 APK，不移动既有候选 Tag；归档时的远端读回是当时发布事实，后续文档提交须另行记录。
+
+主工程 616 项通过（369 JVM、247 主 Android）；另有两项旧网站回放，旧集通过、原 DotIAM2 音乐失败保留，合计 618 项、617 通过、1 失败、0 跳过。15 组同包 WAV 音乐验收 1/15 通过、核心 0/9，`regressionFailures=[]`。三谱各执行真实导入和跨进程重开，共六阶段工程证据通过；S01 既有音乐失败及 S02/S03 未经教师逐音确认的边界保留。2443×3480 用户原图已能导入，识谱仍为上下谱表 16/15 小节、2 项结构 ERROR；147 项提示含 145 项复核警告，不等于 147 个错音。
+
+manual-final-d 已核验五线谱/简谱/双谱、实际移调与撤销重做、重新打开后的持久化、循环试听拖动后停止控件可达、分手选项、READY 后收音、常亮、前后台显式恢复、两种用户反馈及系统 ZIP 保存/读回。ZIP 的模型/跟谱帧为 4368/4368，overflow=0、监听 PCM 丢弃=0、停机 PCM 丢弃=9。后续工作是物理手机复测、原图结构修正及独立音乐验收，不能把当前工程通过扩写为现场准确率通过。上一 Field 为 `.6 / d4e42053f82814a5ca78fbdfefe72d2adb86107d`；稳定 main 仍为 `v0.2.0 / dbe1a852d2609126f1688039110ec0187808af63`，代码优先 Git revert，物理手机降级安装未验证，不卸载清库回退。
+
+安装包：`outputs/field-tests/v0.3.0-octave.2-fieldtest.7/xiuyin-0.3.0-octave.2-fieldtest.7-debug.apk`。完整操作说明见 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/PHONE_TEST_GUIDE.md`；发布证据见 `reports/fieldtest5-development/push-20261017T051243232459Z/remote-sync.json`。本次补记只更新文档，不重建 APK、不移动候选 Tag。
+
+以下为保留的历史开发与验收记录；其中“尚未执行”等语句是当时状态。
+
+---
+
 # 当前开发：0.3.0-octave.2-fieldtest.7（versionCode 12，2026-10-17）
 
 历史候选 `0871efd` 的手动验收为 FAILED/PAUSE：双谱循环试听时，手动向上拖动被自动跟随拉回，停止控件难以抵达。已通过 HOME 停止试听，`manual-final-a` 原始失败证据保留，未 finalize、Tag、Push 或交付。现已增量修复手动拖动暂停本次试听自动跟随、下一次试听恢复跟随，针对性实际回归已通过；新候选 Commit 与完整 prepare/post/manual/finalize 尚未执行，当前未交付。

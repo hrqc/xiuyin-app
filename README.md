@@ -1,5 +1,17 @@
 # 修音 · Android Field Test 实地测试闭环版
 
+> 当前 Field Test 候选为 **0.3.0-octave.2-fieldtest.7（versionCode 12）**，实际 APK 对应源码 Commit `48cc97a8cc7f49c2cd502cea1628607e8000edea`。本轮增量修复大照片导入、按 `1=bD` / `1=#F` 整谱移调、简谱上下音区点及试听时手动滚动与自动跟随的冲突。该封存 APK 已通过工程 FINALIZE 和同包手动 UI/ZIP 验收，状态为 **FIELD_TEST_ONLY**；音乐验收仍 FAILED，不进入 main，不宣称八度误报或现场音准已解决。
+
+主工程 616 项通过（369 JVM + 247 主 Android）；附加两项旧网站回放一项通过、一项原 DotIAM2 音乐失败保留，总计 618 项、617 通过、1 失败、0 跳过。同包 15 组 WAV 音乐结果为 1/15 通过、核心 0/9，`regressionFailures=[]` 只表示此前通过的门禁没有新增退化。三份 OMR 的六阶段导入/跨进程重开工程证据通过，不能代替完整音乐识谱通过；本次原问题图片虽可导入，仍有 2 项结构 ERROR，必须修谱后才能正式陪练。
+
+最终手动验收 `manual-final-d` 通过，系统保存并读回校验的 ZIP 有 4368 原始模型帧及对应 4368 跟谱帧，Queue Overflow 为 0、监听期间 PCM 丢弃为 0；停机时丢弃 9 个 PCM 块已保留记录，不等于丢失模型帧。物理手机琴房、真实踏板和现场准确率仍未验证。APK SHA-256 为 `a2afe7c9ae23af12ee2ba3462ba4d7f61fe7133f5581e0508cd1800acf98fd2c`；FINALIZE 报告 SHA-256 为 `67f5dd1e9e2ddf0d76c31acccbee1ac8e3fa97bdf57244233eb31a16ff825077`。候选 Tag `v0.3.0-octave.2-fieldtest.7` 已创建，源码 dev 与 Tag 原子 Push 成功并于 `2026-10-17T05:13:42.425875+00:00` 读回核对到 48cc，main 未移动；真实 APK 已归档到 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/`。以下较早的“尚未执行”及 PAUSE 为当时历史，不覆盖本段已核实的结果；最终安装包身份以该目录的交付清单为准。
+
+安装包：`outputs/field-tests/v0.3.0-octave.2-fieldtest.7/xiuyin-0.3.0-octave.2-fieldtest.7-debug.apk`。完整操作说明见 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/PHONE_TEST_GUIDE.md`；发布证据见 `reports/fieldtest5-development/push-20261017T051243232459Z/remote-sync.json`。本次补记只更新文档，不重建 APK、不移动候选 Tag。
+
+以下为保留的历史开发与验收记录；其中“尚未执行”等语句是当时状态。
+
+---
+
 > 历史候选 `0871efd` 的手动验收为 FAILED/PAUSE：双谱循环试听时，手动向上拖动被自动跟随拉回，停止控件难以抵达。已通过 HOME 停止试听，`manual-final-a` 原始失败证据保留，未 finalize、Tag、Push 或交付。现已增量修复手动拖动暂停本次试听自动跟随、下一次试听恢复跟随，针对性实际回归已通过；新候选 Commit 与完整 prepare/post/manual/finalize 尚未执行，当前未交付。
 
 > 最新追加：简谱用数字上/下圆点表示音区；一点为一个八度，两点为两个八度，低点避开减时线，右附点仍表示时值。新增真实画面与点击测试通过；新候选仍需完整发布检查，旧 `37b89bf` 的完整工程结果不代替本轮验证。

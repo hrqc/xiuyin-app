@@ -1,3 +1,17 @@
+## 0.3.0-octave.2-fieldtest.7 实际验收补记（2026-10-17）
+
+本版 APK 绑定源码 Commit `48cc97a8cc7f49c2cd502cea1628607e8000edea`，修复大照片在缩小前被拒绝、整谱移调与数字谱同步、简谱上下音区点/减时线布局，以及循环试听手动拖动被自动跟随拉回的问题。本次仅补记实际交付事实与手机使用说明；后续 docs-only Commit 不属于该 APK 的构建源码身份，不重建 APK，也不覆盖历史候选 Tag。
+
+最终同包工程门禁通过：616 项主工程通过；附加旧网站测试一过一失败，总计 618 项、617 通过、1 原 DotIAM2 音乐失败、0 跳过。15 WAV 音乐 1/15、核心 0/9，原通过项无新增退化；三 OMR 六阶段工程证据通过，但完整音乐识谱未通过。原问题图片仍有 2 项结构 ERROR，继续阻止正式陪练。manual-final-d 的五项 UI/系统保存验收通过，真实 ZIP 保留 4368/4368 模型/跟谱帧、0 overflow、0 监听 PCM 丢弃与 9 个停机 PCM 丢弃块。FINALIZE 为 FIELD_TEST_ONLY，产品/音乐结果仍 FAILED；物理手机琴房、真实踏板和现场准确率未验证。
+
+验收来源：PREPARE `reports/fieldtest-20261017T042228Z-db55c210/field-report.json`；FINALIZE `reports/fieldtest-finalize-20261017T051218Z-21cd1e66/field-report.json`，SHA-256 `67f5dd1e9e2ddf0d76c31acccbee1ac8e3fa97bdf57244233eb31a16ff825077`；手动报告 `reports/fieldtest7-development/manual-final-d/manual-ui-report.json`，SHA-256 `9f5bb10fa75cfb8abd66a4945699fc8dac35ae580efcca89800a4140797ad7b7`。候选 Tag `v0.3.0-octave.2-fieldtest.7` 与 dev 原子 Push、远端读回均成功（退出码 0），Tag 指向 48cc，main 未移动；原始读回见 `reports/fieldtest5-development/push-20261017T051243232459Z/remote-sync.json`。真实 APK 已完成本地归档，清单 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/fieldtest-manifest.json` SHA-256 为 `5aaf3e71616a61b9d04b0e7b976934fc7bc57f7637b0ba9d4606e461ad74ff52`。0871efd 的 manual-final-a 失败及旧音乐失败继续保留，不改写为通过。
+
+安装包：`outputs/field-tests/v0.3.0-octave.2-fieldtest.7/xiuyin-0.3.0-octave.2-fieldtest.7-debug.apk`。完整操作说明见 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/PHONE_TEST_GUIDE.md`；发布证据见 `reports/fieldtest5-development/push-20261017T051243232459Z/remote-sync.json`。本次补记只更新文档，不重建 APK、不移动候选 Tag。
+
+以下为保留的历史开发与验收记录；其中“尚未执行”等语句是当时状态。
+
+---
+
 # 0.3.0-octave.2-fieldtest.7 · 大照片导入、可见移调与简谱音区点 · 2026-10-17（候选）
 
 历史候选 `0871efd` 的手动验收为 FAILED/PAUSE：双谱循环试听时，手动向上拖动被自动跟随拉回，停止控件难以抵达。已通过 HOME 停止试听，`manual-final-a` 原始失败证据保留，未 finalize、Tag、Push 或交付。现已增量修复手动拖动暂停本次试听自动跟随、下一次试听恢复跟随，针对性实际回归已通过；新候选 Commit 与完整 prepare/post/manual/finalize 尚未执行，当前未交付。
