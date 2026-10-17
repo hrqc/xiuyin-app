@@ -559,7 +559,7 @@ class MainActivity : ComponentActivity() {
                                     savedScores = scores.savedScores, selectedScore = scores.selectedScore,
                                     onImport = { scoreDocument.launch(arrayOf("*/*")) },
                                     onImportMidi = { midiDocument.launch(arrayOf("audio/midi", "audio/x-midi", "application/octet-stream")) },
-                                    onImportImages = { scoreImages.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) },
+                                    onImportImages = { scoreImages.launch(arrayOf("image/*", "application/pdf")) },
                                     onCamera = ::photographScore,
                                     onOpen = scoreModel::openScore, onBack = { navigate("library") },
                                     query = scores.query, sort = scores.sort, selectedTag = scores.selectedTag,

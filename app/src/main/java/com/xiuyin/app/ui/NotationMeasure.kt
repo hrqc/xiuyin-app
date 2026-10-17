@@ -6,9 +6,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -96,6 +99,8 @@ fun NotationMeasure(
     val context = LocalContext.current
     val font = remember { requireNotNull(ResourcesCompat.getFont(context, R.font.bravura)) }
     val density = LocalDensity.current.density
+    val numberedKey = measure.fifths?.takeIf { it in -7..7 }
+    val needsNumberedKey = mode != ScoreDisplayMode.STAFF && numberedKey == null
     val (staffs, height) = remember(measure, mode) { geometry(measure, mode) }
     val width = max(360f, LEFT + measure.events.map { it.offset }.distinct().size * 43f + 35f)
     val duration = max(measure.time?.duration?.toDouble() ?: 0.0, measure.events.maxOfOrNull { (it.offset + it.duration).toDouble() } ?: 1.0).coerceAtLeast(1.0)
@@ -110,10 +115,17 @@ fun NotationMeasure(
             NoteHit(event.id, x, y)
         }
     }
-    Box(modifier.horizontalScroll(rememberScrollState())) {
+    Column(modifier) {
+        if (needsNumberedKey) Text("调号未确认，暂不能生成首调简谱。请在校对中确认实际调号；五线谱保留已识别音高。",
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("numbered_key_required_${measure.id}"))
+    Box(Modifier.horizontalScroll(rememberScrollState())) {
         Canvas(Modifier.width(width.dp).height(height.dp).testTag("notation_" + measure.id)
-            .semantics { contentDescription = "第${measure.number}小节，${mode.label}，${measure.events.size}个谱面事件。" + measure.events.joinToString { it.pitch?.displayName ?: "休止符" } }
-            .pointerInput(hits, density) { detectTapGestures { tap ->
+            .semantics { contentDescription = "第${measure.number}小节，${mode.label}，${measure.events.size}个谱面事件。" +
+                (if (needsNumberedKey) "调号未确认，暂不能生成首调简谱。" else "") +
+                (if (mode == ScoreDisplayMode.NUMBERED && numberedKey == null) "请切换五线谱查看已识别音高。"
+                else measure.events.joinToString { it.pitch?.displayName ?: "休止符" }) }
+            .pointerInput(hits, density, mode, numberedKey) { detectTapGestures { tap ->
+                if (mode == ScoreDisplayMode.NUMBERED && numberedKey == null) return@detectTapGestures
                 hits.minByOrNull { hypot(tap.x / density - it.x, tap.y / density - it.y) }
                     ?.takeIf { hypot(tap.x / density - it.x, tap.y / density - it.y) < 28 }
                     ?.let { onSelect(it.id) }
@@ -135,7 +147,7 @@ fun NotationMeasure(
                         text.textSize = 10 * density
                         native.drawText(if (abs(staff.clef.octaveChange) == 1) "8" else "15", 26 * density, (staff.top + if (staff.clef.octaveChange > 0) -18 else 62) * density, text)
                     }
-                    val fifths = (measure.fifths ?: 0).coerceIn(-7, 7)
+                    val fifths = numberedKey ?: 0
                     val keySteps = if (fifths > 0) listOf("F", "C", "G", "D", "A", "E", "B") else listOf("B", "E", "A", "D", "G", "C", "F")
                     for (index in 0 until abs(fifths)) {
                         val keyStep = keySteps[index]
@@ -147,12 +159,15 @@ fun NotationMeasure(
                 }
                 if (mode != ScoreDisplayMode.STAFF) {
                     text.textSize = 12 * density
-                    val keyLabel = measure.fifths?.takeIf { it in -7..7 }?.let { listOf("C", "G", "D", "A", "E", "B", "F♯", "C♯").getOrNull(it) ?: listOf("C", "F", "B♭", "E♭", "A♭", "D♭", "G♭", "C♭")[-it] } ?: "未知"
-                    native.drawText("${staff.staff} · 1=$keyLabel", 12 * density, staff.numberedY * density, text)
-                    line(width - 12, staff.numberedY - 18, width - 12, staff.numberedY + 20)
+                    val keyLabel = numberedKey?.let { listOf("C", "G", "D", "A", "E", "B", "F♯", "C♯").getOrNull(it) ?: listOf("C", "F", "B♭", "E♭", "A♭", "D♭", "G♭", "C♭")[-it] }
+                    native.drawText(if (keyLabel == null) "谱表 ${staff.staff}：简谱待确认调号" else "${staff.staff} · 1=$keyLabel",
+                        12 * density, staff.numberedY * density, text)
+                    if (keyLabel != null) line(width - 12, staff.numberedY - 18, width - 12, staff.numberedY + 20)
                 }
             }
             for (hit in hits) {
+                // An unknown key has no justified movable-do degree. Do not disguise pitch names as numbered notation.
+                if (mode == ScoreDisplayMode.NUMBERED && numberedKey == null) continue
                 val event = measure.events.first { it.id == hit.id }
                 val staff = staffs.first { it.staff == event.staff }
                 music.textSize = SPACE * (if (event.grace) 2.8f else 4f) * density
@@ -196,12 +211,12 @@ fun NotationMeasure(
                     }
                     repeat(event.dots) { glyph('', hit.x + 17 + it * 6, hit.y - 3) }
                 }
-                if (mode != ScoreDisplayMode.STAFF) {
+                if (mode != ScoreDisplayMode.STAFF && numberedKey != null) {
                     val group = measure.events.filter { it.staff == event.staff && it.offset == event.offset }.sortedBy { it.pitch?.midi ?: -1 }
                     val ny = staff.numberedY - group.indexOfFirst { it.id == event.id } * 21
                     text.textSize = 18 * density
-                    val numbered = event.pitch?.let { p -> measure.fifths?.takeIf { it in -7..7 }?.let { numberedPitch(p, it) } }
-                    val label = if (event.isRest) "0" else if (numbered == null) event.pitch!!.displayName else (if (numbered.accidental > 0) "♯".repeat(numbered.accidental) else "♭".repeat(-numbered.accidental)) + numbered.degree
+                    val numbered = event.pitch?.let { numberedPitch(it, numberedKey) }
+                    val label = numbered?.let { (if (it.accidental > 0) "♯".repeat(it.accidental) else "♭".repeat(-it.accidental)) + it.degree } ?: "0"
                     native.drawText(label, hit.x * density, ny * density, text)
                     numbered?.let { n -> repeat(abs(n.octave).coerceAtMost(6)) { dot -> drawCircle(ink, 1.2f * density, Offset((hit.x + 5) * density, (ny + if (n.octave > 0) -22f - dot * 5 else 7f + dot * 5) * density)) } }
                     val shortLines = when (event.type) { "eighth" -> 1; "16th" -> 2; "32nd" -> 3; "64th" -> 4; else -> 0 }
@@ -215,5 +230,6 @@ fun NotationMeasure(
                 }
             }
         }
+    }
     }
 }

@@ -4,8 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.Matrix
-import androidx.exifinterface.media.ExifInterface
 import androidx.core.graphics.createBitmap
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
@@ -64,6 +62,7 @@ class OmrImportService(context: Context) {
         ensureRoot()
         var total = 0L
         val originals = mutableListOf<ByteArray>()
+        val imagePreparation = mutableListOf<JSONObject>()
         var preparedPageCount = 0
         var preparedBytes = 0L
         val images = uris.flatMapIndexed { index, uri ->
@@ -72,6 +71,7 @@ class OmrImportService(context: Context) {
             val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
                 val output = ByteArrayOutputStream(); val buffer = ByteArray(8192)
                 while (true) {
+                    NativeOmrModels.checkCancelled()
                     val count = input.read(buffer); if (count < 0) break
                     require(output.size() + count <= MAX_SOURCE_BYTES) { "单份原始文件超过 64 MiB，请分页导入" }
                     total += count; require(total <= MAX_SOURCE_BYTES) { "本次原图合计超过 64 MiB" }
@@ -83,15 +83,14 @@ class OmrImportService(context: Context) {
             originals += bytes
             require(preparedPageCount < 20) { "累计超过 20 页，请分页导入" }
             val prepared = if (bytes.size >= 5 && bytes.copyOfRange(0, 5).contentEquals("%PDF-".toByteArray(Charsets.US_ASCII))) {
-                renderPdf(bytes, progress, 20 - preparedPageCount, MAX_SOURCE_BYTES - preparedBytes)
+                renderPdf(bytes, progress, 20 - preparedPageCount, MAX_SOURCE_BYTES - preparedBytes).also { pages ->
+                    pages.forEachIndexed { pageIndex, _ -> imagePreparation += JSONObject().put("method", "PDF_RENDER_UNCHANGED")
+                        .put("documentIndex", index).put("documentPageIndex", pageIndex).put("sourceDocumentModified", false) }
+                }
             } else {
-            require(bytes.size <= MAX_IMAGE_BYTES) { "单张原图超过 20 MiB，请按页导入" }
-            val info = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, info)
-            require(info.outWidth >= 160 && info.outHeight >= 160 && info.outWidth.toLong() * info.outHeight <= 8_000_000L) {
-                "第 ${index + 1} 页不是有效谱图，或超过 800 万像素；请按页/谱表裁剪"
-            }
-            listOf(normalizeJpegOrientation(bytes))
+                val image = OmrImagePreparation.prepare(bytes, progress)
+                imagePreparation += image.diagnostics.put("documentIndex", index).put("documentPageIndex", 0)
+                listOf(image.bytes)
             }
             preparedPageCount += prepared.size
             preparedBytes += prepared.sumOf { it.size.toLong() }
@@ -103,13 +102,16 @@ class OmrImportService(context: Context) {
         require(images.size in 1..20 && images.sumOf { it.size.toLong() } <= MAX_SOURCE_BYTES) { "PDF 渲染后超过 20 页或 64 MiB，请分页导入" }
         val sourceId = sha256(originals.map { "${it.size}:${sha256(it)}\n" }.joinToString("").toByteArray(Charsets.UTF_8))
         if (File(root, sourceId).exists()) return@synchronized load(sourceId).copy(reusedExisting = true)
-        require(root.listFiles().orEmpty().sumOf { folder -> folder.listFiles().orEmpty().sumOf { it.length() } } + total <= MAX_ARCHIVE_BYTES) {
-            "本地识谱原图归档已达 512 MiB，请先管理原图；已有资料未删除"
+        // Reserve both source documents and inference pages, plus bounded score/raw/failure evidence.
+        // They are distinct files even when the page happens to retain the original image bytes.
+        require(archiveBytes() + total + preparedBytes + MAX_RAW_BYTES + ScoreJsonCodec.MAX_SCORE_BYTES + FAILURE_RESERVE_BYTES <= MAX_ARCHIVE_BYTES) {
+            "本地识谱归档剩余空间不足以同时保存原件、识谱副本和诊断（总上限 512 MiB）；请先管理原图，已有资料未删除"
         }
         val pending = File(root, ".pending-${UUID.randomUUID()}")
         check(pending.mkdir()) { "无法建立识谱临时归档" }
         val raw = JSONObject().put("schemaVersion", 1).put("sourceId", sourceId)
-            .put("pagePreparation", "Original documents retained byte-for-byte; JPEG EXIF orientation applied to inference pages; PDFs rendered up to 3 pixels/point and 2560px longest side; no user crop applied").put("status", "RUNNING").put("pages", JSONArray()).put("images", JSONArray()).put("documents", JSONArray())
+            .put("pagePreparation", "Original documents retained byte-for-byte; image decoding bounded to 8 megapixels before EXIF orientation; unchanged small images retain their bytes; PDFs rendered up to 3 pixels/point and 2560px longest side; no crop applied")
+            .put("status", "RUNNING").put("pages", JSONArray()).put("images", JSONArray()).put("documents", JSONArray())
         try {
             originals.forEachIndexed { index, bytes ->
                 val name = "original-${index.toString().padStart(3, '0')}.document"
@@ -119,7 +121,8 @@ class OmrImportService(context: Context) {
             images.forEachIndexed { index, bytes ->
                 val name = "page-${index.toString().padStart(3, '0')}.image"
                 writeNew(File(pending, name), bytes)
-                raw.getJSONArray("images").put(JSONObject().put("name", name).put("sha256", sha256(bytes)).put("bytes", bytes.size))
+                raw.getJSONArray("images").put(JSONObject().put("name", name).put("sha256", sha256(bytes)).put("bytes", bytes.size)
+                    .put("preparation", imagePreparation[index]))
             }
             LocalOMREngine(context).use { engine ->
                 images.forEachIndexed { index, bytes ->
@@ -136,16 +139,34 @@ class OmrImportService(context: Context) {
             val complete = (0 until pages.length()).all { pages.getJSONObject(it).getString("status") == "INFERENCE_FINISHED" }
             raw.put("status", if (complete) "INFERENCE_FINISHED" else "INFERENCE_INCOMPLETE").put("validation", "NEEDS_REVIEW")
                 .put("originalScoreSha256", sha256(original)).put("byteCount", total)
+            val rawBytes = raw.toString().toByteArray(Charsets.UTF_8)
+            require(rawBytes.size <= MAX_RAW_BYTES) { "识谱原始输出超过 32 MiB，已停止并保留原图及失败证据" }
+            require(archiveBytes() + original.size + rawBytes.size + FAILURE_RESERVE_BYTES <= MAX_ARCHIVE_BYTES) {
+                "识谱结果超出本地归档预算，已停止并保留原图及失败证据"
+            }
             writeNew(File(pending, "original.json"), original)
-            writeNew(File(pending, "raw-result.json"), raw.toString().toByteArray(Charsets.UTF_8))
+            writeNew(File(pending, "raw-result.json"), rawBytes)
             val target = File(root, sourceId)
             require(!target.exists()) { "同来源识谱目录已存在；未覆盖" }
             Files.move(pending.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
             Log.i("XiuyinOMR", "Local image import finished: sourceId=$sourceId pages=${images.size} issues=${score.issues.size}; NEEDS_REVIEW")
             load(sourceId)
         } catch (error: Exception) {
-            raw.put("status", "FAILED").put("error", error.message ?: error.javaClass.simpleName)
-            try { writeNew(File(pending, "failure.json"), raw.toString().toByteArray(Charsets.UTF_8)) }
+            raw.put("status", "FAILED").put("error", (error.message ?: error.javaClass.simpleName).take(4000))
+            try {
+                val partial = raw.toString().toByteArray(Charsets.UTF_8)
+                if (partial.size <= MAX_RAW_BYTES && archiveBytes() + partial.size + FAILURE_RESERVE_BYTES <= MAX_ARCHIVE_BYTES) {
+                    writeNew(File(pending, "failure-raw.json"), partial)
+                }
+                val failure = JSONObject().put("schemaVersion", 1).put("sourceId", sourceId).put("status", "FAILED")
+                    .put("error", (error.message ?: error.javaClass.simpleName).take(4000))
+                    .put("stack", error.stackTraceToString().take(16000)).put("completedPages", raw.getJSONArray("pages").length())
+                    .put("rawBytes", partial.size).put("partialRawPreserved", File(pending, "failure-raw.json").isFile)
+                    .put("originalDocumentsPreserved", raw.getJSONArray("documents").length() == originals.size)
+                val failureBytes = failure.toString().toByteArray(Charsets.UTF_8)
+                check(failureBytes.size <= FAILURE_RESERVE_BYTES && archiveBytes() + failureBytes.size <= MAX_ARCHIVE_BYTES)
+                writeNew(File(pending, "failure.json"), failureBytes)
+            }
             catch (evidenceError: Exception) { error.addSuppressed(evidenceError) }
             Log.e("XiuyinOMR", "Local OMR failed; diagnostic directory preserved: ${pending.name}", error)
             throw error
@@ -231,31 +252,16 @@ class OmrImportService(context: Context) {
         true
     }
 
-    /** Keep untouched camera bytes in original-*.document; inference page records EXIF orientation. */
-    private fun normalizeJpegOrientation(bytes: ByteArray): ByteArray {
-        if (bytes.size < 2 || (bytes[0].toInt() and 255) != 255 || (bytes[1].toInt() and 255) != 216) return bytes
-        val orientation = ExifInterface(bytes.inputStream()).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-        if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) return bytes
-        val original = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("相机原图解码失败")
-        val matrix = Matrix()
-        when (orientation) {
-            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
-            ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
-            ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.setScale(1f, -1f)
-            ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.setRotate(90f); matrix.postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
-            ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.setRotate(-90f); matrix.postScale(-1f, 1f) }
-            ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(270f)
-            else -> { original.recycle(); error("相机原图方向值无效，请重新保存图片") }
-        }
-        try {
-            val upright = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
-            try {
-                val output = ByteArrayOutputStream()
-                check(upright.compress(Bitmap.CompressFormat.PNG, 100, output)) { "保存转正谱页失败" }
-                return output.toByteArray().also { require(it.size <= MAX_IMAGE_BYTES) { "转正后谱图过大，请按谱表裁剪" } }
-            } finally { if (upright !== original) upright.recycle() }
-        } finally { original.recycle() }
+    private fun archiveBytes(): Long {
+        var bytes = 0L
+        Files.walk(root.toPath()).use { entries -> entries.forEach { entry ->
+            require(!Files.isSymbolicLink(entry)) { "识谱归档包含符号链接，未写入或删除" }
+            if (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
+                bytes += Files.size(entry)
+                require(bytes <= MAX_ARCHIVE_BYTES) { "本地识谱归档已达 512 MiB，已有资料保留" }
+            } else require(Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) { "识谱归档含特殊文件，未写入或删除" }
+        } }
+        return bytes
     }
 
     private fun renderPdf(bytes: ByteArray, progress: (String) -> Unit, remainingPages: Int, remainingBytes: Long): List<ByteArray> {
@@ -310,10 +316,11 @@ class OmrImportService(context: Context) {
     companion object {
         private val importLock = Any()
         private val SOURCE_ID = Regex("[a-f0-9]{64}")
-        private const val MAX_IMAGE_BYTES = 20 * 1024 * 1024
+        private const val MAX_IMAGE_BYTES = OmrImageSizing.MAX_IMAGE_BYTES
         private const val MAX_SOURCE_BYTES = 64 * 1024 * 1024
         private const val MAX_RAW_BYTES = 32 * 1024 * 1024
         private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
+        private const val FAILURE_RESERVE_BYTES = 64 * 1024
         internal fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 255) }
     }
 }

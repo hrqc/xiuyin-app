@@ -54,6 +54,7 @@ fun ScoreWorkbenchScreen(
     var insertingIn by remember { mutableStateOf<ScoreMeasure?>(null) }
     var editingMeasure by remember(state.scoreId, revision?.generation) { mutableStateOf<ScoreMeasure?>(null) }
     var transposeOpen by remember { mutableStateOf(false) }
+    var pendingTransposeGeneration by remember(state.scoreId) { mutableStateOf<Long?>(null) }
     var wholeScoreTimeOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
     var linearRepeatOpen by remember(state.scoreId, revision?.generation) { mutableStateOf(false) }
     var missingTimeTarget by remember(state.scoreId, revision?.generation) { mutableStateOf<MissingTimeTarget?>(null) }
@@ -91,6 +92,17 @@ fun ScoreWorkbenchScreen(
         }
     }
     LaunchedEffect(state.scoreId, state.repairIssue?.id) { state.repairIssue?.let { locateIssue(it) } }
+    LaunchedEffect(revision?.generation, state.busy, state.error) {
+        val previous = pendingTransposeGeneration
+        if (previous != null && !state.busy) {
+            if (state.error != null) pendingTransposeGeneration = null
+            else if (revision != null && revision.generation > previous) {
+                mode = ScoreDisplayMode.BOTH
+                if (measures.isNotEmpty()) list.animateScrollToItem(4)
+                pendingTransposeGeneration = null
+            }
+        }
+    }
     LaunchedEffect(playback.playing, active.firstOrNull()) {
         if (playback.playing) {
             val index = measures.indexOfFirst { (_, m) -> m.events.any { it.id in active } }
@@ -151,6 +163,8 @@ fun ScoreWorkbenchScreen(
                     OutlinedButton(onClick = { transposeOpen = true }, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_transpose")) { Text("移调") }
                     Button(onClick = onPractice, enabled = score != null && !state.busy, modifier = Modifier.testTag("score_start_practice")) { Text("开始陪练") }
                 }
+                TextButton(onClick = { scope.launch { list.animateScrollToItem(4) } }, enabled = measures.isNotEmpty(),
+                    modifier = Modifier.testTag("score_show_digital")) { Text("查看当前数字谱（随移调更新）") }
                 OutlinedButton(onClick = { wholeScoreTimeOpen = true }, enabled = score != null && !state.busy,
                     modifier = Modifier.testTag("score_set_whole_time")) { Text("设置全谱拍号") }
                 Text("全谱覆盖会替换所有小节拍号；只补续页缺失信息请使用顶部引导，变拍号仍可逐小节修改。", style = MaterialTheme.typography.bodySmall)
@@ -221,7 +235,11 @@ fun ScoreWorkbenchScreen(
                     }
                     if (selected != null) TextButton(onClick = { restoreTarget = "event" }, enabled = !state.busy,
                         modifier = Modifier.testTag("restore_original_note")) { Text("恢复此音符原始结果") }
-                    if (state.sourceImages.isNotEmpty()) SourceReference(state.sourceImages, selected?.sourceBox)
+                    if (state.sourceImages.isNotEmpty()) {
+                        Text("原图对照：原始照片不会随移调改变。移调结果请看下方当前数字谱。",
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("source_reference_notice"))
+                        SourceReference(state.sourceImages, selected?.sourceBox)
+                    }
                     val issues = reviewIssues
                     if (issues.isNotEmpty()) {
                         val errors = issues.count { it.severity == ScoreIssueSeverity.ERROR }
@@ -252,6 +270,8 @@ fun ScoreWorkbenchScreen(
         itemsIndexed(measures, key = { _, pair -> pair.second.id }) { index, (partName, measure) ->
             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(vertical = 12.dp)) {
+                    if (index == 0) Text("当前数字谱 · 随修谱和移调更新", style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp).testTag("current_digital_score"))
                     Text("$partName · 第 ${measure.number} 小节", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp))
                     NotationMeasure(measure, mode, state.selectedEventId, active, revision?.fingerings.orEmpty(), onSelect)
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
@@ -321,7 +341,11 @@ fun ScoreWorkbenchScreen(
         EventEditor(event, null, true, onDismiss = { insertingIn = null }, onSave = { changed, finger -> onEdit(ScorePatch.InsertEvent(measure.id, changed), finger); insertingIn = null }, onDelete = {})
     }
     editingMeasure?.let { measure -> MeasureEditor(measure, { editingMeasure = null }) { patch -> onEdit(patch, null); editingMeasure = null } }
-    if (transposeOpen && score != null) TransposeEditor(score, { transposeOpen = false }) { semitones, key -> onTranspose(semitones, key); transposeOpen = false }
+    if (transposeOpen && score != null) ScoreTransposeDialog(score, { transposeOpen = false }) { semitones, key ->
+        pendingTransposeGeneration = revision.generation
+        onTranspose(semitones, key)
+        transposeOpen = false
+    }
 }
 
 private data class MissingTimeTarget(val scoreId: String, val generation: Long, val measureCount: Int)
@@ -520,6 +544,7 @@ private fun MeasureEditor(measure: ScoreMeasure, onDismiss: () -> Unit, onSave: 
     AlertDialog(onDismissRequest = onDismiss, title = { Text("第 ${measure.number} 小节设置") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("仅修改当前小节。后续小节如需改变，请分别校正。", style = MaterialTheme.typography.bodySmall)
+            Text("这里校正谱面标注。调号校正不会移动音符；整谱升降请用顶部“移调”。", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(beats, { beats = it }, label = { Text("拍号分子，未知留空") }, singleLine = true, modifier = Modifier.testTag("measure_beats"))
             OutlinedTextField(beatType, { beatType = it }, label = { Text("拍号分母，未知留空") }, singleLine = true, modifier = Modifier.testTag("measure_beat_type"))
             OutlinedTextField(fifths, { fifths = it }, label = { Text("调号：升号正数，降号负数，0=C") }, singleLine = true, modifier = Modifier.testTag("measure_fifths"))
@@ -542,27 +567,4 @@ private fun MeasureEditor(measure: ScoreMeasure, onDismiss: () -> Unit, onSave: 
             onSave(ScorePatch.UpdateMeasure(measure.id, time, key, clefs.filter { it.staff <= count }, count))
         } catch (exception: IllegalArgumentException) { error = exception.message ?: "设置无效" }
     }, modifier = Modifier.testTag("measure_save")) { Text("保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
-}
-
-@Composable
-private fun TransposeEditor(score: DigitalScore, onDismiss: () -> Unit, onApply: (Int, Int?) -> Unit) {
-    var semitones by remember { mutableStateOf("0") }
-    var target by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val current = score.parts.flatMap { it.measures }.firstNotNullOfOrNull { it.fifths }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("整谱移调") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("改变实际音高与调号，同时更新五线谱、简谱、试听和陪练。可撤销。")
-            Text("当前首个调号：${current ?: "未知"}（升号为正、降号为负）")
-            OutlinedTextField(semitones, { semitones = it }, label = { Text("半音数：+12 升八度，-12 降八度") }, singleLine = true, modifier = Modifier.testTag("transpose_semitones"))
-            OutlinedTextField(target, { target = it }, label = { Text("目标调号 -7..7，可留空自动拼写") }, singleLine = true, modifier = Modifier.testTag("transpose_target_key"))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        }
-    }, confirmButton = { Button(onClick = {
-        try {
-            val shift = semitones.trim().toInt(); val key = target.trim().takeIf { it.isNotEmpty() }?.toInt()
-            ScoreEditing.transpose(score, shift, key)
-            onApply(shift, key)
-        } catch (exception: IllegalArgumentException) { error = exception.message ?: "移调参数无效" }
-    }, modifier = Modifier.testTag("transpose_apply")) { Text("应用移调") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
 }

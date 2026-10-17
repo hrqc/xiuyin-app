@@ -10,6 +10,8 @@ import com.xiuyin.app.practice.PracticeViewModel
 import com.xiuyin.app.practice.PracticeConfig
 import com.xiuyin.app.practice.CompanionPhase
 import com.xiuyin.app.practice.PracticeReportStore
+import com.xiuyin.app.playback.ScorePlaybackEngine
+import com.xiuyin.app.playback.ScorePlaybackPlan
 import android.util.Log
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -148,22 +150,135 @@ class ScoreWorkbenchUiTest {
 
     @Test fun transposeChangesSoundingPitchesAndBothScoreDisplays() {
         val (_, original) = openTestScore()
-        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
-        compose.onNodeWithTag("transpose_semitones").performTextReplacement("2")
-        compose.onNodeWithTag("transpose_target_key").performTextReplacement("2")
-        compose.onNodeWithTag("transpose_apply").performClick()
-        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        scroll("display_NUMBERED"); compose.onNodeWithTag("display_NUMBERED").performClick()
+        transposeToD()
+        compose.waitForIdle()
+        // The applied result is brought into view; the original photo is never presented as a shifted score.
+        compose.onNodeWithTag("current_digital_score").assertIsDisplayed()
         val measure = workbench.state.value.revision!!.current.parts.first().measures.first()
         assertEquals(2, measure.fifths)
         assertEquals(62, measure.events.first().pitch!!.midi)
         val originalMidi = ScoreTimelineCompiler.compile(original).notes.map { it.midi }.sorted()
         assertEquals(originalMidi.map { it + 2 }, workbench.state.value.timeline!!.notes.map { it.midi }.sorted())
+        compose.onNodeWithTag("notation_${measure.id}").assertContentDescriptionContains("双谱", substring = true)
+        compose.onNodeWithTag("notation_${measure.id}").assertContentDescriptionContains("D4", substring = true)
         scroll("display_NUMBERED"); compose.onNodeWithTag("display_NUMBERED").performClick()
         scroll("notation_${measure.id}")
         compose.onNodeWithTag("notation_${measure.id}").assertContentDescriptionContains("简谱", substring = true)
         scroll("display_BOTH"); compose.onNodeWithTag("display_BOTH").performClick()
         scroll("notation_${measure.id}")
         compose.onNodeWithTag("notation_${measure.id}").assertContentDescriptionContains("双谱", substring = true)
+    }
+
+    @Test fun semitoneButtonsTransposeDownAndUndoRedoPersistWithoutChangingTheOriginal() {
+        val (id, original) = openTestScore()
+        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
+        compose.onNodeWithTag("transpose_mode_semitone").performScrollTo().performClick()
+        compose.onNodeWithTag("transpose_semitones").assertTextContains("0")
+        compose.onNodeWithTag("transpose_apply").assertIsNotEnabled()
+        compose.onNodeWithTag("transpose_plus").performScrollTo().performClick()
+        compose.onNodeWithTag("transpose_semitones").assertTextContains("1")
+        repeat(3) { compose.onNodeWithTag("transpose_minus").performScrollTo().performClick() }
+        compose.onNodeWithTag("transpose_semitones").assertTextContains("-2")
+        compose.onNodeWithTag("transpose_shift_preview").assertTextContains("降 2 个半音", substring = true)
+        assertEquals("Preview must not write a revision", 0L, workbench.state.value.revision!!.generation)
+        assertEquals(original, workbench.state.value.revision!!.current)
+        compose.onNodeWithTag("transpose_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        assertNull(workbench.state.value.error)
+        val changed = requireNotNull(workbench.state.value.revision)
+        val oldMidi = ScoreTimelineCompiler.compile(original).notes.map { it.midi }.sorted()
+        assertEquals(oldMidi.map { it - 2 }, workbench.state.value.timeline!!.notes.map { it.midi }.sorted())
+        assertEquals("B♭3", changed.current.parts.first().measures.first().events.first().pitch!!.displayName)
+        scroll("score_undo"); compose.onNodeWithTag("score_undo").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 2L }
+        assertEquals(original, workbench.state.value.revision!!.current)
+        assertEquals(oldMidi, workbench.state.value.timeline!!.notes.map { it.midi }.sorted())
+        compose.onNodeWithTag("score_redo").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 3L }
+        assertEquals(changed.current, workbench.state.value.revision!!.current)
+        assertEquals(changed.current, ScoreRevisionStore(File(context.filesDir, "score-revisions")).load(id, original).current)
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) { !imports.state.value.importing }
+        compose.runOnUiThread { imports.openScore(id) }
+        compose.waitUntil(10_000) { !imports.state.value.importing && imports.state.value.selectedMetadata?.scoreId == id }
+        assertEquals(changed.current, imports.state.value.selectedScore)
+        assertEquals(original, imports.state.value.selectedOriginal)
+        assertArrayEquals(requireNotNull(ownedDocuments[original.id]).bytes,
+            ScoreSourceStore(File(context.filesDir, "digital-scores")).load(original.id).bytes)
+    }
+
+    @Test fun transposedRevisionFeedsPlaybackAndPracticeTargets() {
+        val (id, original) = openTestScore()
+        transposeToD()
+        val saved = requireNotNull(workbench.state.value.revision)
+        val timeline = requireNotNull(workbench.state.value.timeline)
+        val expectedMidi = ScoreTimelineCompiler.compile(original).notes.map { it.midi + 2 }.sorted()
+        val tones = ScorePlaybackPlan.tones(timeline.notes, 0.0, 60.0 / 80, ScorePlaybackEngine.SAMPLE_RATE)
+        assertEquals(expectedMidi, tones.map { it.midi }.sorted())
+        assertEquals(293.6647679174076, tones.first { it.midi == 62 }.frequency, 0.0000001)
+        scroll("score_play"); compose.onNodeWithTag("score_play").performClick()
+        compose.waitUntil(15_000) { workbench.playback.value.playedSamples > 0 || workbench.playback.value.error != null }
+        assertNull(workbench.playback.value.error)
+        assertTrue(workbench.playback.value.playedSamples > 0)
+        assertTrue(workbench.playback.value.writtenSamples >= workbench.playback.value.playedSamples)
+        assertEquals(saved, workbench.state.value.revision)
+        scroll("score_start_practice"); compose.onNodeWithTag("score_start_practice").performClick()
+        val practice = ViewModelProvider(compose.activity)[PracticeViewModel::class.java]
+        compose.waitUntil(10_000) { !practice.state.value.busy && practice.state.value.scoreId == id }
+        assertNull(practice.state.value.error)
+        assertEquals(saved.generation, practice.state.value.revisionGeneration)
+        assertEquals(saved.current, practice.state.value.score)
+        assertEquals(expectedMidi, requireNotNull(practice.state.value.timeline).notes.map { it.midi }.sorted())
+        compose.waitUntil(5_000) { !workbench.playback.value.playing }
+        // Controller-only target preparation; this test does not start the microphone or simulate recognition.
+        compose.runOnUiThread { practice.start(PracticeConfig(reviewAcknowledged = true)) }
+        assertNull(practice.state.value.error)
+        assertEquals(setOf(50, 62, 66, 69), practice.state.value.expectedMidi)
+        assertEquals(0, practice.state.value.confirmedInputs)
+        assertEquals(0, practice.state.value.correct)
+    }
+
+    @Test fun numberedFlatDInputSavesUndoRedoAndReopensTheRealTransposition() =
+        numberedKeyPersists("1=bD", -5, 1, "D♭4")
+
+    @Test fun numberedSharpFInputSavesUndoRedoAndReopensTheRealTransposition() =
+        numberedKeyPersists("1=#F", 6, 6, "F♯4")
+
+    @Test fun unsupportedNumberedSpellingCannotWriteOrPretendToPreviewAnotherKey() {
+        val (_, original) = openTestScore()
+        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
+        compose.onNodeWithTag("transpose_numbered_key").performScrollTo().performTextReplacement("1=#D")
+        compose.onNodeWithTag("transpose_error").assertTextContains("超出七升七降调号范围", substring = true)
+        compose.onNodeWithTag("transpose_apply").assertIsNotEnabled()
+        compose.onNodeWithTag("transpose_after").assertDoesNotExist()
+        compose.onNodeWithTag("transpose_resolved_key").assertDoesNotExist()
+        compose.onNodeWithTag("transpose_numbered_key").performTextReplacement("1=bbD")
+        compose.onNodeWithTag("transpose_error").assertTextContains("只支持一个升号或降号", substring = true)
+        compose.onNodeWithTag("transpose_apply").assertIsNotEnabled()
+        assertEquals(0L, workbench.state.value.revision!!.generation)
+        assertEquals(original, workbench.state.value.revision!!.current)
+    }
+
+    @Test fun missingSourceKeyBlocksNumberedInputButDoesNotInventAKeyDuringSemitoneShift() {
+        val (_, original) = openTestScore()
+        val first = original.parts.single().measures.single()
+        compose.runOnUiThread { workbench.edit(ScorePatch.UpdateMeasure(first.id, first.time, null, first.clefs, first.declaredStaves), null) }
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
+        compose.onNodeWithTag("transpose_mode_key").assertIsSelected()
+        compose.onNodeWithTag("transpose_unknown_key").assertExists()
+        compose.onNodeWithTag("transpose_original_key").assertDoesNotExist()
+        compose.onNodeWithTag("transpose_numbered_key").assertIsNotEnabled()
+        compose.onNodeWithTag("transpose_apply").assertIsNotEnabled()
+        compose.onNodeWithTag("transpose_mode_semitone").performScrollTo().performClick()
+        compose.onNodeWithTag("transpose_semitones").performScrollTo().performTextReplacement("2")
+        compose.onNodeWithTag("transpose_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 2L }
+        assertNull(workbench.state.value.error)
+        val changed = workbench.state.value.revision!!.current.parts.single().measures.single()
+        assertNull(changed.fifths)
+        assertEquals(62, changed.events.first().pitch!!.midi)
     }
 
     @Test fun realPlaybackAdvancesAudioHeadAndLeavingStopsIt() {
@@ -345,6 +460,61 @@ class ScoreWorkbenchUiTest {
             part.copy(measures = part.measures.map { it.copy(time = null) })
         })
         return changed.copy(issues = ScoreEditing.validate(changed))
+    }
+
+    private fun transposeToD() {
+        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
+        compose.onNodeWithTag("transpose_mode_key").assertIsSelected()
+        compose.onNodeWithTag("transpose_original_key").assertTextContains("1=C", substring = true)
+        compose.onNodeWithTag("transpose_apply").assertIsNotEnabled()
+        compose.onNodeWithTag("transpose_numbered_key").performScrollTo().performTextReplacement("1=D")
+        compose.onNodeWithTag("transpose_shift_preview").assertTextContains("升 2 个半音", substring = true)
+        compose.onNodeWithTag("transpose_pitch_preview").performScrollTo().assertTextContains("D4", substring = true)
+        assertEquals(0L, workbench.state.value.revision!!.generation)
+        assertEquals(60, workbench.state.value.revision!!.current.parts.first().measures.first().events.first().pitch!!.midi)
+        compose.onNodeWithTag("transpose_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        assertNull(workbench.state.value.error)
+        compose.onNodeWithTag("transpose_apply").assertDoesNotExist()
+    }
+
+    private fun numberedKeyPersists(input: String, fifths: Int, semitones: Int, expectedFirstName: String) {
+        val (id, original) = openTestScore()
+        scroll("score_transpose"); compose.onNodeWithTag("score_transpose").performClick()
+        compose.onNodeWithTag("transpose_mode_key").assertIsSelected()
+        compose.onNodeWithTag("transpose_numbered_key").performScrollTo().performTextReplacement(input)
+        compose.onNodeWithTag("transpose_resolved_key").assertTextContains(input, substring = true)
+        compose.onNodeWithTag("transpose_shift_preview").assertTextContains("升 $semitones 个半音", substring = true)
+        compose.onNodeWithTag("transpose_pitch_preview").performScrollTo().assertTextContains(expectedFirstName, substring = true)
+        assertEquals(0L, workbench.state.value.revision!!.generation)
+        assertEquals(original, workbench.state.value.revision!!.current)
+        compose.onNodeWithTag("transpose_apply").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 1L }
+        assertNull(workbench.state.value.error)
+        val saved = workbench.state.value.revision!!.current
+        val measure = saved.parts.single().measures.single()
+        assertEquals(fifths, measure.fifths)
+        assertEquals(expectedFirstName, measure.events.first().pitch!!.displayName)
+        val originalMidi = ScoreTimelineCompiler.compile(original).notes.map { it.midi }.sorted()
+        assertEquals(originalMidi.map { it + semitones }, workbench.state.value.timeline!!.notes.map { it.midi }.sorted())
+        assertEquals(saved, ScoreRevisionStore(File(context.filesDir, "score-revisions")).load(id, original).current)
+        compose.waitForIdle()
+        compose.onNodeWithTag("current_digital_score").assertIsDisplayed()
+        compose.onNodeWithTag("notation_${measure.id}").assertContentDescriptionContains(expectedFirstName, substring = true)
+        scroll("score_undo"); compose.onNodeWithTag("score_undo").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 2L }
+        assertEquals(original, workbench.state.value.revision!!.current)
+        compose.onNodeWithTag("score_redo").performClick()
+        compose.waitUntil(10_000) { !workbench.state.value.busy && workbench.state.value.revision?.generation == 3L }
+        assertEquals(saved, workbench.state.value.revision!!.current)
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) { !imports.state.value.importing }
+        compose.runOnUiThread { imports.openScore(id) }
+        compose.waitUntil(10_000) { !imports.state.value.importing && imports.state.value.selectedMetadata?.scoreId == id }
+        assertEquals(saved, imports.state.value.selectedScore)
+        assertEquals(original, imports.state.value.selectedOriginal)
+        assertArrayEquals(requireNotNull(ownedDocuments[original.id]).bytes,
+            ScoreSourceStore(File(context.filesDir, "digital-scores")).load(original.id).bytes)
     }
 
     private fun openTestScore(): Pair<String, DigitalScore> {

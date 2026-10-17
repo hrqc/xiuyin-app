@@ -44,7 +44,7 @@ select_emulator = _selector_module.select_emulator
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "com.xiuyin.app"
-VERSION = "0.3.0-octave.2-fieldtest.6"
+VERSION = "0.3.0-octave.2-fieldtest.7"
 KNOWN_SUITE = "TEST-dotiam-independent2.xml"
 KNOWN_CLASS = PACKAGE + ".practice.PracticePcmIntegrationTest"
 KNOWN_METHOD = "productionPcmToFollowerAndDurableReport"

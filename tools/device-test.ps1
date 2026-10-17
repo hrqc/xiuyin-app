@@ -258,6 +258,9 @@ $completionEvidence = $null
 $omrEvidence = $null
 $omrContext = $null
 $omrDirectory = $null
+$userPhotoContext = $null
+$userPhotoDirectory = $null
+$userPhotoEvidence = $null
 $boundaryContext = $null
 $boundaryDirectory = $null
 try {
@@ -393,6 +396,43 @@ try {
         if ($copied.exitCode -ne 0 -or $checked.exitCode -ne 0 -or $checked.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $entry[2]) { throw '设备真实S02输入原字节SHA不一致。' }
         $inputIndex++
     }
+    # Exact newly supplied camera page: isolated nonce path, no substitution and no skipped test.
+    $userPhotoSource = Join-Path $projectRoot 'reports\fieldtest7-development\user-photo-repro\user-original.jpg'
+    $userPhotoExpectedSha = 'db00943990d83b96c4cb57be7919b9d22241a14b761c6379a82493db1ad3b450'
+    if (-not (Test-Path -LiteralPath $userPhotoSource -PathType Leaf) -or (Get-ArtifactSha256 -Path $userPhotoSource) -cne $userPhotoExpectedSha) {
+        throw '本次用户问题原图缺失或冻结 SHA 不符；禁止换图或跳过真实导入。'
+    }
+    $userPhotoNonce = [guid]::NewGuid().ToString('N')
+    $userPhotoInputName = 'user-photo-' + $userPhotoNonce + '.jpg'
+    $userPhotoPrivate = 'files/' + $userPhotoInputName
+    $userPhotoTemporary = '/data/local/tmp/xiuyin-' + $userPhotoInputName
+    $userPhotoDirectory = Join-Path $outputRoot ('user-photo\' + $userPhotoNonce.Substring(0, 16))
+    if (Test-Path -LiteralPath $userPhotoDirectory) { throw '拒绝复用本次用户原图证据目录。' }
+    New-Item -ItemType Directory -Path $userPhotoDirectory | Out-Null
+    $userPhotoContext = [ordered]@{
+        mainRunId = $traceRunId; device = $deviceSerial; gitCommit = $boundaryContext.gitCommit
+        sourcePath = $userPhotoSource; sourceBytes = (Get-Item -LiteralPath $userPhotoSource).Length; sourceSha256 = $userPhotoExpectedSha
+        inputName = $userPhotoInputName; temporaryPath = $userPhotoTemporary; privatePath = $userPhotoPrivate
+        appSha256 = $traceContext.appSha256; testApkSha256 = $traceContext.testApkSha256
+        prepared = $false; musicalAcceptance = 'UNVERIFIED'; commands = @(); files = @()
+    }
+    $userPhotoEvidence = [ordered]@{ directory = $userPhotoDirectory; status = 'NOT_VERIFIED'; musicalAcceptance = 'UNVERIFIED' }
+    function Invoke-UserPhotoCapture([string[]]$Arguments, [string]$Name) {
+        $capture = Invoke-BoundaryCapture -Arguments $Arguments -Name $Name -Directory $userPhotoDirectory -Context $userPhotoContext
+        $userPhotoContext.commands[-1].arguments = @($Arguments)
+        return $capture
+    }
+    $userPhotoAbsent = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'test', '!', '-e', $userPhotoPrivate) -Name 'input-absent.log'
+    if ($userPhotoAbsent.exitCode -ne 0) { throw '用户原图本轮私有名称已存在或无法确认；不覆盖。' }
+    $userPhotoPush = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'push', $userPhotoSource, $userPhotoTemporary) -Name 'input-push.log'
+    if ($userPhotoPush.exitCode -ne 0) { throw '用户问题原图 push 失败。' }
+    $userPhotoCopy = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'cp', $userPhotoTemporary, $userPhotoPrivate) -Name 'input-copy.log'
+    if ($userPhotoCopy.exitCode -ne 0) { throw '用户问题原图复制到本轮私有路径失败。' }
+    $userPhotoSha = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'run-as', 'com.xiuyin.app', 'sha256sum', $userPhotoPrivate) -Name 'input-device-sha.log'
+    if ($userPhotoSha.exitCode -ne 0 -or $userPhotoSha.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $userPhotoExpectedSha -or
+        (Get-ArtifactSha256 -Path $userPhotoSource) -cne $userPhotoExpectedSha) { throw '本轮用户原图的源文件/设备私有文件 SHA 不一致。' }
+    $userPhotoContext.prepared = $true
+    $userPhotoContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $userPhotoDirectory 'input-context.json') -Encoding utf8
     Save-BoundaryInstalledIdentity -Phase 'before'
     $oldBoundary = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'if [ -f /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json ]; then sha256sum /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json; else echo ABSENT; fi') -Name 'before-report-sha.log'
     if ($oldBoundary.exitCode -ne 0) { throw '无法读取边界测试旧报告状态。' }
@@ -400,7 +440,7 @@ try {
     if ($beforeClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$') { throw '无法读取边界测试设备开始时间。' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'clavierWav', $clavierWav, '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrUserPhotoInput', $userPhotoInputName, '-e', 'omrUserPhotoSha256', $userPhotoExpectedSha, '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'clavierWav', $clavierWav, '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $afterClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'after-clock.log'
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
@@ -540,6 +580,70 @@ try {
     } finally {
         $omrContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $omrDirectory 'omr-context.json') -Encoding utf8
     }
+    # Preserve this exact user's full current-run archive, including failed .pending output.
+    $userPhotoFailure = $null
+    try {
+        $userPhotoContext.instrumentationExitCode = $instrumentation.exitCode
+        $userPhotoContext.instrumentationLogSha256 = Get-ArtifactSha256 -Path (Join-Path $outputRoot 'instrumentation.log')
+        $photoPaths = [regex]::Matches($instrumentation.output, '(?m)^INSTRUMENTATION_RESULT: OMR_USER_PHOTO_RESULT=([^\r\n]+)\s*$')
+        if ($photoPaths.Count -ne 1) { throw '用户原图用例没有返回唯一的本次证据路径。' }
+        $photoReportedPath = $photoPaths[0].Groups[1].Value.Trim()
+        if ($photoReportedPath -notmatch '^/(storage/emulated/0|sdcard)/Android/data/com\.xiuyin\.app/files/omr-user-photo-tests/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/report\.json$') { throw '用户原图结果路径越界或不符合独立目录契约。' }
+        $userPhotoContext.testRunId = $Matches[2]
+        $userPhotoContext.reportedResultPath = $photoReportedPath
+        $photoRemote = $photoReportedPath.Substring(0, $photoReportedPath.Length - '/report.json'.Length)
+        $photoManifestPath = Join-Path $userPhotoDirectory 'evidence-manifest.json'
+        $photoPull = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'pull', ($photoRemote + '/evidence-manifest.json'), $photoManifestPath) -Name 'manifest-pull.log'
+        $photoDeviceHash = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', ($photoRemote + '/evidence-manifest.json')) -Name 'manifest-device-sha.log'
+        if ($photoPull.exitCode -ne 0 -or -not (Test-Path -LiteralPath $photoManifestPath -PathType Leaf) -or $photoDeviceHash.exitCode -ne 0 -or
+            $photoDeviceHash.output -notmatch '^([a-f0-9]{64})\s+' -or (Get-ArtifactSha256 -Path $photoManifestPath) -cne $Matches[1]) { throw '用户原图证据清单拉取或原字节 SHA 验证失败。' }
+        $photoManifestSha = Get-ArtifactSha256 -Path $photoManifestPath
+        $photoManifest = Get-Content -LiteralPath $photoManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $photoEntries = @(Get-OmrIndependentManifestEntries -Manifest $photoManifest)
+        $photoPullFailures = @(); $photoIndex = 0
+        foreach ($entry in $photoEntries) {
+            $stem = 'file-' + $photoIndex.ToString('D4')
+            $temporary = Join-Path $userPhotoDirectory ($stem + '.pull')
+            $destination = [IO.Path]::GetFullPath((Join-Path $userPhotoDirectory ($entry.path.Replace('/', '\'))))
+            if (-not $destination.StartsWith(([IO.Path]::GetFullPath($userPhotoDirectory) + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase) -or
+                (Test-Path -LiteralPath $destination) -or (Test-Path -LiteralPath $temporary)) { throw '用户原图证据文件越界或覆盖已有文件。' }
+            $remote = $photoRemote + '/' + $entry.path
+            $pulled = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'pull', $remote, $temporary) -Name ($stem + '-pull.log')
+            $deviceHash = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', $remote) -Name ($stem + '-device-sha.log')
+            if ($pulled.exitCode -ne 0 -or -not (Test-Path -LiteralPath $temporary -PathType Leaf)) { $photoPullFailures += ('用户原图证据未取回：' + $entry.path) }
+            elseif ($deviceHash.exitCode -ne 0 -or $deviceHash.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $entry.sha256 -or
+                (Get-Item -LiteralPath $temporary).Length -ne $entry.bytes -or (Get-ArtifactSha256 -Path $temporary) -cne $entry.sha256) { $photoPullFailures += ('用户原图证据清单/设备/主机原字节不符：' + $entry.path) }
+            else {
+                New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
+                Move-Item -LiteralPath $temporary -Destination $destination
+                $userPhotoContext.files += [ordered]@{ file = $entry.path; bytes = $entry.bytes; sha256 = $entry.sha256 }
+            }
+            $photoIndex++
+        }
+        $photoManifestAfter = Invoke-UserPhotoCapture -Arguments @('-s', $deviceSerial, 'shell', 'sha256sum', ($photoRemote + '/evidence-manifest.json')) -Name 'manifest-after-sha.log'
+        if ($photoManifestAfter.exitCode -ne 0 -or $photoManifestAfter.output -notmatch '^([a-f0-9]{64})\s+' -or $Matches[1] -cne $photoManifestSha) { $photoPullFailures += '用户原图证据清单在传输期间变化。' }
+        if ($photoPullFailures.Count -gt 0) { throw ($photoPullFailures -join '；') }
+        $userPhotoContext.files += [ordered]@{ file = 'evidence-manifest.json'; bytes = (Get-Item -LiteralPath $photoManifestPath).Length; sha256 = $photoManifestSha }
+        $photoReport = Get-Content -LiteralPath (Join-Path $userPhotoDirectory 'report.json') -Raw -Encoding utf8 | ConvertFrom-Json
+        if ($photoReport.runId -cne $userPhotoContext.testRunId -or $photoReport.expectedInputSha256 -cne $userPhotoExpectedSha -or
+            $photoReport.appApkSha256 -cne $traceContext.appSha256 -or $photoReport.testApkSha256 -cne $traceContext.testApkSha256 -or
+            (Get-ArtifactSha256 -Path (Join-Path $userPhotoDirectory 'original-input.document')) -cne $userPhotoExpectedSha) { throw '用户原图报告运行身份、APK 或原始输入不匹配。' }
+        if ($photoReport.status -cne 'IMPORT_AND_REPOSITORY_READBACK_PASSED_NEEDS_REVIEW' -or $photoReport.scoreStatus -cne 'NEEDS_REVIEW' -or
+            $photoReport.repositoryReload -cne 'NEW_SERVICE_SAME_PROCESS_PASSED' -or $photoReport.rawOutputPresent -ne $true -or
+            $photoReport.musicalAccuracy -cne 'UNVERIFIED' -or $photoReport.physicalPhoneAcceptance -cne 'UNVERIFIED') { throw '用户原图真实导入/原始输出/新服务读回未通过；已保留本轮失败证据，不宣称音乐准确率通过。' }
+        if ($beforeClock.exitCode -ne 0 -or $afterClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$' -or $afterClock.output.Trim() -notmatch '^\d{10,}$') { throw '用户原图本轮设备时间窗口缺失。' }
+        $photoStarted = [DateTimeOffset]::Parse($photoReport.startedAt).ToUnixTimeMilliseconds()
+        $photoFinished = [DateTimeOffset]::Parse($photoReport.finishedAt).ToUnixTimeMilliseconds()
+        if ($photoStarted -lt ([long]$beforeClock.output.Trim() * 1000) -or $photoFinished -gt ([long]$afterClock.output.Trim() * 1000 + 999) -or $photoFinished -lt $photoStarted) { throw '用户原图证据不属于本次主仪器测试时间窗口。' }
+        $photoCase = @($result.cases | Where-Object { $_.className -ceq 'com.xiuyin.app.omr.OmrUserPhotoRealTest' -and $_.testName -ceq 'exactUserPhotoUsesProductionImportAndPreservesAllAvailableEvidence' })
+        if ($photoCase.Count -ne 1 -or $photoCase[0].statusCode -ne 0) { throw '本次完整仪器日志未确认唯一用户原图用例真实通过。' }
+        $userPhotoEvidence.status = 'PASSED'; $userPhotoEvidence.report = Join-Path $userPhotoDirectory 'report.json'; $userPhotoEvidence.manifestSha256 = $photoManifestSha
+    } catch {
+        $userPhotoFailure = $_.Exception.Message
+        $userPhotoEvidence.status = 'FAILED'; $userPhotoEvidence.failure = $userPhotoFailure
+    } finally {
+        $userPhotoContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $userPhotoDirectory 'user-photo-context.json') -Encoding utf8
+    }
     # Preserve complete diagnostic bytes even if another main-suite assertion failed.
     $traceRemote = '/sdcard/Android/data/com.xiuyin.app/files/independent-pcm-traces/' + $traceRunId
     foreach ($name in @('metadata.json', 'frames.jsonl', 'engine-status.jsonl', 'practice-replay-result.json')) {
@@ -553,6 +657,7 @@ try {
     if ($boundaryFailure) { throw $boundaryFailure }
     if ($completionFailure) { throw $completionFailure }
     if ($omrFailure) { throw $omrFailure }
+    if ($userPhotoFailure) { throw $userPhotoFailure }
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
     $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
     # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
@@ -601,12 +706,15 @@ try {
     if ($omrContext -and $omrDirectory -and -not (Test-Path -LiteralPath (Join-Path $omrDirectory 'omr-context.json'))) {
         $omrContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $omrDirectory 'omr-context.json') -Encoding utf8
     }
+    if ($userPhotoContext -and $userPhotoDirectory -and -not (Test-Path -LiteralPath (Join-Path $userPhotoDirectory 'user-photo-context.json'))) {
+        $userPhotoContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $userPhotoDirectory 'user-photo-context.json') -Encoding utf8
+    }
     if (Test-Path -LiteralPath $outputRoot -PathType Container) {
         [ordered]@{
             executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
             startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
             status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
-            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence; omrIndependent = $omrEvidence
+            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence; omrIndependent = $omrEvidence; omrUserPhoto = $userPhotoEvidence
         } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
     }
 }
