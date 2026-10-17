@@ -13,6 +13,9 @@ import com.xiuyin.app.practice.PracticeReportStore
 import com.xiuyin.app.playback.ScorePlaybackEngine
 import com.xiuyin.app.playback.ScorePlaybackPlan
 import android.util.Log
+import android.graphics.Bitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.io.File
@@ -291,6 +294,85 @@ class ScoreWorkbenchUiTest {
         compose.onNodeWithTag("nav_home").performClick()
         compose.waitUntil(5_000) { !workbench.playback.value.playing }
         assertFalse(workbench.playback.value.playing)
+    }
+
+    @Test fun manualDragKeepsLoopPlaybackControlsReachableAcrossOnsetsAndRestartFollowsAgain() {
+        val (_, original) = openTestScore()
+        val evidence = File(context.filesDir, "test-workbench-playback-scroll/${UUID.randomUUID()}").also { check(it.mkdirs()) }
+        fun capture(name: String) {
+            compose.waitForIdle()
+            File(evidence, "$name.png").outputStream().use { output ->
+                check(compose.onNodeWithTag("workbench").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+        }
+        fun dragToStop() {
+            val viewport = compose.onNodeWithTag("workbench").fetchSemanticsNode().boundsInRoot
+            val desiredY = viewport.top + viewport.height * 0.72f
+            // Real touch drags, not a semantic/programmatic scroll: only a user's drag may suspend following.
+            for (attempt in 0 until 12) {
+                val stop = compose.onNodeWithTag("score_stop")
+                val displayed = stop.isDisplayed()
+                val delta = if (displayed) desiredY - stop.fetchSemanticsNode().boundsInRoot.center.y else viewport.height * 0.28f
+                if (displayed && kotlin.math.abs(delta) < 18f * context.resources.displayMetrics.density) break
+                val distance = delta.coerceIn(-viewport.height * 0.28f, viewport.height * 0.28f)
+                compose.onNodeWithTag("workbench").performTouchInput {
+                    val start = Offset(width * 0.9f, height * 0.5f)
+                    down(start)
+                    repeat(8) { step -> moveTo(start + Offset(0f, distance * (step + 1) / 8), delayMillis = 80) }
+                    advanceEventTime(250)
+                    up()
+                }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithTag("score_stop").assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("current_digital_score").assertIsNotDisplayed()
+        }
+        scroll("display_BOTH"); compose.onNodeWithTag("display_BOTH").performClick()
+        scroll("playback_loop"); compose.onNodeWithTag("playback_loop").performClick().assertIsSelected()
+        scroll("score_play"); compose.onNodeWithTag("score_play").performClick()
+        compose.waitUntil(15_000) { workbench.playback.value.playedSamples > ScorePlaybackEngine.SAMPLE_RATE / 5 || workbench.playback.value.error != null }
+        assertNull(workbench.playback.value.error)
+        assertTrue(workbench.playback.value.playing)
+        compose.waitUntil(5_000) { compose.onNodeWithTag("current_digital_score").isDisplayed() }
+        capture("01-audio-following")
+        dragToStop()
+        capture("02-manually-reached-stop")
+        val stopBounds = compose.onNodeWithTag("score_stop").fetchSemanticsNode().boundsInRoot
+        var previousBeat = workbench.playback.value.positionBeat
+        var observedLoops = 0
+        val observedActiveSets = mutableSetOf<Set<String>>()
+        compose.waitUntil(15_000) {
+            val playback = workbench.playback.value
+            assertNull(playback.error)
+            assertTrue("The real AudioTrack loop must remain playing", playback.playing)
+            assertTrue(playback.writtenSamples >= playback.playedSamples)
+            assertTrue("Playback must not drag the user away from Stop", compose.onNodeWithTag("score_stop").isDisplayed())
+            val nowBounds = compose.onNodeWithTag("score_stop").fetchSemanticsNode().boundsInRoot
+            assertEquals("Manual viewport must stay stable across onsets", stopBounds.top, nowBounds.top, 2f)
+            if (playback.positionBeat < previousBeat - 1) observedLoops++
+            previousBeat = playback.positionBeat
+            observedActiveSets += requireNotNull(workbench.state.value.timeline).events.filter {
+                playback.positionBeat >= it.startBeat.toDouble() && playback.positionBeat < it.endBeat.toDouble()
+            }.map { it.eventId }.toSet()
+            observedLoops >= 2 && observedActiveSets.size >= 3
+        }
+        capture("03-stop-still-reachable-after-two-loops")
+        compose.onNodeWithTag("score_stop").performClick()
+        compose.waitUntil(5_000) { !workbench.playback.value.playing }
+        compose.onNodeWithTag("score_stop").assertIsNotEnabled()
+        capture("04-stopped-from-visible-button")
+        // A new explicit session restores following; loop iterations above must not restore it.
+        compose.onNodeWithTag("score_play").performClick()
+        compose.waitUntil(15_000) { workbench.playback.value.playedSamples > ScorePlaybackEngine.SAMPLE_RATE / 5 || workbench.playback.value.error != null }
+        assertNull(workbench.playback.value.error)
+        assertTrue(workbench.playback.value.playing)
+        compose.waitUntil(5_000) { compose.onNodeWithTag("current_digital_score").isDisplayed() }
+        capture("05-new-session-following-restored")
+        dragToStop()
+        compose.onNodeWithTag("score_stop").performClick()
+        compose.waitUntil(5_000) { !workbench.playback.value.playing }
+        assertEquals(original, workbench.state.value.revision!!.current)
+        Log.i("XiuyinWorkbenchTest", "TEST DATA actual AudioTrack loops=$observedLoops activeSets=${observedActiveSets.size} restartFollow=true evidence=${evidence.name}")
     }
 
     @Test fun pausedPracticeRequiresExplicitFinishBeforeOpeningDifferentScore() {

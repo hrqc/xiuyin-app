@@ -1,12 +1,15 @@
 # 0.3.0-octave.2-fieldtest.7 · 大照片导入、可见移调与简谱音区点 · 2026-10-17（候选）
 
+历史候选 `0871efd` 的手动验收为 FAILED/PAUSE：双谱循环试听时，手动向上拖动被自动跟随拉回，停止控件难以抵达。已通过 HOME 停止试听，`manual-final-a` 原始失败证据保留，未 finalize、Tag、Push 或交付。现已增量修复手动拖动暂停本次试听自动跟随、下一次试听恢复跟随，针对性实际回归已通过；新候选 Commit 与完整 prepare/post/manual/finalize 尚未执行，当前未交付。
+
+- 试听滚动：仅真实手动拖动暂停本次试听的自动跟随，程序滚动不视为手动操作；循环内保留用户位置，新一次试听恢复跟随。真实 AudioTrack 回归验证两次循环、3 组活动事件、停止按钮位置稳定且实际可停止、重新播放恢复跟随，谱数据不变；日志为 `loops=2 activeSets=3 restartFollow=true`（2026-10-17 04:03:21 UTC，证据 `fa6ac4e2-451e-4175-bb37-e6316ed43b44`）。`reports/fieldtest7-development/targeted-r4/playback-scroll/` 的5张PNG已实际读回并逐文件匹配设备SHA，02/03完全同SHA，03停止按钮可见启用，04已停止、05恢复跟随。该 TEST DATA 用例为单小节循环，不能代替后续完整同包手动验收或音乐准确率验证。
 - 新增音区点布局：按用户参考图将上/下圆点对齐数字真实字形中心；升降号单独左置，低点避开全部减时线，和弦行距及点击/高亮同步，右侧时值附点保持独立。6项布局测试和7项真实Canvas像素/点击测试已通过；上下两点、升降号、短时值和弦、双谱、±12移调与纯五线谱回归均实跑。此前候选 `37b89bfae2388ae42f0642398ba33b2c38f77edb` 的完整 prepare、回退及同包3谱/15WAV工程回归已通过，原音乐失败保留、无新增退化；尚未finalize/Tag/Push/交付。该证据不覆盖追加点号改动，后续须重新完整验证。
 - 修复 >8MP 图片在有界缩小前被拒；保留原始文档/SHA，记录实际采样、方向、输出尺寸与坐标系。选择器开放图片类型，由真实解码器决定格式支持；损坏/动图/预算错误可见。归档额度包含原件、识谱副本和有界失败证据。
 - 新增 `1=音名` 默认移调入口：`1=bD`、`1=#F` 自动匹配调号并移动真实音高，保留调式；非法拼写明确拒绝。显示实际升降方向和前后五线谱，另保留半音 −1/+1、数字及八度操作；保存成功定位更新后的双谱。原图仅作对照，小节调号编辑与整体移调分开。无调号不猜调、不用字母冒充简谱；防止极端输入溢出及零半音无效保存。
-- 最新提交前已实跑：369 JVM、37 Android 全部通过，0 失败/跳过；Lint、Debug 和测试 APK 编译通过（`initial-build-r6.log`、`targeted-r3/`）。日志无 FATAL EXCEPTION 或本 App ANR。旧版交互的359 JVM/25 Android结果和失败尝试保留。覆盖实际 Canvas、`1=bD/1=#F` 保存/撤销/重开、试听与陪练目标同步、12MP/EXIF/WebP、模型失败留证、14.2MP派生谱及精确用户原图重新推理和新Service读回。导入成功仍 NEEDS_REVIEW，非音乐准确率通过。
+- 最新提交前已实跑：r7 的 369 JVM、`targeted-r4/` 的 38 Android 全部通过，0 失败/跳过；Lint、Debug 和测试 APK 编译通过（`initial-build-r7.log`）。Android 用时 127.549 秒，日志无 FATAL EXCEPTION 或本 App ANR。覆盖新增真实 AudioTrack 手动滚动/停止/重启，以及实际 Canvas、`1=bD/1=#F` 保存/撤销/重开、试听与陪练目标同步、12MP/EXIF/WebP、模型失败留证、14.2MP派生谱及精确用户原图重新推理和新Service读回。导入成功仍 NEEDS_REVIEW，非音乐准确率通过。旧 359 JVM/25 Android、r6/`targeted-r3/` 的 369 JVM/37 Android 结果和失败尝试保留。
 - 用户精确问题原图已通过系统选择器导入和保存：2443×3480 超过旧像素门限。自动结果仍为上下谱表16/15小节、2项结构ERROR；147提示中其余145为警告，完整识谱未通过，不能直接正式陪练。实际证据 `reports/fieldtest7-development/user-photo-repro/`；原图/raw/失败尝试均保留。
 - 未验证：物理手机各格式与真实琴房；旧 OMR 和独立音频音乐失败未解决，不改识音模型/阈值，不宣称八度问题解决。格式/尺寸等模型前错误仅有错误日志，不能泛称已有完整模型输出归档。原库、修订、PRODUCT/AGENTS 保留。
-- Git：基线 `.6` / `d4e42053f82814a5ca78fbdfefe72d2adb86107d`；当前条目为候选提交前记录。完整同包门禁后才能 Tag/Push；最终完整 Commit、`v0.3.0-octave.2-fieldtest.7`、真实 Push 与 APK SHA 由对应 `outputs/field-tests/` 清单核验，缺清单即未交付。稳定 main 为 `v0.2.0`；优先 revert，可回到 `.6`，不重建用户数据库。
+- Git：基线 `.6` / `d4e42053f82814a5ca78fbdfefe72d2adb86107d`；当前为滚动修复后的候选提交前记录，新 Commit、完整 prepare/post/manual/finalize 尚未执行。完整同包门禁后才能 Tag/Push；最终完整 Commit、`v0.3.0-octave.2-fieldtest.7`、真实 Push 与 APK SHA 由对应 `outputs/field-tests/` 清单核验，缺清单即未交付。稳定 main 为 `v0.2.0`；优先 revert，可回到 `.6`，不重建用户数据库。
 
 # 0.3.0-octave.2-fieldtest.6 · 单音参考、谱面证据与范围修谱 · 2026-10-15
 

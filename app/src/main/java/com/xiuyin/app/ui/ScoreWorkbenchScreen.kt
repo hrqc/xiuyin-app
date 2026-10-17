@@ -1,6 +1,7 @@
 package com.xiuyin.app.ui
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -70,6 +71,12 @@ fun ScoreWorkbenchScreen(
     val selected = measures.flatMap { it.second.events }.firstOrNull { it.id == state.selectedEventId }
     val active = state.timeline?.events?.filter { playback.playing && playback.positionBeat >= it.startBeat.toDouble() && playback.positionBeat < it.endBeat.toDouble() }?.map { it.eventId }?.toSet().orEmpty()
     val list = rememberLazyListState()
+    val userDragging by list.interactionSource.collectIsDraggedAsState()
+    // A new playback session restores following; loop iterations keep the user's scroll choice.
+    var followPlayback by remember(state.scoreId, playback.playing) { mutableStateOf(true) }
+    LaunchedEffect(userDragging, playback.playing) {
+        if (userDragging && playback.playing) followPlayback = false
+    }
     val scope = rememberCoroutineScope()
     val reviewIssues = score?.let { ScoreStructureTools.reviewIssues(it, state.timeline) }.orEmpty()
     val preparation = score?.let { ScoreStructureTools.preparationNeeds(it, reviewIssues) }
@@ -103,8 +110,8 @@ fun ScoreWorkbenchScreen(
             }
         }
     }
-    LaunchedEffect(playback.playing, active.firstOrNull()) {
-        if (playback.playing) {
+    LaunchedEffect(playback.playing, active.firstOrNull(), followPlayback, userDragging) {
+        if (playback.playing && followPlayback && !userDragging) {
             val index = measures.indexOfFirst { (_, m) -> m.events.any { it.id in active } }
             if (index >= 0 && index + 4 !in list.layoutInfo.visibleItemsInfo.map { it.index }) list.animateScrollToItem(index + 4)
         }
@@ -199,7 +206,7 @@ fun ScoreWorkbenchScreen(
                     Slider(bpm.toFloat(), { bpm = it.roundToInt() }, valueRange = 30f..240f, modifier = Modifier.testTag("playback_tempo"))
                     Slider(volume, { volume = it }, valueRange = 0f..1f, modifier = Modifier.testTag("playback_volume"))
                     Row {
-                        FilterChip(loop, { loop = !loop }, { Text("循环") })
+                        FilterChip(loop, { loop = !loop }, { Text("循环") }, modifier = Modifier.testTag("playback_loop"))
                         Spacer(Modifier.width(8.dp))
                         FilterChip(metronome, { metronome = !metronome }, { Text("节拍器") })
                     }
