@@ -1,11 +1,13 @@
 # 当前开发：0.3.0-octave.2-fieldtest.7（versionCode 12，2026-10-17）
 
+最新追加：用户提供简谱参考图，要求用数字上/下圆点表示音区。现有绘制的点位偏向升降号、低点与减时线重叠、和弦点击/绘制行距不一致已增量修复，新增6项布局测试和7项真实Canvas测试通过。15张实际渲染截图已归档并查看，见 `reports/fieldtest7-development/targeted-r3/numbered-canvas/`；A0/C8四点有布局测试，真机显示仍未验证。以下完整发布结果属于此前候选 `37b89bfae2388ae42f0642398ba33b2c38f77edb`，不能替代追加点号改动后的验证。该候选已完成完整 prepare（363 JVM、239 主 Android，附加旧独立集1项音乐失败保留）、真实回退和同APK3谱/15WAV回归，无新增退化；尚未手动验收/finalize/Tag/Push，未交付。原证据 `reports/fieldtest-20261017T024948Z-6cd26e86/` 和 `reports/fieldtest7-development/post-final-a/` 保留，追加源码须重新提交与完整门禁。
+
 本轮修复图片导入兼容性与移调显示，对应 PRODUCT 第 5/6/7 节。保留原有识谱、修谱、试听、实时陪练、音频诊断及数据库；AGENTS/PRODUCT 未修改。当前候选的针对性提交前工程验证已通过，完整发布门禁尚未完成，不是稳定版或现场音乐验收。
 
 - 基线已核对：上一完整 Field `.6` / `d4e42053f82814a5ca78fbdfefe72d2adb86107d`，本地交付清单为 FIELD_TEST_ONLY、工程通过、音乐失败；旧段落中的 PAUSE 是当时开发历史，不覆盖该最终清单。稳定 main 仍为 `v0.2.0` / `dbe1a852d2609126f1688039110ec0187808af63`。
 - 图片：修复超过 800 万像素的相机照片在缩小前被拒绝；先有界采样，再按 EXIF 转正，原件/SHA 不变。选择器允许 image/*；实际格式由本机解码能力决定，损坏文件、动图和超过安全预算的输入显示具体原因。归档预算计入原件、副本和失败诊断，不删除旧数据。
 - 移调：默认直接输入 `1=bD`、`1=#F` 等首调 do 格式，匹配七升七降的真实拼写，保留原调式；不偷换成等音调名。按最近方向整体移调，预览明确升降数；高级半音 −1/+1、数字输入和上下八度保留。显示真实前后五线谱，保存成功自动定位当前数字谱；原图只供对照，小节调号校正与整谱移调说明分开。原调号未知时禁止猜调，简谱提示待确认，不用字母充当数字谱。
-- 最新提交前构建：363 项 App JVM 通过、0 失败/跳过；Lint、App/测试 APK 编译通过（`initial-build-r5.log`）。较早的 359 JVM/25 Android 通过保留在 `targeted-r1/`；最新 `targeted-r2/` 的 30 项 Android 全部通过、0 失败/跳过，日志无 FATAL EXCEPTION 或本 App ANR。覆盖 `1=bD/1=#F` 的保存/撤销/重做/重开、未知调号、真实 Canvas、试听与陪练修订同步、两张实际模型导入。用户原图本轮重新推理并核验原件哈希，新 Service 实例读回通过；不是进程重启或音乐准确率通过。
+- 最新提交前构建：369 项 App JVM 通过、0 失败/跳过；Lint、App/测试 APK 编译通过（`initial-build-r6.log`）。较早的 359 JVM/25 Android 通过保留在 `targeted-r1/`；最新 `targeted-r3/` 的 37 项 Android 全部通过、0 失败/跳过，日志无 FATAL EXCEPTION 或本 App ANR。覆盖 `1=bD/1=#F` 的保存/撤销/重做/重开、未知调号、真实 Canvas、试听与陪练修订同步、两张实际模型导入。用户原图本轮重新推理并核验原件哈希，新 Service 实例读回通过；不是进程重启或音乐准确率通过。
 - 真实谱派生高像素输入：3237×4386（TEST DATA：既有真实谱图放大，不是新的手机拍照）通过生产模型导入、原件 SHA 核验及新 Service 实例读回；推理副本为 1619×2193，仍有 117 项识谱疑点，状态 NEEDS_REVIEW。此结果仅证明原先被拒的尺寸可导入，不能称音符准确率通过。证据 `reports/fieldtest7-development/targeted-r1/`，构建日志 `initial-build-r3.log`；前两次构建失败亦保留。
 - 下一步：干净候选提交后完整 prepare、同 APK 三谱/15 WAV 回归、实际界面与系统日志保存、finalize；任一关键失败即 PAUSE，不能交付候选。最终 Commit、Tag、实际 Push、APK SHA 以 `outputs/field-tests/v0.3.0-octave.2-fieldtest.7/fieldtest-manifest.json` 为准，清单未生成不代表已交付。
 - 用户原图：2443×3480 / 649738 字节，SHA `db00943990d83b96c4cb57be7919b9d22241a14b761c6379a82493db1ad3b450`。已通过真实系统选择器导入、命名与保存；旧 >8MP 门限是导入失败原因。当前自动结果仍有 2 项结构 ERROR：第3组上谱多识别一条小节线，上下谱表 16/15 小节；147 项提示中其余145项为警告。两次真实识别均有该错误，不能通过隐藏检查或硬删小节线宣称修复，正式陪练仍阻止。证据 `reports/fieldtest7-development/user-photo-repro/`。

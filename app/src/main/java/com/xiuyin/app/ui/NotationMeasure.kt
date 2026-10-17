@@ -1,6 +1,7 @@
 package com.xiuyin.app.ui
 
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -51,7 +52,7 @@ private fun noteY(pitch: ScorePitch, staff: StaffGeometry): Float {
     val line = staff.clef.line ?: if (staff.clef.sign == "F") 4 else if (staff.clef.sign == "C") 3 else 2
     return staff.top + (5 - line) * SPACE - (diatonic(pitch) - staff.clef.octaveChange * 7 - clefReference(staff.clef)) * SPACE / 2
 }
-private fun geometry(measure: ScoreMeasure, mode: ScoreDisplayMode): Pair<List<StaffGeometry>, Float> {
+private fun geometry(measure: ScoreMeasure, mode: ScoreDisplayMode, numbered: Map<Int, NumberedStaffLayout>): Pair<List<StaffGeometry>, Float> {
     var cursor = 14f
     val staves = (1..max(measure.declaredStaves, measure.events.maxOfOrNull { it.staff } ?: 1)).map { staff ->
         val clef = measure.clefs.firstOrNull { it.staff == staff } ?: ScoreClef(staff, if (staff == 1) "G" else "F", if (staff == 1) 2 else 4)
@@ -60,9 +61,14 @@ private fun geometry(measure: ScoreMeasure, mode: ScoreDisplayMode): Pair<List<S
         val above = max(40f, 35f - (positions.minOrNull() ?: 0f))
         val below = max(30f, (positions.maxOrNull() ?: 40f) - 40f + 30f)
         val top = cursor + if (mode == ScoreDisplayMode.NUMBERED) 0f else above
-        val chordHeight = ((measure.events.filter { it.staff == staff }.groupBy { it.offset }.values.maxOfOrNull { it.size } ?: 1) - 1) * 21
-        val numberedY = if (mode == ScoreDisplayMode.NUMBERED) cursor + 42 + chordHeight else top + 40 + below + 35 + chordHeight
-        cursor = when (mode) { ScoreDisplayMode.STAFF -> top + 40 + below; ScoreDisplayMode.NUMBERED -> numberedY + 40; ScoreDisplayMode.BOTH -> numberedY + 40 }
+        val numberedAbove = numbered[staff]?.above ?: 0f
+        val numberedBelow = numbered[staff]?.below ?: 0f
+        val numberedY = if (mode == ScoreDisplayMode.NUMBERED) cursor + max(42f, numberedAbove + 8)
+            else top + 40 + below + max(35f, numberedAbove + 8)
+        cursor = when (mode) {
+            ScoreDisplayMode.STAFF -> top + 40 + below
+            ScoreDisplayMode.NUMBERED, ScoreDisplayMode.BOTH -> numberedY + max(40f, numberedBelow + 12)
+        }
         StaffGeometry(staff, top, clef, numberedY)
     }
     return staves to cursor + 12f
@@ -101,7 +107,23 @@ fun NotationMeasure(
     val density = LocalDensity.current.density
     val numberedKey = measure.fifths?.takeIf { it in -7..7 }
     val needsNumberedKey = mode != ScoreDisplayMode.STAFF && numberedKey == null
-    val (staffs, height) = remember(measure, mode) { geometry(measure, mode) }
+    val numberedLayouts = remember(measure, numberedKey, density, mode) {
+        if (numberedKey == null || mode == ScoreDisplayMode.STAFF) emptyMap() else {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL); textSize = 18 * density
+            }
+            val boundsCache = mutableMapOf<String, NumberedTextBounds>()
+            measure.events.groupBy { it.staff }.mapValues { (_, events) ->
+                numberedStaffLayout(events, numberedKey) { label -> boundsCache.getOrPut(label) {
+                    val bounds = Rect()
+                    paint.getTextBounds(label, 0, label.length, bounds)
+                    NumberedTextBounds(paint.measureText(label) / density, bounds.left / density, bounds.top / density,
+                        bounds.right / density, bounds.bottom / density)
+                } }
+            }
+        }
+    }
+    val (staffs, height) = remember(measure, mode, numberedLayouts) { geometry(measure, mode, numberedLayouts) }
     val width = max(360f, LEFT + measure.events.map { it.offset }.distinct().size * 43f + 35f)
     val duration = max(measure.time?.duration?.toDouble() ?: 0.0, measure.events.maxOfOrNull { (it.offset + it.duration).toDouble() } ?: 1.0).coerceAtLeast(1.0)
     val hits = remember(measure, mode, width, staffs) {
@@ -111,8 +133,27 @@ fun NotationMeasure(
             val index = group.indexOfFirst { it.id == event.id }
             val secondCollision = index > 0 && event.pitch != null && group[index - 1].pitch?.let { abs(diatonic(event.pitch) - diatonic(it)) <= 1 } == true
             val x = LEFT + (event.offset.toDouble() / duration * (width - LEFT - 32)).toFloat() + if (secondCollision) 12 else 0
-            val y = if (mode == ScoreDisplayMode.NUMBERED) staff.numberedY - index * 18 else event.pitch?.let { noteY(it, staff) } ?: staff.top + 20
+            val y = event.pitch?.let { noteY(it, staff) } ?: staff.top + 20
             NoteHit(event.id, x, y)
+        }
+    }
+    val numberedHits = remember(measure, width, duration, staffs, numberedLayouts) {
+        measure.events.mapNotNull { event ->
+            val layout = numberedLayouts[event.staff]?.events?.get(event.id) ?: return@mapNotNull null
+            val staff = staffs.first { it.staff == event.staff }
+            NoteHit(event.id, LEFT + (event.offset.toDouble() / duration * (width - LEFT - 32)).toFloat(),
+                staff.numberedY + layout.baseline)
+        }.associateBy { it.id }
+    }
+    val pickTargets = remember(hits, numberedHits, numberedLayouts, mode) {
+        val numbers = numberedHits.values.map { hit ->
+            val glyph = numberedLayouts.values.firstNotNullOf { it.events[hit.id] }.glyph
+            NoteHit(hit.id, hit.x + glyph.centerX, hit.y + glyph.centerY)
+        }
+        when (mode) {
+            ScoreDisplayMode.STAFF -> hits
+            ScoreDisplayMode.NUMBERED -> numbers
+            ScoreDisplayMode.BOTH -> hits + numbers
         }
     }
     Column(modifier) {
@@ -124,9 +165,9 @@ fun NotationMeasure(
                 (if (needsNumberedKey) "调号未确认，暂不能生成首调简谱。" else "") +
                 (if (mode == ScoreDisplayMode.NUMBERED && numberedKey == null) "请切换五线谱查看已识别音高。"
                 else measure.events.joinToString { it.pitch?.displayName ?: "休止符" }) }
-            .pointerInput(hits, density, mode, numberedKey) { detectTapGestures { tap ->
+            .pointerInput(pickTargets, density, mode, numberedKey) { detectTapGestures { tap ->
                 if (mode == ScoreDisplayMode.NUMBERED && numberedKey == null) return@detectTapGestures
-                hits.minByOrNull { hypot(tap.x / density - it.x, tap.y / density - it.y) }
+                pickTargets.minByOrNull { hypot(tap.x / density - it.x, tap.y / density - it.y) }
                     ?.takeIf { hypot(tap.x / density - it.x, tap.y / density - it.y) < 28 }
                     ?.let { onSelect(it.id) }
             } }) {
@@ -162,7 +203,8 @@ fun NotationMeasure(
                     val keyLabel = numberedKey?.let { listOf("C", "G", "D", "A", "E", "B", "F♯", "C♯").getOrNull(it) ?: listOf("C", "F", "B♭", "E♭", "A♭", "D♭", "G♭", "C♭")[-it] }
                     native.drawText(if (keyLabel == null) "谱表 ${staff.staff}：简谱待确认调号" else "${staff.staff} · 1=$keyLabel",
                         12 * density, staff.numberedY * density, text)
-                    if (keyLabel != null) line(width - 12, staff.numberedY - 18, width - 12, staff.numberedY + 20)
+                    if (keyLabel != null) line(width - 12, staff.numberedY - max(18f, numberedLayouts[staff.staff]?.above ?: 0f),
+                        width - 12, staff.numberedY + max(20f, numberedLayouts[staff.staff]?.below ?: 0f))
                 }
             }
             for (hit in hits) {
@@ -173,8 +215,8 @@ fun NotationMeasure(
                 music.textSize = SPACE * (if (event.grace) 2.8f else 4f) * density
                 val selected = hit.id == selectedEventId
                 val active = hit.id in activeEventIds
-                if (selected || active) drawCircle(if (active) Color(0xffdce8cb) else Color(0xfff3cfac), 16 * density, Offset((hit.x + 5) * density, hit.y * density))
-                if (hit.id in wrongEventIds) {
+                if (mode != ScoreDisplayMode.NUMBERED && (selected || active)) drawCircle(if (active) Color(0xffdce8cb) else Color(0xfff3cfac), 16 * density, Offset((hit.x + 5) * density, hit.y * density))
+                if (mode != ScoreDisplayMode.NUMBERED && hit.id in wrongEventIds) {
                     drawCircle(Color(0xffb84848), 18 * density, Offset((hit.x + 5) * density, hit.y * density), style = Stroke(2 * density))
                     text.textSize = 14 * density; text.color = 0xffb84848.toInt()
                     native.drawText("×", (hit.x + 14) * density, (hit.y - 18) * density, text)
@@ -212,20 +254,24 @@ fun NotationMeasure(
                     repeat(event.dots) { glyph('', hit.x + 17 + it * 6, hit.y - 3) }
                 }
                 if (mode != ScoreDisplayMode.STAFF && numberedKey != null) {
-                    val group = measure.events.filter { it.staff == event.staff && it.offset == event.offset }.sortedBy { it.pitch?.midi ?: -1 }
-                    val ny = staff.numberedY - group.indexOfFirst { it.id == event.id } * 21
+                    val numberHit = numberedHits.getValue(hit.id)
+                    val layout = numberedLayouts.getValue(event.staff).events.getValue(hit.id).glyph
+                    val nx = numberHit.x
+                    val ny = numberHit.y
+                    val center = Offset((nx + layout.centerX) * density, (ny + layout.centerY) * density)
+                    if (selected || active) drawCircle(if (active) Color(0xffdce8cb) else Color(0xfff3cfac), NUMBERED_HIGHLIGHT_RADIUS * density, center)
+                    if (hit.id in wrongEventIds) drawCircle(Color(0xffb84848), 18 * density, center, style = Stroke(2 * density))
                     text.textSize = 18 * density
-                    val numbered = event.pitch?.let { numberedPitch(it, numberedKey) }
-                    val label = numbered?.let { (if (it.accidental > 0) "♯".repeat(it.accidental) else "♭".repeat(-it.accidental)) + it.degree } ?: "0"
-                    native.drawText(label, hit.x * density, ny * density, text)
-                    numbered?.let { n -> repeat(abs(n.octave).coerceAtMost(6)) { dot -> drawCircle(ink, 1.2f * density, Offset((hit.x + 5) * density, (ny + if (n.octave > 0) -22f - dot * 5 else 7f + dot * 5) * density)) } }
-                    val shortLines = when (event.type) { "eighth" -> 1; "16th" -> 2; "32nd" -> 3; "64th" -> 4; else -> 0 }
-                    repeat(shortLines) { line(hit.x - 1, ny + 3 + it * 4, hit.x + 13, ny + 3 + it * 4) }
-                    repeat(event.dots) { drawCircle(ink, 1.4f * density, Offset((hit.x + 16 + it * 5) * density, (ny - 6) * density)) }
+                    native.drawText(layout.digit, nx * density, ny * density, text)
+                    if (layout.accidental.isNotEmpty()) native.drawText(layout.accidental, (nx + layout.accidentalX) * density, ny * density, text)
+                    layout.octaveDotYs.forEach { dotY -> drawCircle(ink, NUMBERED_OCTAVE_DOT_RADIUS * density,
+                        Offset((nx + layout.centerX) * density, (ny + dotY) * density)) }
+                    layout.shortLineYs.forEach { lineY -> line(nx + layout.digitBounds.left - 2, ny + lineY, nx + layout.digitBounds.right + 2, ny + lineY) }
+                    repeat(event.dots) { drawCircle(ink, 1.4f * density, Offset((nx + layout.rhythmDotX + it * 5) * density, (ny - 6) * density)) }
                     if (event.duration.toDouble() >= 2) {
                         text.textSize = 16 * density
                         val dashes = floor(event.duration.toDouble()).toInt() - 1
-                        repeat(dashes.coerceAtMost(7)) { native.drawText("–", (hit.x + 18 + it * 13) * density, ny * density, text) }
+                        repeat(dashes.coerceAtMost(7)) { native.drawText("–", (nx + layout.digitBounds.right + 8 + it * 13) * density, ny * density, text) }
                     }
                 }
             }

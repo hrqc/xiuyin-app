@@ -157,6 +157,8 @@ fun ScoreWorkbenchScreen(
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ScoreDisplayMode.entries.forEach { option -> FilterChip(mode == option, { mode = option }, { Text(option.label) }, modifier = Modifier.testTag("display_${option.name}")) }
                 }
+                if (mode != ScoreDisplayMode.STAFF) Text("音区看上下点：上方一点高一个八度，下方一点低一个八度；两点为两个八度。数字右侧的附点表示时值。",
+                    style = MaterialTheme.typography.bodySmall, color = XiuyinMuted, modifier = Modifier.testTag("numbered_register_legend"))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = onUndo, enabled = revision?.canUndo == true && !state.busy, modifier = Modifier.testTag("score_undo")) { Text("撤销") }
                     OutlinedButton(onClick = onRedo, enabled = revision?.canRedo == true && !state.busy, modifier = Modifier.testTag("score_redo")) { Text("重做") }
