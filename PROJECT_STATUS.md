@@ -1,3 +1,19 @@
+# 当前交付：0.3.0-octave.2-fieldtest.8（versionCode 13，2026-10-21）
+
+APK源码 Commit 为 `9d9515ef8a07454f1458acf643821d37f2c19aa5`。最终 FIELD_TEST_ONLY：工程 PASSED，产品/音乐 FAILED，物理手机 UNVERIFIED。dev与 `v0.3.0-octave.2-fieldtest.8` 已实际Push并读回 VERIFIED（15:58:29 +08:00），稳定main仍为 `v0.2.0 / dbe1a852`；上一完整Field为 `.7 / 48cc97a`，同属候选。代码优先revert，手机降级安装未验证，不卸载清库回退。
+
+manual-final-d PASSED：模型/跟谱336/336帧，监听丢弃0、overflow0，正常停止丢弃5块；系统ZIP保存与SHA读回通过。前后台操作发生在主动暂停后，不能称录音中后台停采通过。manual-final-a曾触及200MiB诊断预算保护并失败，故障包已恢复保存，失败保留；Score黄色P2为4条自动测试清理后的孤儿metadata，仍待处理。完整自动识谱和识音仍未通过，物理手机琴房、踏板和新独立验收数据未验证，不代表现场识别准确率通过。
+
+归档位于 `outputs/field-tests/v0.3.0-octave.2-fieldtest.8/`，manifest SHA-256 `5e30b22f5381441535be5364876b91a56ec23d3b506873e7ae8b90001c633ca3`；安装包 `xiuyin-0.3.0-octave.2-fieldtest.8-debug.apk`，SHA-256 `c04f1cad70ca91f4abdf49f4bb854a7437d89af8ab5a545851d2b13b9ad21ec4`。交付后文档补记未包含在源码 Commit；不替代APK源码身份、不重建APK、不移动候选Tag。后续文档提交与推送单独记录，不改变这份APK的源码身份。
+
+证据：`reports/fieldtest-finalize-20261021T075536Z-0d1eca61/field-report.json`；`reports/fieldtest8-development/` 下 `post-final-a/audio-comparison/comparison.json`、`manual-final-d/manual-ui-report.json`、`manual-final-d/current-ui-observations.json`、`manual-diagnosis-a/LIFECYCLE.md`、`push-final-a/remote-sync.json`；归档 `fieldtest-manifest.json`。旧开发段落与失败证据作为当时历史保留。
+
+下一步：用本版覆盖安装保留数据；先按 PHONE_TEST_GUIDE.md 校对原图并完成小节修订，再用物理手机内置麦克风、不踩踏板短测20–60秒。误判时记录两类反馈，结束后保存原始ZIP供后续分析。原始识音输出与独立音乐失败继续作为修复依据；P2测试metadata清理待单独小版本处理。
+
+---
+
+以下保留本轮开发阶段及更早版本的原始记录；其中“未提交”“未交付”“待执行”等描述均为当时状态。
+
 # 当前开发：0.3.0-octave.2-fieldtest.8（versionCode 13，2026-10-21）
 
 本轮按用户要求增量修复问题谱图的手动结构闭环、实测起音漏检、水平跟随和短音间距。AGENTS/PRODUCT 不变。当前为未提交开发候选，尚未完成干净提交后的 PREPARE、同包 post/manual/FINALIZE；未 Tag、未 Push、未交付。当前已交付包仍为下方 Field.7；稳定 main 仍为 v0.2.0，不以本地工程测试替代琴房验收。
