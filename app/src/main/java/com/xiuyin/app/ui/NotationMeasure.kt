@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
@@ -14,7 +15,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -22,6 +29,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -45,7 +53,6 @@ private data class StaffGeometry(val staff: Int, val top: Float, val clef: Score
 private data class NoteHit(val id: String, val x: Float, val y: Float)
 private val steps = listOf("C", "D", "E", "F", "G", "A", "B")
 private const val SPACE = 10f
-private const val LEFT = 138f
 private fun diatonic(pitch: ScorePitch) = pitch.octave * 7 + steps.indexOf(pitch.step)
 private fun clefReference(clef: ScoreClef): Int = when (clef.sign) { "F" -> 24; "C" -> 28; else -> 32 }
 private fun noteY(pitch: ScorePitch, staff: StaffGeometry): Float {
@@ -101,6 +108,8 @@ fun NotationMeasure(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     wrongEventIds: Set<String> = emptySet(),
+    followActive: Boolean = false,
+    onUserScroll: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val font = remember { requireNotNull(ResourcesCompat.getFont(context, R.font.bravura)) }
@@ -124,24 +133,55 @@ fun NotationMeasure(
         }
     }
     val (staffs, height) = remember(measure, mode, numberedLayouts) { geometry(measure, mode, numberedLayouts) }
-    val width = max(360f, LEFT + measure.events.map { it.offset }.distinct().size * 43f + 35f)
-    val duration = max(measure.time?.duration?.toDouble() ?: 0.0, measure.events.maxOfOrNull { (it.offset + it.duration).toDouble() } ?: 1.0).coerceAtLeast(1.0)
+    val inkBounds = remember(measure, mode, numberedLayouts, density) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.create(Typeface.SERIF, Typeface.NORMAL); textSize = 18 * density }
+        val musicOffsets = measure.events.groupBy { it.staff to it.offset }.values.flatMap { events ->
+            val sorted = events.sortedBy { it.pitch?.midi ?: -1 }
+            sorted.mapIndexed { index, event ->
+                val displaced = index > 0 && event.pitch != null && sorted[index - 1].pitch?.let { abs(diatonic(event.pitch) - diatonic(it)) <= 1 } == true
+                event.id to if (displaced) 12f else 0f
+            }
+        }.toMap()
+        measure.events.associate { event ->
+            val shift = musicOffsets.getValue(event.id)
+            val staffBounds = NotationInkBounds(-18f + shift,
+                max(if (event.ties.isEmpty()) 28f else 35f, 17f + event.dots * 6f) + shift)
+            val numberBounds = numberedLayouts[event.staff]?.events?.get(event.id)?.glyph?.let { glyph ->
+                val accidental = glyph.accidental.takeIf { it.isNotEmpty() }?.let { label ->
+                    val rect = Rect(); paint.getTextBounds(label, 0, label.length, rect)
+                    NumberedTextBounds(paint.measureText(label) / density, rect.left / density, rect.top / density, rect.right / density, rect.bottom / density)
+                }
+                paint.textSize = 16 * density
+                val dashWidth = paint.measureText("–") / density
+                paint.textSize = 18 * density
+                numberedHorizontalInk(event, glyph, accidental, dashWidth)
+            }
+            val bounds = when (mode) {
+                ScoreDisplayMode.STAFF -> staffBounds
+                ScoreDisplayMode.NUMBERED -> numberBounds ?: staffBounds
+                ScoreDisplayMode.BOTH -> numberBounds?.let { NotationInkBounds(minOf(staffBounds.left, it.left), maxOf(staffBounds.right, it.right)) } ?: staffBounds
+            }
+            event.id to bounds
+        }
+    }
+    val horizontal = remember(measure, inkBounds) { notationHorizontalLayout(measure, inkBounds) }
+    val width = horizontal.width
     val hits = remember(measure, mode, width, staffs) {
         measure.events.map { event ->
             val staff = staffs.first { it.staff == event.staff }
             val group = measure.events.filter { it.staff == event.staff && it.offset == event.offset }.sortedBy { it.pitch?.midi ?: -1 }
             val index = group.indexOfFirst { it.id == event.id }
             val secondCollision = index > 0 && event.pitch != null && group[index - 1].pitch?.let { abs(diatonic(event.pitch) - diatonic(it)) <= 1 } == true
-            val x = LEFT + (event.offset.toDouble() / duration * (width - LEFT - 32)).toFloat() + if (secondCollision) 12 else 0
+            val x = horizontal.x(event.offset) + if (secondCollision) 12 else 0
             val y = event.pitch?.let { noteY(it, staff) } ?: staff.top + 20
             NoteHit(event.id, x, y)
         }
     }
-    val numberedHits = remember(measure, width, duration, staffs, numberedLayouts) {
+    val numberedHits = remember(measure, horizontal, staffs, numberedLayouts) {
         measure.events.mapNotNull { event ->
             val layout = numberedLayouts[event.staff]?.events?.get(event.id) ?: return@mapNotNull null
             val staff = staffs.first { it.staff == event.staff }
-            NoteHit(event.id, LEFT + (event.offset.toDouble() / duration * (width - LEFT - 32)).toFloat(),
+            NoteHit(event.id, horizontal.x(event.offset),
                 staff.numberedY + layout.baseline)
         }.associateBy { it.id }
     }
@@ -156,10 +196,29 @@ fun NotationMeasure(
             ScoreDisplayMode.BOTH -> hits + numbers
         }
     }
+    val scroll = rememberScrollState()
+    var viewportWidth by remember { mutableIntStateOf(0) }
+    var manuallyPaused by remember(measure.id) { mutableStateOf(false) }
+    val dragged by scroll.interactionSource.collectIsDraggedAsState()
+    val notifyUserScroll by rememberUpdatedState(onUserScroll)
+    // Only an explicit playback/follow restart re-enables following; new active IDs and loops do not.
+    LaunchedEffect(followActive) { if (followActive) manuallyPaused = false }
+    LaunchedEffect(dragged) {
+        if (dragged) { manuallyPaused = true; notifyUserScroll() }
+    }
+    LaunchedEffect(followActive, manuallyPaused, activeEventIds, horizontal, viewportWidth, scroll.maxValue, density) {
+        if (!followActive || manuallyPaused || dragged || viewportWidth <= 0 || scroll.maxValue == Int.MAX_VALUE) return@LaunchedEffect
+        val active = notationFollowEvents(measure.events, activeEventIds)
+        if (active.isEmpty() || (mode == ScoreDisplayMode.NUMBERED && numberedKey == null)) return@LaunchedEffect
+        val left = active.minOf { horizontal.x(it.offset) + inkBounds.getValue(it.id).left } * density
+        val right = active.maxOf { horizontal.x(it.offset) + inkBounds.getValue(it.id).right } * density
+        val target = notationFollowScroll(left, right, viewportWidth, scroll.value, scroll.maxValue)
+        if (target != scroll.value) scroll.scrollTo(target)
+    }
     Column(modifier) {
         if (needsNumberedKey) Text("调号未确认，暂不能生成首调简谱。请在校对中确认实际调号；五线谱保留已识别音高。",
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("numbered_key_required_${measure.id}"))
-    Box(Modifier.horizontalScroll(rememberScrollState())) {
+    Box(Modifier.testTag("notation_viewport_${measure.id}").onSizeChanged { viewportWidth = it.width }.horizontalScroll(scroll)) {
         Canvas(Modifier.width(width.dp).height(height.dp).testTag("notation_" + measure.id)
             .semantics { contentDescription = "第${measure.number}小节，${mode.label}，${measure.events.size}个谱面事件。" +
                 (if (needsNumberedKey) "调号未确认，暂不能生成首调简谱。" else "") +

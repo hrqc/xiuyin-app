@@ -7,6 +7,9 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
     private val candidates = FloatArray(88)
     private val candidateFrames = IntArray(88)
     private val armed = BooleanArray(88) { true }
+    // Acoustic withholding is not consumption of an attack. Retain only eligibility to
+    // try again; rejected scores and confirmation frames never survive the rejection.
+    private val acousticRetry = BooleanArray(88)
     private val lastAttack = LongArray(88) { -10_000 }
     private var lastIndex = -1L
     fun accept(frameIndex: Long, audioTimeSeconds: Double, availableAudioTimeSeconds: Double,
@@ -25,13 +28,14 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
             val sustain = frameScores[key]
             var confirmed = 0f
             if (clipped || acousticRejections.containsKey(key + 21)) {
+                acousticRetry[key] = !clipped && (acousticRetry[key] || armed[key] || candidates[key] > 0f)
                 candidates[key] = 0f
                 candidateFrames[key] = 0
                 active[key] = false
                 armed[key] = false
                 releaseFrames[key] = 0
             } else {
-                if (onset < REARM_THRESHOLD) armed[key] = true
+                if (onset < REARM_THRESHOLD) { armed[key] = true; acousticRetry[key] = false }
                 if (candidates[key] > 0f) {
                     if (sustain >= config.frameThreshold || onset >= config.onsetThreshold) {
                         candidateFrames[key]++
@@ -41,6 +45,7 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
                             active[key] = true
                             lastAttack[key] = frameIndex
                             armed[key] = false
+                            acousticRetry[key] = false
                             attacks.add(key + 21)
                             candidates[key] = 0f
                             candidateFrames[key] = 0
@@ -51,10 +56,11 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
                         candidateFrames[key] = 0
                     }
                 }
-                if (confirmed == 0f && candidates[key] == 0f && armed[key] && onset >= config.onsetThreshold && sustain >= config.frameThreshold &&
+                if (confirmed == 0f && candidates[key] == 0f && (armed[key] || acousticRetry[key]) && onset >= config.onsetThreshold && sustain >= config.frameThreshold &&
                     frameIndex - lastAttack[key] >= REFRACTORY_FRAMES) {
                     candidates[key] = onset
                     candidateFrames[key] = 1
+                    acousticRetry[key] = false
                     uncertain = true
                 }
                 if (active[key]) {
@@ -81,7 +87,7 @@ class PianoEvidenceTracker(private val config: PitchEvidenceConfig = PitchEviden
             candidateRejections = acousticRejections.toMap(), pendingOnsetMidi = pending)
     }
     fun reset() {
-        active.fill(false); releaseFrames.fill(0); candidates.fill(0f); candidateFrames.fill(0); armed.fill(true); lastAttack.fill(-10_000); lastIndex = -1
+        active.fill(false); releaseFrames.fill(0); candidates.fill(0f); candidateFrames.fill(0); armed.fill(true); acousticRetry.fill(false); lastAttack.fill(-10_000); lastIndex = -1
     }
     companion object {
         const val CONFIRMATION_FRAMES = 3

@@ -261,6 +261,9 @@ $omrDirectory = $null
 $userPhotoContext = $null
 $userPhotoDirectory = $null
 $userPhotoEvidence = $null
+$barlineContext = $null
+$barlineDirectory = $null
+$barlineEvidence = $null
 $boundaryContext = $null
 $boundaryDirectory = $null
 try {
@@ -433,6 +436,98 @@ try {
         (Get-ArtifactSha256 -Path $userPhotoSource) -cne $userPhotoExpectedSha) { throw '本轮用户原图的源文件/设备私有文件 SHA 不一致。' }
     $userPhotoContext.prepared = $true
     $userPhotoContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $userPhotoDirectory 'input-context.json') -Encoding utf8
+    # Frozen prior OMR archive: no new inference and no overwrite of existing user data.
+    $barlineSourceId = '9f6afa8b9a5a9e28e70498744d8976e44a94eab460160b6bfa391c25f48eb6c4'
+    $barlineHost = Join-Path $projectRoot ('reports\fieldtest7-development\user-photo-repro\ui-import-archive\files\omr-sources\' + $barlineSourceId)
+    $barlineRemote = 'files/omr-sources/' + $barlineSourceId
+    $barlineNonce = [guid]::NewGuid().ToString('N')
+    $barlineDirectory = Join-Path $outputRoot ('barline-archive\' + $barlineNonce)
+    if (Test-Path -LiteralPath $barlineDirectory) { throw 'Refusing to reuse barline evidence directory.' }
+    New-Item -ItemType Directory -Path $barlineDirectory | Out-Null
+    $barlineFiles = @(
+        [ordered]@{ name = 'original-000.document'; bytes = 649738; sha256 = 'db00943990d83b96c4cb57be7919b9d22241a14b761c6379a82493db1ad3b450' },
+        [ordered]@{ name = 'original.json'; bytes = 159278; sha256 = '320cf805041e7539ff9e40dc39e0534fa886523347c69d4760aacbdd9e27172b' },
+        [ordered]@{ name = 'page-000.image'; bytes = 648886; sha256 = '82a70fc43d1a93446542ba9a6ed7747cf6e1b89d1c0a59fcd0d8791d18777a05' },
+        [ordered]@{ name = 'raw-result.json'; bytes = 1111789; sha256 = '4da77a6df1b5b046f0c2d2f61189c2c5d3d2c2506eb5a0ef7cd86fb10a2333f9' }
+    )
+    $barlineContext = [ordered]@{
+        mainRunId = $traceRunId; device = $deviceSerial; gitCommit = $boundaryContext.gitCommit
+        appSha256 = $traceContext.appSha256; testApkSha256 = $traceContext.testApkSha256
+        sourceId = $barlineSourceId; sourcePath = $barlineHost; privatePath = $barlineRemote
+        status = 'PREPARING'; sourceWasPresent = $null; createdNewDirectory = $false
+        expectedFiles = $barlineFiles; commands = @(); hostReadbacks = @(); deviceReadbacks = @()
+        partId = 'P1'; leftMeasureId = 'omr:P1:M7'; rightMeasureId = 'omr:P1:M8'; expectedMeasures = 15
+        musicalAcceptance = 'UNVERIFIED'; physicalPhoneAcceptance = 'UNVERIFIED'
+    }
+    $barlineEvidence = [ordered]@{ directory = $barlineDirectory; status = 'NOT_VERIFIED'; musicalAcceptance = 'UNVERIFIED' }
+    function Invoke-BarlineCapture([string[]]$Arguments, [string]$Name) {
+        $capture = Invoke-BoundaryCapture -Arguments $Arguments -Name $Name -Directory $barlineDirectory -Context $barlineContext
+        $barlineContext.commands[-1].arguments = @($Arguments)
+        return $capture
+    }
+    function Assert-BarlineHostFixture([string]$Phase) {
+        $cursor = [IO.Path]::GetFullPath($barlineHost)
+        while ($cursor) {
+            $item = Get-Item -LiteralPath $cursor -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Linked host archive or ancestor; preserving all files.' }
+            $parent = [IO.Directory]::GetParent($cursor)
+            $cursor = if ($parent) { $parent.FullName } else { $null }
+        }
+        $entries = @(Get-ChildItem -LiteralPath $barlineHost -Force)
+        if ((($entries.Name | Sort-Object) -join '|') -cne (($barlineFiles.name | Sort-Object) -join '|')) { throw 'Frozen barline host inventory differs.' }
+        foreach ($entry in $barlineFiles) {
+            $path = Join-Path $barlineHost $entry.name
+            $item = Get-Item -LiteralPath $path -Force
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw ('Linked or non-file host archive entry: ' + $entry.name) }
+            $actualSha = Get-ArtifactSha256 -Path $path
+            if ($item.Length -ne $entry.bytes -or $actualSha -cne $entry.sha256) { throw ('Frozen barline host bytes/SHA differ: ' + $entry.name) }
+            $barlineContext.hostReadbacks += [ordered]@{ phase = $Phase; name = $entry.name; bytes = $item.Length; sha256 = $actualSha }
+        }
+    }
+    function Assert-BarlineDeviceArchive([string]$Phase) {
+        $command = "run-as com.xiuyin.app sh -c 'if [ -L files ] || [ -L files/omr-sources ] || [ -L $barlineRemote ]; then exit 41; fi; [ -d $barlineRemote ] || exit 42; find $barlineRemote -mindepth 1 -maxdepth 1 -print'"
+        $listing = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name ($Phase + '-inventory.log')
+        $expected = @($barlineFiles | ForEach-Object { $barlineRemote + '/' + $_.name } | Sort-Object)
+        $actual = @($listing.output -split '\r?\n' | Where-Object { $_ -ne '' } | Sort-Object)
+        if ($listing.exitCode -ne 0 -or ($actual -join '|') -cne ($expected -join '|')) { throw 'Device barline archive is linked, absent, or has unexpected entries; not overwriting.' }
+        foreach ($entry in $barlineFiles) {
+            $path = $barlineRemote + '/' + $entry.name
+            $command = "run-as com.xiuyin.app sh -c 'if [ -L $path ] || [ ! -f $path ]; then exit 43; fi; wc -c < $path; sha256sum $path'"
+            $capture = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name ($Phase + '-' + $entry.name + '-sha.log')
+            $sizes = [regex]::Matches($capture.output, '(?m)^\s*(\d+)\s*$')
+            $hashes = [regex]::Matches($capture.output, '(?m)^([a-f0-9]{64})\s+')
+            if ($capture.exitCode -ne 0 -or $sizes.Count -ne 1 -or $hashes.Count -ne 1 -or
+                [long]$sizes[0].Groups[1].Value -ne $entry.bytes -or $hashes[0].Groups[1].Value -cne $entry.sha256) { throw ('Device barline bytes/SHA differ; not overwriting: ' + $entry.name) }
+            $barlineContext.deviceReadbacks += [ordered]@{ phase = $Phase; name = $entry.name; bytes = [long]$sizes[0].Groups[1].Value; sha256 = $hashes[0].Groups[1].Value }
+        }
+    }
+    Assert-BarlineHostFixture -Phase 'before-stage'
+    $command = "run-as com.xiuyin.app sh -c 'if [ -L files ] || [ -L files/omr-sources ] || [ -L $barlineRemote ]; then exit 41; fi; if [ -e files/omr-sources ] && [ ! -d files/omr-sources ]; then exit 42; fi; if [ -e $barlineRemote ]; then [ -d $barlineRemote ] || exit 43; echo EXISTS; else echo ABSENT; fi'"
+    $presence = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name 'source-presence.log'
+    if ($presence.exitCode -ne 0 -or $presence.output.Trim() -cnotin @('EXISTS', 'ABSENT')) { throw 'Cannot safely inspect device barline archive; existing data preserved.' }
+    $barlineContext.sourceWasPresent = $presence.output.Trim() -ceq 'EXISTS'
+    if (-not $barlineContext.sourceWasPresent) {
+        $command = "run-as com.xiuyin.app sh -c 'if [ -L files ] || [ -L files/omr-sources ]; then exit 41; fi; if [ ! -d files/omr-sources ]; then mkdir files/omr-sources || exit 42; fi; mkdir $barlineRemote'"
+        $created = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name 'source-create-new.log'
+        if ($created.exitCode -ne 0) { throw 'Cannot create fresh barline source directory; never reuse a raced or partial directory.' }
+        $barlineContext.createdNewDirectory = $true
+        foreach ($entry in $barlineFiles) {
+            $temporary = '/data/local/tmp/xiuyin-barline-' + $barlineNonce + '-' + $entry.name
+            $command = "if [ -e $temporary ] || [ -L $temporary ]; then exit 44; fi"
+            $temporaryAbsent = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name ('temporary-absent-' + $entry.name + '.log')
+            if ($temporaryAbsent.exitCode -ne 0) { throw 'Refusing to overwrite a barline temporary input path.' }
+            $pushed = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'push', (Join-Path $barlineHost $entry.name), $temporary) -Name ('push-' + $entry.name + '.log')
+            if ($pushed.exitCode -ne 0) { throw 'Barline fixture push failed; retaining partial evidence.' }
+            $path = $barlineRemote + '/' + $entry.name
+            $command = "run-as com.xiuyin.app sh -c 'if [ -e $path ] || [ -L $path ] || [ -L files ] || [ -L files/omr-sources ] || [ -L $barlineRemote ]; then exit 44; fi; set -C; cat $temporary > $path'"
+            $copied = Invoke-BarlineCapture -Arguments @('-s', $deviceSerial, 'shell', $command) -Name ('copy-new-' + $entry.name + '.log')
+            if ($copied.exitCode -ne 0) { throw 'Cannot create new private barline file without overwriting; retaining diagnosis.' }
+        }
+    }
+    Assert-BarlineDeviceArchive -Phase 'before'
+    Assert-BarlineHostFixture -Phase 'before-run'
+    $barlineContext.status = 'PREPARED'
+    $barlineContext | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $barlineDirectory 'barline-input-context.json') -Encoding utf8
     Save-BoundaryInstalledIdentity -Phase 'before'
     $oldBoundary = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'if [ -f /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json ]; then sha256sum /sdcard/Android/data/com.xiuyin.app/files/field-frame-boundary-result.json; else echo ABSENT; fi') -Name 'before-report-sha.log'
     if ($oldBoundary.exitCode -ne 0) { throw '无法读取边界测试旧报告状态。' }
@@ -440,11 +535,30 @@ try {
     if ($beforeClock.exitCode -ne 0 -or $beforeClock.output.Trim() -notmatch '^\d{10,}$') { throw '无法读取边界测试设备开始时间。' }
     $testStarted = Get-Date
     Write-Host ('运行相同 AndroidJUnitRunner 测试集：' + $deviceSerial)
-    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrUserPhotoInput', $userPhotoInputName, '-e', 'omrUserPhotoSha256', $userPhotoExpectedSha, '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'clavierWav', $clavierWav, '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
+    $instrumentation = Invoke-AdbCapture -AdbArguments @('-s', $deviceSerial, 'shell', 'am', 'instrument', '-w', '-r', '-e', 'omrInputDirectory', 'omr-evaluation-input', '-e', 'omrPhase', 'IMPORT', '-e', 'omrRunId', $omrRunId, '-e', 'omrCase', 'S02', '-e', 'omrIndependentInputDirectory', $omrInputDirectory, '-e', 'omrInputFile', $omrContext.inputFile, '-e', 'omrInputSha256', $omrContext.inputSha256, '-e', 'omrReferenceFile', $omrContext.referenceFile, '-e', 'omrReferenceSha256', $omrContext.referenceSha256, '-e', 'omrProblemInput', 'problem-score.jpg', '-e', 'omrUserPhotoInput', $userPhotoInputName, '-e', 'omrUserPhotoSha256', $userPhotoExpectedSha, '-e', 'barlineSourceId', $barlineSourceId, '-e', 'barlineScoreSha256', $barlineFiles[1].sha256, '-e', 'barlineDocumentSha256', $barlineFiles[0].sha256, '-e', 'barlinePartId', 'P1', '-e', 'barlineLeftMeasureId', 'omr:P1:M7', '-e', 'barlineRightMeasureId', 'omr:P1:M8', '-e', 'barlineExpectedMeasures', '15', '-e', 'omrReanalysisArchive', 'omr-legacy-problem', '-e', 'manualReviewScore', 'czerny-manual-review.musicxml', '-e', 'clavierWav', $clavierWav, '-e', 'phoneVideoWav', '/data/user/0/com.xiuyin.app/files/phone-video-20260923.wav', '-e', 'phoneVideoExpectedSha256', '777ff0c774277532ae61754afd4aea345d71e3be03c1e264fbf817ae50d9e858', '-e', 'roomPianoWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/room.wav', '-e', 'octaveBaselineWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/octave-regression.wav', '-e', 'octaveBaselineExpectedSha256', 'a047684a7e86a8fd4f4c3c8bc07d5be3903407bc1225f2eeb36eed42a8e21c20', '-e', 'practiceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'practiceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceRunId', $traceRunId, '-e', 'traceWav', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/website.wav', '-e', 'traceTimeline', '/data/user/0/com.xiuyin.app/files/practice-evaluation-input/expected-timeline.json', '-e', 'traceWavSha256', $traceContext.wavSha256, '-e', 'traceTimelineSha256', $traceContext.timelineSha256, '-e', 'traceAppSha256', $traceContext.appSha256, '-e', 'traceModelSha256', $traceContext.modelSha256, 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner') -LogPath (Join-Path $outputRoot 'instrumentation.log')
     $duration = ((Get-Date) - $testStarted).TotalSeconds
     $afterClock = Invoke-BoundaryCapture -Arguments @('-s', $deviceSerial, 'shell', 'date', '+%s') -Name 'after-clock.log'
     $result = ConvertFrom-InstrumentationOutput -Output $instrumentation.output -ExitCode $instrumentation.exitCode
     Write-InstrumentationXml -Result $result -Path (Join-Path $outputRoot 'TEST-instrumentation.xml') -Raw $instrumentation.output -StartedAt $testStarted -Duration $duration
+    $barlineFailure = $null
+    try {
+        $barlineContext.instrumentationExitCode = $instrumentation.exitCode
+        $barlineContext.instrumentationLogSha256 = Get-ArtifactSha256 -Path (Join-Path $outputRoot 'instrumentation.log')
+        Assert-BarlineDeviceArchive -Phase 'after'
+        Assert-BarlineHostFixture -Phase 'after'
+        $barlineCases = @($result.cases | Where-Object { $_.className -ceq 'com.xiuyin.app.score.ScoreBarlineWorkbenchTest' -and
+            $_.testName -ceq 'shaBoundUserArchiveMergePersistsOnAnIsolatedRevisionWithoutChangingTheArchive' })
+        if ($barlineCases.Count -ne 1 -or $barlineCases[0].statusCode -ne 0) { throw 'SHA-bound barline case did not execute exactly once and pass in the full suite; skipping is forbidden.' }
+        $barlineContext.case = $barlineCases[0]
+        $barlineContext.status = 'PASSED'
+        $barlineEvidence.status = 'PASSED'
+    } catch {
+        $barlineFailure = $_.Exception.Message
+        $barlineContext.status = 'FAILED'; $barlineContext.failure = $barlineFailure
+        $barlineEvidence.status = 'FAILED'; $barlineEvidence.failure = $barlineFailure
+    } finally {
+        $barlineContext | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $barlineDirectory 'barline-input-context.json') -Encoding utf8
+    }
     # Archive failures too; boundary failure must not prevent preserving the existing full trace.
     $boundaryFailure = $null
     try {
@@ -658,6 +772,7 @@ try {
     if ($completionFailure) { throw $completionFailure }
     if ($omrFailure) { throw $omrFailure }
     if ($userPhotoFailure) { throw $userPhotoFailure }
+    if ($barlineFailure) { throw $barlineFailure }
     if ($result.status -ne 'passed') { throw ($result.problems -join '；') }
     $mainReplayPath = Join-Path $outputRoot 'autopiano-practice-replay-result.json'
     # Pull bytes directly: native UTF-8 JSON must never pass through a locale-decoded PowerShell string.
@@ -709,12 +824,20 @@ try {
     if ($userPhotoContext -and $userPhotoDirectory -and -not (Test-Path -LiteralPath (Join-Path $userPhotoDirectory 'user-photo-context.json'))) {
         $userPhotoContext | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $userPhotoDirectory 'user-photo-context.json') -Encoding utf8
     }
+    if ($barlineContext -and $barlineDirectory) {
+        if ($barlineContext.status -ne 'PASSED') {
+            $barlineContext.status = 'FAILED'
+            if (-not $barlineContext.Contains('failure')) { $barlineContext.failure = $failure }
+            $barlineEvidence.status = 'FAILED'; $barlineEvidence.failure = $barlineContext.failure
+        }
+        $barlineContext | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $barlineDirectory 'barline-input-context.json') -Encoding utf8
+    }
     if (Test-Path -LiteralPath $outputRoot -PathType Container) {
         [ordered]@{
             executor = 'adb-am-instrument'; runner = 'com.xiuyin.app.test/androidx.test.runner.AndroidJUnitRunner'
             startedAt = $started.ToUniversalTime().ToString('o'); finishedAt = (Get-Date).ToUniversalTime().ToString('o')
             status = $(if ($exitCode -eq 0) { 'passed' } else { 'failed' }); device = $deviceSerial
-            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence; omrIndependent = $omrEvidence; omrUserPhoto = $userPhotoEvidence
+            failure = $failure; result = $result; fullTrace = $traceEvidence; fieldFrameBoundary = $boundaryEvidence; fieldCompletionBoundary = $completionEvidence; omrIndependent = $omrEvidence; omrUserPhoto = $userPhotoEvidence; barlineArchive = $barlineEvidence
         } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $outputRoot 'executor.json') -Encoding utf8
     }
 }

@@ -174,10 +174,11 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
             return retainNextUncertainty(uncertain("忽略同次击键的重复证据"))
         lastConfirmedNotes = detected; lastConfirmedTime = pending.time
         // Preserve measured attack activation, but judge current support from the final two consecutive frames.
-        val score = pending.notes.entries.minOf { (midi, note) -> minOf(note.onsetScore, pending.support.getValue(midi).min()) }
-        return retainNextUncertainty(align(detected, pending.time, score, pending.uncertain))
+        val noteScores = pending.notes.mapValues { (midi, note) -> minOf(note.onsetScore, pending.support.getValue(midi).min()) }
+        val score = noteScores.values.min()
+        return retainNextUncertainty(align(detected, pending.time, score, pending.uncertain, noteScores))
     }
-    private fun align(detected: Set<Int>, time: Double, score: Double, uncertainMidi: Set<Int>): FollowerUpdate {
+    private fun align(detected: Set<Int>, time: Double, score: Double, uncertainMidi: Set<Int>, noteScores: Map<Int, Double>): FollowerUpdate {
         val targetUncertain = expectedMidi().any { it in uncertainMidi }
         if (targetUncertain) positionUncertain = true
         if (detected.any { it in uncertainMidi }) {
@@ -267,12 +268,18 @@ class ScoreFollower(val timeline: ScoreTimeline, val config: PracticeConfig) {
                 reason = "跟谱位置尚未恢复，不能用陈旧目标判错；等待连续起音重新定位")
         }
         // A partial chord is not sufficient to accuse a missed note. Reappearing recent targets may be resonance.
-        if (expectedMidi().containsAll(musicalInput) || (maxOf(0, current - 2) until current).any { midiAt(it) == musicalInput } || score < 0.80) {
+        // Only an extra key's own accepted onset and recent consecutive support may establish
+        // a wrong note. Expected/recent keys cannot lend their strength to a weak extra, and
+        // another weak chord member cannot veto an independently supported wrong key.
+        val recentMidi = (maxOf(0, current - 2) until current).flatMap { midiAt(it) }.toSet()
+        val extraMidi = musicalInput - expectedMidi() - recentMidi
+        val wrongScore = extraMidi.maxOfOrNull { noteScores.getValue(it) } ?: 0.0
+        if (expectedMidi().containsAll(musicalInput) || (maxOf(0, current - 2) until current).any { midiAt(it) == musicalInput } || wrongScore < 0.80) {
             return FollowerUpdate(cursor, locked, PracticeDecision.UNCERTAIN, detected, true, reason = "缺音、近期余音或证据不足，保持当前位置")
         }
         locked = config.mode == CompanionMode.STOP_ON_ERROR || config.mode == CompanionMode.REINFORCE
         return FollowerUpdate(cursor, locked, PracticeDecision.WRONG, detected, true,
-            listOf(evidence(current, PracticeDecision.WRONG, detected, time, score, "高激活的新起音与当前位置及邻近位置不符")), "错音证据已记录；可重弹目标音恢复")
+            listOf(evidence(current, PracticeDecision.WRONG, detected, time, wrongScore, "高激活的新起音与当前位置及邻近位置不符")), "错音证据已记录；可重弹目标音恢复")
     }
     private fun midiAt(index: Int) = targets[index].notes.map { it.midi }.toSet()
     private fun evidence(index: Int, decision: PracticeDecision, detected: Set<Int>, time: Double, score: Double, reason: String): PracticeEvidence {

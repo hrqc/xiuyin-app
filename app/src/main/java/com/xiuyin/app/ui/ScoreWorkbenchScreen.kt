@@ -47,6 +47,9 @@ fun ScoreWorkbenchScreen(
     onRecognizeOmrAgain: () -> Unit = {},
     onFillMissingScoreTime: (String, Long, Int, Int) -> Unit = { _, _, _, _ -> },
     onShiftOctaveRange: (ScoreOctaveRangeRequest) -> Unit = {},
+    onPreviewBarlineMerge: (ScoreBarlineMergeRequest) -> Unit = {},
+    onApplyBarlineMerge: () -> Unit = {},
+    onDismissBarlinePreview: () -> Unit = {},
 ) {
     val revision = state.revision
     val score = revision?.current
@@ -87,8 +90,17 @@ fun ScoreWorkbenchScreen(
     }
     fun locateIssue(issue: ScoreIssue) {
         if (preparation?.repeatIssues?.any { it.id == issue.id } == true) { linearRepeatOpen = true; return }
+        val alignment = Regex("omr:system-alignment:(\\d+):(\\d+)").matchEntire(issue.id)
+            ?: if (issue.id == "omr:alignment") score?.issues?.firstNotNullOfOrNull {
+                Regex("omr:system-alignment:(\\d+):(\\d+)").matchEntire(it.id)
+            } else null
+        val sourcePage = alignment?.groupValues?.get(1)?.toIntOrNull()
+        val sourceSystem = alignment?.groupValues?.get(2)?.toIntOrNull()
         val targetIndex = measures.indexOfFirst { (_, measure) ->
             measure.id == issue.measureId || measure.events.any { it.id == issue.eventId }
+                || (sourcePage != null && sourceSystem != null && measure.events.any {
+                    it.sourceBox?.page == sourcePage && it.sourceLine >= 0 && it.sourceLine / 2 == sourceSystem
+                })
         }
         if (targetIndex >= 0) {
             val target = measures[targetIndex].second
@@ -184,6 +196,7 @@ fun ScoreWorkbenchScreen(
                     OutlinedButton(onClick = onPreviewOmrStructure, enabled = !state.busy,
                         modifier = Modifier.testTag("score_preview_structure")) { Text("重新整理识谱结构") }
                     Text("建议先整理识谱结构，再设置实际拍号、选择顺序一次。整理仅重新解释已存记录；再次整理会重新提示反复记号，需重新选择。原件保留、可撤销；已有人工修改受保护。", style = MaterialTheme.typography.bodySmall)
+                    Text("如果模型多识别了小节线：在下方对应小节选择“与下一小节合并”，对照原图预览后确认。只修正同一谱表内的相邻边界，不自动补休止或改音。", style = MaterialTheme.typography.bodySmall)
                 }
                 if (score != null && ScoreStructureTools.pendingRepeatChoices(score).isNotEmpty()) {
                     OutlinedButton(onClick = { linearRepeatOpen = true }, enabled = !state.busy,
@@ -282,11 +295,22 @@ fun ScoreWorkbenchScreen(
                     if (index == 0) Text("当前数字谱 · 随修谱和移调更新", style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(horizontal = 12.dp).testTag("current_digital_score"))
                     Text("$partName · 第 ${measure.number} 小节", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 12.dp))
-                    NotationMeasure(measure, mode, state.selectedEventId, active, revision?.fingerings.orEmpty(), onSelect)
+                    NotationMeasure(measure, mode, state.selectedEventId, active, revision?.fingerings.orEmpty(), onSelect,
+                        followActive = playback.playing && followPlayback, onUserScroll = { followPlayback = false })
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
                         TextButton(onClick = { editingMeasure = measure }, enabled = !state.busy, modifier = Modifier.testTag("edit_measure_$index")) { Text("拍号 / 调号 / 谱号") }
                         TextButton(onClick = { restoreTarget = measure.id }, enabled = !state.busy, modifier = Modifier.testTag("restore_measure_$index")) { Text("恢复此小节原始结果") }
                         TextButton(onClick = { insertingIn = measure }, enabled = !state.busy, modifier = Modifier.testTag("insert_note_$index")) { Text("添加音符") }
+                        val owner = score?.parts?.firstOrNull { part -> part.measures.any { it.id == measure.id } }
+                        val position = owner?.measures?.indexOfFirst { it.id == measure.id } ?: -1
+                        val next = owner?.measures?.getOrNull(position + 1)
+                        if (score?.source?.format == "OMR_IMAGE" && state.original?.parts?.size == 2 && measure.declaredStaves == 1 && owner != null && next != null) {
+                            TextButton(onClick = {
+                                val id = state.scoreId
+                                if (id != null) onPreviewBarlineMerge(ScoreBarlineMergeRequest(
+                                    id, revision.generation, owner.id, measure.id, next.id))
+                            }, enabled = !state.busy, modifier = Modifier.testTag("score_merge_next_${measure.id}")) { Text("与下一小节合并") }
+                        }
                     }
                 }
             }
@@ -298,6 +322,8 @@ fun ScoreWorkbenchScreen(
             onFillMissingScoreTime(target.scoreId, target.generation, beats, beatType)
             missingTimeTarget = null
         }) }
+    state.barlinePreview?.let { preview -> ScoreBarlineDialog(preview, state.sourceImages, state.busy,
+        onDismissBarlinePreview, onApplyBarlineMerge) }
     octaveRangeTarget?.let { target -> if (score != null) OctaveRangeEditor(score, target, state.busy,
         onDismiss = { octaveRangeTarget = null }, onApply = { request ->
             onShiftOctaveRange(request); octaveRangeTarget = null

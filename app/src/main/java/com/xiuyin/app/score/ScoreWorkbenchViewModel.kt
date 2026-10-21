@@ -36,6 +36,7 @@ data class ScoreWorkbenchState(
     val sourceImages: List<File> = emptyList(),
     val structurePreview: OmrStructurePreview? = null,
     val repairIssue: ScoreIssue? = null,
+    val barlinePreview: ScoreBarlinePreview? = null,
 )
 
 class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(application) {
@@ -92,7 +93,7 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
         mutableState.update { it.copy(message = "当前修订已导出 MIDI（${result.bytes.size} 字节）；原图与修订保留在 App 中") }
     }
     fun previewOmrStructure() = operation("预览识谱结构整理") {
-        mutableState.update { it.copy(structurePreview = null) }
+        mutableState.update { it.copy(structurePreview = null, barlinePreview = null) }
         player.stop("正在整理已有识谱记录，试听已停止")
         val current = mutableState.value
         val revision = requireNotNull(current.revision) { "没有当前乐谱" }
@@ -102,7 +103,7 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun recognizeOmrAgain() = operation("原图真实重识别") {
-        mutableState.update { it.copy(structurePreview = null) }
+        mutableState.update { it.copy(structurePreview = null, barlinePreview = null) }
         player.stop("正在重新识别原图，试听已停止")
         val current = mutableState.value
         val revision = requireNotNull(current.revision) { "没有当前乐谱" }
@@ -115,6 +116,32 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
 
     fun dismissStructurePreview() {
         if (!mutableState.value.busy) mutableState.update { it.copy(structurePreview = null) }
+    }
+
+    fun previewBarlineMerge(request: ScoreBarlineMergeRequest) = operation("预览手动小节线修正") {
+        mutableState.update { it.copy(barlinePreview = null, structurePreview = null) }
+        val current = mutableState.value
+        val prior = requireNotNull(current.revision) { "没有当前乐谱" }
+        request.requireCurrent(current.scoreId, prior.generation)
+        player.stop("正在预览小节线修正，试听已停止")
+        val preview = ScoreBarlineEditing.previewMerge(requireNotNull(current.original), prior.current, request)
+        mutableState.update { it.copy(barlinePreview = preview,
+            message = "请对照原图确认所选小节线是否多识别；尚未保存，音符准确性仍需复核") }
+    }
+
+    fun dismissBarlinePreview() {
+        if (!mutableState.value.busy) mutableState.update { it.copy(barlinePreview = null) }
+    }
+
+    fun applyBarlineMerge() = operation("保存手动小节线修正") {
+        val current = mutableState.value
+        val prior = requireNotNull(current.revision) { "没有当前乐谱" }
+        val preview = requireNotNull(current.barlinePreview) { "请先对照原图预览小节线" }
+        preview.requireCurrent(current.scoreId, prior.generation, prior.current)
+        player.stop("小节线修订已更新，试听已停止")
+        accept(revisions.save(preview.scoreId, prior.generation, preview.candidate,
+            prior.verifiedEventIds - preview.changedEventIds, prior.fingerings),
+            "已按用户确认合并小节并保存一条可撤销修订；结构错误 ${preview.before.errorCount} → ${preview.after.errorCount}。音符和时值仍待复核。结束旧练习后重新打开陪练以使用此修订")
     }
 
     fun applyOmrStructure() = operation("保存识谱结构整理") {
@@ -267,7 +294,7 @@ class ScoreWorkbenchViewModel(application: Application) : AndroidViewModel(appli
         mutableState.update { old ->
             val ids = revision.current.parts.flatMap { it.measures }.flatMap { it.events }.map { it.id }
             old.copy(revision = revision, timeline = timeline, selectedEventId = old.selectedEventId?.takeIf { it in ids },
-                timelineProblem = problem, structurePreview = null, repairIssue = repairIssue, message = message + if (revision.historyTruncated) "；仅保留最近可用撤销历史" else "")
+                timelineProblem = problem, structurePreview = null, barlinePreview = null, repairIssue = repairIssue, message = message + if (revision.historyTruncated) "；仅保留最近可用撤销历史" else "")
         }
     }
 
